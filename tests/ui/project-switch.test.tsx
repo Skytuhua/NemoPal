@@ -1,0 +1,35 @@
+import '@testing-library/jest-dom/vitest';
+import { act, cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, expect, test } from 'vitest';
+import { createFixtureClient } from '@living-playbooks/api-client';
+import { App } from '../../apps/web/src/app/App';
+import { deferred, memoryDrafts, snapshot } from './helpers';
+afterEach(cleanup);
+test('late A snapshot never populates selected B workspace or conversation', async () => {
+  const a = snapshot(), b = snapshot(100), late = deferred<typeof a>();
+  const client = createFixtureClient({ snapshots: [a, b] });
+  const original = client.getSnapshot;
+  client.getSnapshot = (id, signal) => id === a.project.id ? late.promise : original(id, signal);
+  render(<App client={client} drafts={memoryDrafts()} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: /Second project/ }));
+  await screen.findByRole('heading', { name: 'Second project' });
+  a.project.goal = 'LATE A MUST STAY OUT';
+  a.messages[0]!.text = 'Late private A conversation';
+  await act(async () => late.resolve(a));
+  expect(screen.queryByText('LATE A MUST STAY OUT')).not.toBeInTheDocument();
+  expect(screen.queryByText('Late private A conversation')).not.toBeInTheDocument();
+});
+test('late A owner mutation completion cannot invalidate a still-loading B request', async () => {
+  const a = snapshot(), b = snapshot(100), client = createFixtureClient({ snapshots: [a, b] });
+  const mutation = deferred<Awaited<ReturnType<typeof client.applyAction>>>(), loadingB = deferred<typeof b>();
+  const original = client.getSnapshot, apply = client.applyAction;
+  client.applyAction = async (...args) => { const result = await apply(...args); await mutation.promise; return result; };
+  render(<App client={client} drafts={memoryDrafts()} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Accept plan' }));
+  client.getSnapshot = (id, signal) => id === b.project.id ? loadingB.promise : original(id, signal);
+  await userEvent.click(screen.getByRole('button', { name: /Second project/ }));
+  await act(async () => mutation.resolve({ operationId: crypto.randomUUID(), requestHash: '0'.repeat(64), status: 'completed', result: a.project, projectRevision: 1, eventSequence: 1 }));
+  await act(async () => loadingB.resolve(b));
+  expect(await screen.findByRole('heading', { name: 'Second project' })).toBeVisible();
+});
