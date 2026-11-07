@@ -1,0 +1,30 @@
+import '@testing-library/jest-dom/vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, expect, test } from 'vitest';
+import { createFixtureClient } from '@living-playbooks/api-client';
+import { App } from '../../apps/web/src/app/App';
+import { memoryDrafts, snapshot } from './helpers';
+afterEach(cleanup);
+test('owner accepts the proposed plan and corrects task status without chat', async () => {
+  const client = createFixtureClient();
+  render(<App client={client} drafts={memoryDrafts()} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Accept plan' }));
+  await screen.findByText('Plan accepted');
+  await userEvent.selectOptions(screen.getByLabelText('Status: Record the demo'), 'done');
+  await waitFor(() => expect(screen.getByLabelText('Status: Record the demo')).toHaveValue('done'));
+  expect(await screen.findByText(/Owner reported/)).toBeVisible();
+  expect((await client.getSnapshot(snapshot().project.id)).project.tasks[0]?.ownerOverride).toBe(true);
+  expect(screen.getByText(/synthetic data · no live model/)).toBeVisible();
+  expect(screen.getByText(/Nemotron unavailable/)).toBeVisible();
+});
+test('a new project has unknown progress and unavailable inference rather than green readiness', async () => {
+  render(<App client={createFixtureClient({ snapshots: [] })} drafts={memoryDrafts()} fixture />);
+  await screen.findByText('No projects yet');
+  await userEvent.type(screen.getByLabelText('Project title'), 'New work');
+  await userEvent.type(screen.getByLabelText('Project brief'), 'Build a useful tool');
+  await userEvent.click(screen.getByRole('button', { name: 'Create project' }));
+  expect(await screen.findByText('Progress unknown')).toBeVisible();
+  expect(screen.getByText('No tasks yet. Planning has not produced an accepted task list.')).toBeVisible();
+  expect(screen.queryByText(/100%/)).not.toBeInTheDocument();
+});
