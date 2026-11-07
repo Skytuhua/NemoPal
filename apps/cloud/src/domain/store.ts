@@ -20,20 +20,21 @@ export async function appendEvent(db: PoolClient, project: c.Project, kind: c.Pr
   const row = (await db.query('INSERT INTO events(owner_id,project_id,data) VALUES($1,$2,$3) RETURNING seq',[project.ownerId,project.id,event])).rows[0];
   return Number(row.seq);
 }
-export async function queueJob(db: PoolClient, project: c.Project, kind: c.ManagerJob['kind'], now: Date, inputMessageId: string|null = null, staleCount=0) {
+export async function queueJob(db: PoolClient, project: c.Project, kind: c.ManagerJob['kind'], now: Date, inputMessageId: string|null = null, staleCount=0, authority?:Principal) {
   if(kind==='reflection') {
     const existing=(await db.query("SELECT id FROM jobs WHERE project_id=$1 AND state IN ('queued','running') AND data->>'kind'='reflection' LIMIT 1",[project.id])).rows[0];
     if(existing) return existing.id as string;
   }
   const id = randomUUID();
   const job: c.ManagerJob = { id,projectId:project.id,kind,baseProjectRevision:project.revision,projectEpoch:project.epoch,grantVersions:[],state:'queued',leaseGeneration:0,tries:0,runAfter:new Date(now.getTime()+(kind==='reflection'?c.LIMITS.coalesceMs:0)).toISOString(),leaseExpiresAt:null,inputMessageId,modelCalls:0,toolCalls:0,errorClass:null };
-  await db.query('INSERT INTO jobs(id,project_id,data,state,run_after,stale_count) VALUES($1,$2,$3,$4,$5,$6)',[id,project.id,job,job.state,job.runAfter,staleCount]);
+  await db.query('INSERT INTO jobs(id,project_id,data,state,run_after,stale_count,authority) VALUES($1,$2,$3,$4,$5,$6,$7)',[id,project.id,job,job.state,job.runAfter,staleCount,authority??null]);
   return id;
 }
 
 export type Mutation<T> = { result:T; kind:c.ProjectEvent['kind']; resourceId:string; acceptedJob?:string };
 export class Store {
   constructor(public pool:Pool, public now:()=>Date=()=>new Date()) {}
+  inference:c.ProjectSnapshot['connection']['inference']={available:false,reason:'Live Nemotron capability gate has not passed.'};
 
   async command<T>(principal:Principal, path:string, envelope:c.CommandEnvelope<unknown>, projectId:string|null, mutate:(db:PoolClient,project:c.Project|null)=>Promise<Mutation<T>>) {
     const hash=await c.hashCommand(path,envelope);
@@ -72,7 +73,7 @@ export class Store {
       const id=randomUUID();
       const project:c.Project={id,ownerId:p.ownerId,title:e.input.title,goal:e.input.brief,revision:0,epoch:0,planState:'proposed',phase:'planning',status:'active',manager:{id:randomUUID(),projectId:id,displayName:'Project manager',petPackId:'baseline',promptVersion:'1'},tasks:[],decisions:[],workspace:{schemaVersion:1,id:randomUUID(),revision:0,panels:[]},updatedAt:this.now().toISOString()};
       await db.query('INSERT INTO projects(id,owner_id,data,revision,epoch) VALUES($1,$2,$3,0,0)',[id,p.ownerId,project]);
-      const job=await queueJob(db,project,'initial_plan',this.now());
+      const job=await queueJob(db,project,'initial_plan',this.now(),null,0,p);
       return {result:null,kind:'project_updated',resourceId:id,acceptedJob:job};
     });
   }
@@ -98,7 +99,7 @@ export class Store {
       const x=project!;revision(x.revision,e.expectedRevision);
       if(x.status!=='active')reject(409,'project_paused','Resume this project before requesting inference.');
       const message:c.ChatMessage={id:randomUUID(),projectId:id,role:'owner',text:e.input.text,createdAt:this.now().toISOString(),observationIds:[],operationId:e.operationId};
-      await saveProject(db,x,this.now());const job=await queueJob(db,x,'owner_message',this.now(),message.id);message.jobId=job;
+      await saveProject(db,x,this.now());const job=await queueJob(db,x,'owner_message',this.now(),message.id,0,p);message.jobId=job;
       await db.query('INSERT INTO messages(id,project_id,data) VALUES($1,$2,$3)',[message.id,id,message]);
       return {result:null,kind:'message_added',resourceId:message.id,acceptedJob:job};
     });
@@ -154,7 +155,7 @@ export class Store {
           await db.query('INSERT INTO observations(id,project_id,binding_id,source_item,source_revision,data) VALUES($1,$2,$3,$4,$5,$6)',[observation.id,projectId,id,observation.sourceItemId,observation.sourceRevision,stored]);acceptedIds.push(observation.id);
         }
         const meaningful=input.observations.some(o=>acceptedIds.includes(o.id)&&o.kind!=='activity');
-        if(acceptedIds.length) {await saveProject(db,x,this.now());if(meaningful)await queueJob(db,x,'reflection',this.now());}
+        if(acceptedIds.length) {await saveProject(db,x,this.now());if(meaningful)await queueJob(db,x,'reflection',this.now(),null,0,p);}
         return {result:{acceptedIds,duplicateIds},kind:'observations_added',resourceId:id};
       }
       const input=e.input as c.SourceStateInput|c.SourceHealthInput|c.RevokeSourceInput;
@@ -194,12 +195,7 @@ export class Store {
   async snapshot(p:Principal,id:string):Promise<c.ProjectSnapshot> {
     return transaction(this.pool,async db=>{
       await reauthorize(db,p,this.now());const project=await lockProject(db,id,p.ownerId);
-      const load=async(table:string,max:number)=>(await db.query(`SELECT data FROM ${table} WHERE project_id=$1 ${table==='observations'?'AND data IS NOT NULL':''} ORDER BY ${table==='messages'?"data->>'createdAt' DESC":'id'} LIMIT $2`,[id,max])).rows.map(r=>r.data);
-      const sourceBindings=await load('source_bindings',10) as c.SourceBinding[];
-      const observations=await load('observations',100) as c.Observation[];
-      for(const o of observations)if(o.excerpt!==undefined&&new Date(o.observedAt).getTime()<this.now().getTime()-7*86400_000)delete o.excerpt;
-      const seq=Number((await db.query('SELECT coalesce(max(seq),0) AS seq FROM events WHERE owner_id=$1',[p.ownerId])).rows[0].seq);
-      return c.ProjectSnapshotSchema.parse({project,brief:project.goal,documents:await load('documents',40),messages:(await load('messages',200)).reverse(),sourceBindings,observations,checkIns:await load('checkins',40),eventSequence:seq,connection:{mode:'live',inference:{available:false,reason:'Live Nemotron capability gate has not passed.'},sync:'current',demoTiming:process.env.LP_DEMO_TIMING==='true'}});
+      const snapshot=await snapshotData(db,project,this.now());snapshot.connection.inference=this.inference;return snapshot;
     });
   }
   async list(p:Principal) {
@@ -210,6 +206,16 @@ export class Store {
       return results;
     });
   }
+}
+
+export async function snapshotData(db:PoolClient,project:c.Project,now:Date):Promise<c.ProjectSnapshot>{
+  const id=project.id;
+  const load=async(table:string,max:number)=>(await db.query(`SELECT data FROM ${table} WHERE project_id=$1 ${table==='observations'?'AND data IS NOT NULL':''} ORDER BY ${table==='messages'?"data->>'createdAt' DESC":'id'} LIMIT $2`,[id,max])).rows.map(r=>r.data);
+  const sourceBindings=await load('source_bindings',10) as c.SourceBinding[];
+  const observations=await load('observations',100) as c.Observation[];
+  for(const o of observations)if(o.excerpt!==undefined&&new Date(o.observedAt).getTime()<now.getTime()-7*86400_000)delete o.excerpt;
+  const seq=Number((await db.query('SELECT coalesce(max(seq),0) AS seq FROM events WHERE owner_id=$1',[project.ownerId])).rows[0].seq);
+  return c.ProjectSnapshotSchema.parse({project,brief:project.goal,documents:await load('documents',40),messages:(await load('messages',200)).reverse(),sourceBindings,observations,checkIns:await load('checkins',40),eventSequence:seq,connection:{mode:'live',inference:{available:false,reason:'Live Nemotron capability gate has not passed.'},sync:'current',demoTiming:process.env.LP_DEMO_TIMING==='true'}});
 }
 
 export async function withdrawEvidence(db:PoolClient,project:c.Project,bindingId:string,now:Date) {
@@ -226,5 +232,6 @@ export async function withdrawEvidence(db:PoolClient,project:c.Project,bindingId
   await db.query('UPDATE command_receipts SET response=NULL WHERE project_id=$1',[project.id]);
   // Purge stored inputs from jobs as well; grant/epoch checks fence any in-flight completion.
   await db.query("UPDATE jobs SET tool_receipts='[]' WHERE project_id=$1",[project.id]);
+  await db.query("UPDATE jobs SET state='cancelled',generation=generation+1,data=data || jsonb_build_object('state','cancelled','leaseGeneration',generation+1) WHERE project_id=$1 AND state='queued' AND data->>'kind'='reflection'",[project.id]);
   void now;
 }

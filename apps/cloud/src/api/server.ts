@@ -7,9 +7,10 @@ import { Store } from '../domain/store';
 import { DomainError, reject } from '../domain/errors';
 import { readEvents } from './events';
 
-export function buildServer(pool: Pool, options: { now?:()=>Date }={}) {
+export function buildServer(pool: Pool, options: { now?:()=>Date; inference?:c.ProjectSnapshot['connection']['inference'] }={}) {
   const app=Fastify({logger:false,bodyLimit:c.LIMITS.ingestionBytes+8192,requestTimeout:15000});
   const store=new Store(pool,options.now);
+  if(options.inference)store.inference=options.inference;
   const principals=new WeakMap<FastifyRequest,Principal>();
   const principal=(r:FastifyRequest)=>principals.get(r)!;
   const params=(r:FastifyRequest)=>z.record(z.string(),c.IdSchema).parse(r.params);

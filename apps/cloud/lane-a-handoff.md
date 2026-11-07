@@ -10,6 +10,12 @@ Frozen base: `73175daa1f3d55595fcfeb7fe6beab5db337b7c3`. Ownership: cloud source
 - Ruling: source health cannot resume a paused grant. Only the explicit state command can do that. Health/presentation/SSE never enqueue inference.
 - Ruling: owner reminder consent/timezone are operator-provisioned settings. Missing consent disables proactive questions. The frozen API has no preference mutation DTO.
 - Parent owns independent review; no nested agents or reviewer were started.
+- T02 committed as `f9c78de` after migration, six cloud regressions and TypeScript passed.
+- T03 red: scripted read-tool/continuation and budget regressions failed with runner unavailable; adapter protocol/error regressions failed with adapter unavailable; four queue regressions failed because no job could be claimed.
+- T03 green: 6 cloud files / 20 tests pass against local PostgreSQL, and TypeScript passes. Deterministic fetch responses exercise the provider protocol without any external inference.
+- Ruling: this adapter supports explicit HTTPS chat-completions routes with non-streamed JSON. It sends `stream:false`; unsolicited SSE and 202/pending responses are unsupported blockers. Exact selected endpoint compatibility remains a live gate, never assumed from NVIDIA documentation.
+- Ruling: setup additionally requires `LP_MODEL_LIVE_OPT_IN=true` and positive finite `LP_MODEL_TOKEN_BUDGET`. Durable conservative byte-plus-output token reservations include failed/unknown calls and capability probes. Budget exhaustion never rotates provider or resets counters on restart.
+- Ruling: model-created done/skipped states and user-reported labels are rejected. Owner actions/answers establish those states; genuine read metadata retains its source evidence label.
 
 ## RESULT
 

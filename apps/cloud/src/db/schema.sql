@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS jobs (
  state text NOT NULL, stale_count integer NOT NULL DEFAULT 0, tool_receipts jsonb NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON jobs(state,run_after);
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS authority jsonb;
 CREATE TABLE IF NOT EXISTS checkins (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL,
  dependencies jsonb NOT NULL DEFAULT '[]', available_at timestamptz
