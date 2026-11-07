@@ -1,0 +1,11 @@
+--- a/apps/desktop/src/main/index.ts
++++ b/apps/desktop/src/main/index.ts
+@@ -62,7 +62,7 @@
+   let sync = new SyncEngine(store, client);
+   const windows = createNativeWindows({ renderer, preloadDirectory: resolve(base, '../preload'), position: store.position(), closeWorkspace: () => lifetime.closeWorkspace(), moved: point => { void store.setPosition(point).catch(() => { sendDesktop({ type: 'connection', connected: false, reason: 'Local position could not be saved.' }); }); } });
+   const open = () => { windows.workspace.show(); windows.workspace.focus(); };
+-  const presentation = new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { void refresh(projectId).catch(disconnect); }, Date.now, () => open());
++  const presentation = new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { void refresh(projectId).catch(disconnect); }, Date.now, projectId => { sendDesktop({ type: 'open_project', projectId }); open(); });
+   const preference = async (input: c.PetPreference) => {
+     await presentation.command({ type: 'setPreference', preference: input });
+     if (input.hidden) windows.pet.hide(); else windows.pet.showInactive();
