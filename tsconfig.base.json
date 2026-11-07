@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@living-playbooks/contracts": ["packages/contracts/src/index.ts"],
+      "@living-playbooks/api-client": ["packages/api-client/src/index.ts"],
+      "@living-playbooks/project-ui": ["packages/project-ui/src/index.ts"],
+      "@living-playbooks/nemotron": ["packages/nemotron/src/index.ts"],
+      "@living-playbooks/codex-observer": ["packages/codex-observer/src/index.ts"]
+    }
+  }
+}

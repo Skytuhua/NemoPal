@@ -1,0 +1,401 @@
+{
+    "schemaVersion":  1,
+    "cases":  [
+                  {
+                      "id":  "A01",
+                      "scenario":  "New prompt, no prior history",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A02",
+                      "scenario":  "Plain-text brief",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A03",
+                      "scenario":  "Unsupported file",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A04",
+                      "scenario":  "Genuine Nemotron loop",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A05",
+                      "scenario":  "Wrong model/key/endpoint",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A06",
+                      "scenario":  "Invalid/malicious workspace",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A07",
+                      "scenario":  "Owner edits during response",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A08",
+                      "scenario":  "Unselected thread",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A09",
+                      "scenario":  "Read-only Codex observation",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A10",
+                      "scenario":  "Two fresh persisted source items",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A11",
+                      "scenario":  "Unsupported/changed source",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A12",
+                      "scenario":  "Partial/rotated record",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A13",
+                      "scenario":  "Agent says done",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A14",
+                      "scenario":  "Source tool exit observed",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A15",
+                      "scenario":  "No excerpt consent",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A16",
+                      "scenario":  "Secret/reasoning fixtures",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A17",
+                      "scenario":  "Revoke offline/in flight",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A18",
+                      "scenario":  "Lost upload response",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A19",
+                      "scenario":  "Source queue full/corrupt",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A20",
+                      "scenario":  "Cross-owner/project request",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A21",
+                      "scenario":  "Duplicate owner command",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A22",
+                      "scenario":  "Cancel/lease expires during model run",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A23",
+                      "scenario":  "Restart with due reminder",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A24",
+                      "scenario":  "Complete task before due time",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A25",
+                      "scenario":  "Snooze/quiet hours/caps",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A26",
+                      "scenario":  "Same question in chat/canvas/pet",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A27",
+                      "scenario":  "Main window closes",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A28",
+                      "scenario":  "Overlay and input",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A29",
+                      "scenario":  "Cloud or source stale",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A30",
+                      "scenario":  "Model/UI idle",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A31",
+                      "scenario":  "Project switch with late data",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A32",
+                      "scenario":  "Optional MCP",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A33",
+                      "scenario":  "Optional phone",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A34",
+                      "scenario":  "Build/package output",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A35",
+                      "scenario":  "Backup/restart after accepted update",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  },
+                  {
+                      "id":  "A36",
+                      "scenario":  "Full demonstration",
+                      "status":  "not_run",
+                      "mode":  "none",
+                      "commit":  null,
+                      "evidence":  [
+
+                                   ],
+                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                  }
+              ]
+}
