@@ -8,9 +8,11 @@ export class QuestionPresentation {
   private event?: SafePetEvent;
   private tail: Promise<unknown> = Promise.resolve();
   private generation = 0;
+  private selectedProject: string | null | undefined;
   constructor(private store: JournalStore, private client: PlaybooksClient, private emit: (event: SafePetEvent) => void, private refreshProject: (projectId: string) => void, private now = Date.now, private openProject: (id: string) => void = () => {}) {}
   refresh(raw: ProjectSnapshot, connected: boolean): Promise<void> {
     const snapshot = ProjectSnapshotSchema.parse(raw);
+    if (this.selectedProject !== undefined && snapshot.project.id !== this.selectedProject) return Promise.resolve();
     const generation = ++this.generation;
     const run = this.tail.then(() => this.update(snapshot, connected, generation)); this.tail = run.catch(() => {}); return run;
   }
@@ -42,6 +44,16 @@ export class QuestionPresentation {
     if (JSON.stringify(event) !== JSON.stringify(this.event)) { this.event = event; this.emit(event); }
   }
   current(): SafePetEvent | undefined { return this.event ? structuredClone(this.event) : undefined; }
+  selectProject(projectId?: string): void {
+    ++this.generation;
+    if (this.selectedProject === (projectId ?? null)) return;
+    this.selectedProject = projectId ?? null;
+    this.displayed = undefined;
+    if (this.event && this.event.projectId !== this.selectedProject) {
+      this.event = SafePetEventSchema.parse({ ...this.event, projectId: this.selectedProject, managerName: '', petPackId: 'original-nemo-v1', checkIn: null, state: this.connected ? 'reviewing' : 'offline', demoTiming: false, preference: this.store.preference() });
+      this.emit(this.event);
+    }
+  }
   offline(): void {
     ++this.generation; this.connected = false; this.displayed = undefined;
     if (this.event) { this.event = SafePetEventSchema.parse({ ...this.event, state: 'offline', checkIn: null }); this.emit(this.event); }
@@ -49,7 +61,7 @@ export class QuestionPresentation {
   async command(raw: PetCommand): Promise<void> {
     const input = PetCommandSchema.parse(raw);
     if (input.type === 'setPreference') { await this.store.setPreference(input.preference); if (this.snapshot) await this.refresh(this.snapshot, this.connected); return; }
-    if (input.type === 'openProject') { if (this.snapshot?.project.id !== input.projectId) throw Error('Pet project changed'); this.openProject(input.projectId); return; }
+    if (input.type === 'openProject') { if (this.snapshot?.project.id !== input.projectId || (this.selectedProject !== undefined && this.selectedProject !== input.projectId)) throw Error('Pet project changed'); this.openProject(input.projectId); return; }
     const question = this.displayed;
     if (!this.connected || !question || question.id !== input.checkInId || question.revision !== input.command.expectedRevision || Date.parse(question.expiresAt) <= this.now()) throw Error('Only the displayed current question can be answered');
     const receipt = input.type === 'answer' ? await this.client.answerCheckIn(question.id, input.command) : await this.client.snoozeCheckIn(question.id, input.command);

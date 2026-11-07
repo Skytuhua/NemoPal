@@ -30,5 +30,6 @@ export class CredentialVault {
     return this.credential && Date.parse(this.credential.expiresAt) > Date.now() ? `Bearer ${this.credential.token}` : undefined;
   }
   deviceId(): string | undefined { return this.authorization() ? this.credential?.deviceId : undefined; }
+  localDeviceId(): string | undefined { return this.credential?.deviceId; }
   clearMemory(): void { this.credential = undefined; }
 }
