@@ -38,3 +38,5 @@ No shared changes authorized.
 Pending.
 
 T04 core: three missing-module RED suites followed by GREEN 6/6 desktop tests; pnpm typecheck exit 0. Native process wiring and Windows acceptance remain pending. Credentials use Electron protected-storage port with explicit temporary memory option; tokens never enter the bridge result.
+
+T05 adapter: initial missing-adapter RED suites; GREEN 8/8 observer tests. Installation-layout regression failed on wrong codex/bin path, corrected against installed npm launcher, then passed. Scope probe validated own build/test vendor identity 01a1b7f4-77a3-7331-a770-5d81703b2746 in this exact checkout, tail enrollment returned zero observations at offset 57. No list/archive/start/resume/turn/tool/approval calls. Two fresh completed live updates remain BLOCKED; current source turn is in progress. No raw source content is in the report.
