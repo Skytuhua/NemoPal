@@ -13,7 +13,7 @@ Implemented the owned portion of all six findings from the independent review of
 
 ## CHANGED FILES
 
-Authored changes only: `apps/cloud/src/{checkins,db,domain,jobs}`, `packages/nemotron/src/{adapter,runner,tools}.ts`, cloud regression tests and this owned report. No root manifests/dependencies, shared contracts/client, UI, desktop, deployment configuration or resources were edited.
+Authored changes only: `apps/cloud/src/{checkins,db,domain,jobs}`, `apps/cloud/src/main.ts`, `packages/nemotron/src/{adapter,runner,tools}.ts`, cloud regression tests and this owned report. No root manifests/dependencies, shared contracts/client, UI, desktop or deployment configuration was edited. The explicitly authorized main merge consumes the parent's pairing changes unchanged.
 
 Schema changes: corrected owner defaults and legacy default tuple; internal `jobs.repair_attempted boolean NOT NULL DEFAULT false`. The durable global slot uses existing job state/lease columns, serialized by transaction advisory lock 7317503. No extra service/table or dependency is needed.
 
@@ -71,3 +71,14 @@ The cloud suite also executes the existing production bundle/restart, authentica
 ## COMMIT
 
 Base: `d61bc552b81d1a0969fb8a2c3bef73ac1a2a85a0`. Focused correction commit, authorized main integration, final tested head and stacked PR are recorded in the delivery update/final reply. No force push, PR merge, watch or child agent is part of this task.
+
+## DELIVERY UPDATE / DATABASE RESILIENCE
+
+- Focused review correction: `000aba6`; normal integration merge: `77a5b60c85c5addda38ce1f4b912e941a7ef7df4`, consuming main `5ae1bdc60eda41526de4839e5abef6b98181aa7e` (verified main tree `8089018c3e7d55f0e59cc1fbc6076877473eb3ee`). No conflicts or force push. All pairing files are parent's unmodified main content.
+- Main-integrated full suite before the subsequently reported resilience blocker: **37 files / 198 tests passed**, 0 failures (113.50 seconds). TypeScript passes. Web/cloud production bundles build; root build still stops at the desktop entry point absent from this retained checkout.
+- Newly reported hosted blocker independently reproduced on this corrected code: after successful readiness, actual app-owned idle PostgreSQL connection termination exited the bundled cloud with code 1. The isolated connectivity-outage fixture also reproduced exit 1. Raw child stderr was held only in test memory and never printed or written to an artifact.
+- Cause verified in the installed pg-pool source: its idle listener attaches the client to the error and emits the pool's `error` event. Main had no listener, so Node treated it as unhandled and could print client internals. Main now registers a listener immediately after pool creation and emits only `Cloud database connection unavailable.`. No catch-all exception suppression was added; readiness still performs a real `SELECT 1`; existing SIGTERM/SIGINT shutdown wiring is unchanged.
+- `tests/cloud/resilience.test.ts` contains two actual production-esbuild/bundled-main red -> green regressions. One terminates only an idle backend selected by this app's unique synthetic application_name, current database and user. The other uses an isolated, test-owned loopback TCP fixture: only this cloud's database connectivity is removed/restored. No PostgreSQL container/service/database was stopped, replaced, reset or created, and no other backend was terminated. The dedicated playbooks_test URL guard is unchanged and also repeated by the fixture.
+- Sanitized local outage receipt: initial readiness **200**; process survives both failures; liveness **200**; disconnected readiness **503** with only the fixed API error; unauthenticated project route **401** while disconnected and after recovery; restored connectivity yields actual readiness **200** without app restart; model capability remains **BLOCKED**. Both focused tests pass. Every emitted stderr line must equal the fixed diagnostic; assertions never expose raw failure output, connection configuration or secrets.
+- This is actual PostgreSQL plus an isolated application-connectivity outage, not a claim that Railway's PostgreSQL was stopped/recovered. Hosted acceptance remains **BLOCKED** until its owner repeats acceptance against the final exact corrected head. Railway/root deployment configuration remains untouched and model OFF.
+- Final whole-suite rerun includes the resilience tests; its result and final delivery head are recorded in the final reply.

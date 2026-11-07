@@ -11,6 +11,8 @@ const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname);
 if (origin.protocol !== 'https:' && !(loopback && origin.protocol === 'http:'))
     throw new Error('PUBLIC_ORIGIN must use HTTPS outside loopback development.');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
+// pg emits idle-client failures on the pool; never log the error/client object or let it exit Node.
+pool.on('error', () => console.error('Cloud database connection unavailable.'));
 const model = await configureModel(pool);
 const app = buildServer(pool, { inference: model.inference });
 const stopManager = startManagerDispatcher(new JobQueue(pool), model.adapter);
