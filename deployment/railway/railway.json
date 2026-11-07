@@ -1,0 +1,28 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "deployment/railway/Dockerfile",
+    "watchPatterns": [
+      "/deployment/railway/**",
+      "/apps/cloud/**",
+      "/packages/contracts/**",
+      "/packages/nemotron/**",
+      "/package.json",
+      "/pnpm-lock.yaml",
+      "/pnpm-workspace.yaml",
+      "/tsconfig*.json"
+    ]
+  },
+  "deploy": {
+    "preDeployCommand": ["node --import tsx apps/cloud/src/db/migrate.ts"],
+    "healthcheckPath": "/health/ready",
+    "healthcheckTimeout": 120,
+    "numReplicas": 1,
+    "sleepApplication": false,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3,
+    "overlapSeconds": "0",
+    "drainingSeconds": "150"
+  }
+}
