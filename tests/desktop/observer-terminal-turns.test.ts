@@ -4,7 +4,7 @@ import { localBinding, metadata, turn, finalMessage, command } from '../../fixtu
 
 it.each(['failed', 'interrupted'])('enrollment on a %s turn advances to later completed work without repeating it', async status => {
   const terminal = { ...turn('terminal', [], status), completedAt: 1794050001 };
-  let page = { data: [terminal] };
+  let page: { data: ReturnType<typeof turn>[] } = { data: [terminal] };
   const observer = new AppServerObserver({ version: async () => '0.166.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
   const signal = new AbortController().signal; const baseline = await observer.readDelta(localBinding, null, signal);
   page = { data: [turn('later', [finalMessage]), terminal] };

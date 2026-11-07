@@ -44,6 +44,9 @@ async function start() {
   const consent = new ConsentSelections(origin, currentReceiving());
   const authority: Authority = { projects: new Set(), checkIns: new Map(), documents: new Map(), jobs: new Map() };
   let selectedProject: string | undefined;
+  let pinnedProject = store.preference().pinnedProjectId;
+  let selectionGeneration = 0;
+  const petProject = () => pinnedProject ?? selectedProject;
   let connected = false;
   let suspended = false;
   let quitting = false;
@@ -63,10 +66,22 @@ async function start() {
   const windows = createNativeWindows({ renderer, preloadDirectory: resolve(base, '../preload'), position: store.position(), closeWorkspace: () => lifetime.closeWorkspace(), moved: point => { void store.setPosition(point).catch(() => { sendDesktop({ type: 'connection', connected: false, reason: 'Local position could not be saved.' }); }); } });
   const open = () => { windows.workspace.show(); windows.workspace.focus(); };
   const presentation = new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { void refresh(projectId).catch(disconnect); }, Date.now, projectId => { sendDesktop({ type: 'open_project', projectId }); open(); });
+  const fenceSelection = () => { const generation = ++selectionGeneration; presentation.selectProject(petProject()); return generation; };
   const preference = async (input: c.PetPreference) => {
-    await presentation.command({ type: 'setPreference', preference: input });
+    const previousPin = pinnedProject;
+    const pinChanged = previousPin !== input.pinnedProjectId;
+    pinnedProject = input.pinnedProjectId;
+    const generation = fenceSelection();
+    try {
+      if (pinChanged) await store.setPreference(input);
+      else await presentation.command({ type: 'setPreference', preference: input });
+    } catch (error) {
+      if (generation === selectionGeneration) { pinnedProject = previousPin; fenceSelection(); }
+      throw error;
+    }
     if (input.hidden) windows.pet.hide(); else windows.pet.showInactive();
-    if (input.pinnedProjectId) { selectedProject = input.pinnedProjectId; if (connected) await refresh(input.pinnedProjectId); }
+    const project = petProject();
+    if (pinChanged && connected && project) await refresh(project, generation);
     tray.rebuild();
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
@@ -84,10 +99,9 @@ async function start() {
     const local = store.bindings().filter(entry => entry.binding.projectId === snapshot.project.id).map(entry => entry.binding);
     return c.ProjectSnapshotSchema.parse({ ...snapshot, sourceBindings: [...snapshot.sourceBindings.filter(binding => !local.some(entry => entry.id === binding.id)), ...local] });
   };
-  async function refresh(projectId: string) {
+  async function refresh(projectId: string, generation = selectionGeneration) {
     requirePaired(); const snapshot = remember(await client.getSnapshot(projectId));
-    selectedProject = store.preference().pinnedProjectId ?? projectId;
-    if (selectedProject === projectId) await presentation.refresh(snapshot, connected && !suspended);
+    if (generation === selectionGeneration && petProject() === projectId) await presentation.refresh(snapshot, connected && !suspended);
     return snapshot;
   }
   function disconnect() { connected = false; presentation.offline(); sendDesktop({ type: 'connection', connected: false, reason: 'Cloud unavailable; local monitoring and pending cloud revocation are reported separately.' }); }
@@ -96,7 +110,12 @@ async function start() {
     switch (input.type) {
       case 'listProjects': { const result = await client.listProjects(); const ids = new Set(result.map(project => project.id)); for (const id of authority.projects) if (!ids.has(id)) authority.projects.delete(id); for (const id of ids) authority.projects.add(id); return result; }
       case 'createProject': return client.createProject(input.command);
-      case 'getSnapshot': { const result = await sync.run(); connected = result.connected; return refresh(input.projectId); }
+      case 'getSnapshot': {
+        selectedProject = input.projectId;
+        const generation = fenceSelection();
+        const result = await sync.run(); connected = result.connected;
+        return refresh(input.projectId, generation);
+      }
       case 'sendMessage': { const job = await client.sendMessage(input.projectId, input.command); authority.jobs.set(job.jobId, input.projectId); return job; }
       case 'applyAction': return client.applyAction(input.projectId, input.command);
       case 'saveDocument': return client.saveDocument(input.projectId, input.documentId, input.command);
@@ -165,7 +184,7 @@ async function start() {
         for (const id of authority.projects) if (!authorized.has(id)) authority.projects.delete(id);
         for (const id of authorized) authority.projects.add(id);
         const uploaded = await sync.run(); connected = uploaded.connected; if (!connected) { disconnect(); return; }
-        const project = store.preference().pinnedProjectId ?? selectedProject; if (project && authority.projects.has(project)) await refresh(project);
+        const project = petProject(); if (project && authority.projects.has(project)) await refresh(project);
         else if (!eventSequence && projects[0]) eventSequence = (await client.getSnapshot(projects[0].id)).eventSequence;
         if (!eventsAbort || eventsAbort.signal.aborted) {
           eventsAbort = new AbortController(); const signal = eventsAbort.signal;
