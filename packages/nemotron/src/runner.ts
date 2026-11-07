@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import * as c from '@living-playbooks/contracts';
 import { executeReadTool } from './tools';
 import { validateProposal } from './proposal-validation';
+import { InvalidProposalError } from './adapter';
 export type ToolReceipt = {
     name: c.ReadToolCall['name'];
     references: string[];
@@ -13,6 +14,7 @@ export type RunnerHooks = {
     beforeTool?: (call: c.ReadToolCall) => Promise<c.AuthorizedProjectContext>;
     toolReceipt?: (receipt: ToolReceipt) => Promise<void>;
     toolCount?: () => Promise<void>;
+    beforeRepair?:()=>Promise<boolean>;
 };
 export async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     signal.throwIfAborted();
@@ -34,6 +36,11 @@ export class BoundedRunner implements c.ProjectManagerRunner {
         let modelCalls = job.modelCalls;
         let toolCalls = job.toolCalls;
         let repaired = false;
+        const repair=async(content:string)=>{
+            if(repaired||modelCalls>=c.LIMITS.modelCalls)return false;
+            if(this.hooks.beforeRepair&&!await this.hooks.beforeRepair())return false;
+            repaired=true;messages.push({role:'user',content});return true;
+        };
         while (modelCalls < c.LIMITS.modelCalls) {
             signal.throwIfAborted();
             if (c.utf8Bytes(JSON.stringify(messages)) > c.LIMITS.contextBytes)
@@ -41,14 +48,17 @@ export class BoundedRunner implements c.ProjectManagerRunner {
             const input = c.ModelTurnInputSchema.parse({ projectId: job.projectId, messages, remainingModelCalls: c.LIMITS.modelCalls - modelCalls, remainingToolCalls: c.LIMITS.toolCalls - toolCalls });
             await this.hooks.beforeCall?.(input);
             modelCalls++;
-            const raw = await abortable(this.adapter.next(input, signal), signal);
+            let raw:c.ModelTurnResult;
+            try{raw=await abortable(this.adapter.next(input,signal),signal);}
+            catch(error){
+                if(error instanceof InvalidProposalError&&await repair('Return a valid RAW JSON ManagerProposal matching the supplied schema. No fences or surrounding prose. This is the only model correction attempt.'))continue;
+                throw error;
+            }
             if (c.utf8Bytes(JSON.stringify(raw)) > 65536)
                 throw new Error('output_budget');
             const parsed = c.ModelTurnResultSchema.safeParse(raw);
             if (!parsed.success) {
-                if (!repaired && modelCalls < 4) {
-                    repaired = true;
-                    messages.push({ role: 'user', content: 'Return a valid ManagerProposal or allowlisted read-tool call using the required schema. This is the only repair attempt.' });
+                if (await repair('Return a valid ManagerProposal or allowlisted read-tool call using the required schema. This is the only repair attempt.')) {
                     continue;
                 }
                 throw new Error('model_contract');
@@ -59,9 +69,7 @@ export class BoundedRunner implements c.ProjectManagerRunner {
                     return validateProposal(result.proposal, job, context);
                 }
                 catch (error) {
-                    if (!repaired && modelCalls < 4) {
-                        repaired = true;
-                        messages.push({ role: 'user', content: 'The proposal failed domain validation. Preserve owner authority, real evidence references, current entity IDs and job fences. Return a corrected proposal. This is the only repair attempt.' });
+                    if (await repair('The proposal failed domain validation. Preserve owner authority, real evidence references, current entity IDs and job fences. Return a corrected proposal. This is the only repair attempt.')) {
                         continue;
                     }
                     throw error;

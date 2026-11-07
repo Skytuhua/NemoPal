@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import * as c from '@living-playbooks/contracts';
+import { executeReadTool } from './tools';
+import { validateProposal } from './proposal-validation';
 export type NemotronSettings = {
     baseUrl: string;
     model: string;
@@ -10,6 +12,9 @@ export type NemotronSettings = {
 };
 export class ProviderError extends Error {
     constructor(code: string, public retryAfterSeconds = 60) { super(code); }
+}
+export class InvalidProposalError extends Error {
+    constructor(){super('model_contract');}
 }
 const schema = z.toJSONSchema(c.ManagerProposalSchema, { unrepresentable: 'any' });
 const tools = [
@@ -34,13 +39,13 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
             throw new Error('model_configuration');
         this.endpoint = `${base.href.replace(/\/$/, '')}/chat/completions`;
     }
-    private async turn(input: c.ModelTurnInput, signal: AbortSignal, forceTool = false): Promise<c.ModelTurnResult> {
+    private async turn(input: c.ModelTurnInput, signal: AbortSignal): Promise<c.ModelTurnResult> {
         c.ModelTurnInputSchema.parse(input);
         signal.throwIfAborted();
         if (c.utf8Bytes(JSON.stringify(input.messages)) > c.LIMITS.contextBytes)
             throw new Error('input_budget');
-        const messages = input.messages.map(m => ({ role: m.role, content: m.content, ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}), ...(m.toolCalls ? { tool_calls: m.toolCalls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) } : {}) }));
-        const body = { model: this.settings.model, messages, tools, tool_choice: forceTool ? { type: 'function', function: { name: 'read_project_state' } } : 'auto', parallel_tool_calls: false, stream: false, max_tokens: 4096, response_format: { type: 'json_schema', json_schema: { name: 'ManagerProposal', strict: true, schema } } };
+        const messages = [{role:'system',content:`Return final proposals as RAW JSON matching this schema. No Markdown fences or surrounding prose. This schema is validated locally; no grammar backend is assumed. ${JSON.stringify(schema)}`},...input.messages.map(m => ({ role: m.role, content: m.content, ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}), ...(m.toolCalls ? { tool_calls: m.toolCalls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) } : {}) }))];
+        const body = { model: this.settings.model, messages, tools, tool_choice: 'auto', parallel_tool_calls: false, stream: false, max_tokens: 4096 };
         const tokenReservation = c.utf8Bytes(JSON.stringify(body)) + 4096;
         if (this.calls >= this.settings.callBudget || this.tokens + tokenReservation > this.settings.tokenBudget)
             throw new Error('account_budget');
@@ -121,9 +126,14 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
                 return c.ModelTurnResultSchema.parse({ type: 'tool_calls', calls: message.tool_calls.map(call => ({ id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments) })), ...requestId });
             if (typeof message.content !== 'string')
                 throw new Error();
-            return c.ModelTurnResultSchema.parse({ type: 'proposal', proposal: JSON.parse(message.content), ...requestId });
+            let proposal:unknown;
+            try{proposal=JSON.parse(message.content);}catch{throw new InvalidProposalError();}
+            const validated=c.ManagerProposalSchema.safeParse(proposal);
+            if(!validated.success)throw new InvalidProposalError();
+            return {type:'proposal',proposal:validated.data,...requestId};
         }
-        catch {
+        catch(error) {
+            if(error instanceof InvalidProposalError)throw error;
             throw new ProviderError('unsupported_response');
         }
     }
@@ -133,24 +143,36 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
         const projectId = randomUUID();
         const jobId = randomUUID();
         const workspace = { schemaVersion: 1, id: randomUUID(), revision: 0, panels: [] };
-        const required = { schemaVersion: 1, jobId, baseProjectRevision: 0, projectEpoch: 0, grantVersions: [], taskChanges: [], decisionSuggestions: [], workspace, reply: { text: 'Synthetic capability probe.', observationIds: [] } };
-        const messages: c.ModelMessage[] = [{ role: 'system', content: 'Use read_project_state, then return the exact synthetic ManagerProposal requested. No other tools or actions.' }, { role: 'user', content: JSON.stringify({ requiredProposal: required, projectId }) }];
+        const required = { schemaVersion: 1, jobId, baseProjectRevision: 0, projectEpoch: 0, grantVersions: [], taskChanges: [], decisionSuggestions: [], workspace, reply: { text: 'Read the project goal from the tool result.', observationIds: [] } };
+        const messages: c.ModelMessage[] = [{ role: 'system', content: 'Determine the project goal using an available read tool. Then return the required ManagerProposal with reply.text set to that exact goal. No other actions.' }, { role: 'user', content: JSON.stringify({ requiredProposal: required, projectId }) }];
         try {
-            const first = await this.turn({ projectId, messages, remainingModelCalls: 4, remainingToolCalls: 6 }, signal, true);
+            const first = await this.turn({ projectId, messages, remainingModelCalls: 4, remainingToolCalls: 6 }, signal);
             if (first.type !== 'tool_calls' || first.calls.length !== 1 || first.calls[0]!.name !== 'read_project_state')
                 throw new Error('probe_tool');
             report.toolCall = true;
-            messages.push({ role: 'assistant', content: '', toolCalls: first.calls }, { role: 'tool', toolCallId: first.calls[0]!.id, content: JSON.stringify({ projectId, synthetic: true }) });
-            const second = await this.turn({ projectId, messages, remainingModelCalls: 3, remainingToolCalls: 5 }, signal);
-            if (second.type !== 'proposal' || second.proposal.jobId !== jobId)
-                throw new Error('probe_continuation');
-            report.toolContinuation = true;
-            report.structuredProposal = true;
-            report.available = true;
-            report.reason = 'Authenticated tool call, continuation and shared proposal schema passed.';
+            // The goal is generated only after automatic selection; a prefilled proposal cannot prove continuation.
+            const project:c.Project={id:projectId,ownerId:randomUUID(),title:'Synthetic capability probe',goal:`Synthetic tool-result goal ${randomUUID()}`,revision:0,epoch:0,planState:'proposed',phase:'planning',status:'active',manager:{id:randomUUID(),projectId,displayName:'Probe manager',petPackId:'baseline',promptVersion:'1'},tasks:[],decisions:[],workspace:c.WorkspaceSpecSchema.parse(workspace),updatedAt:new Date().toISOString()};
+            const context:c.AuthorizedProjectContext={grantVersions:[],snapshot:c.ProjectSnapshotSchema.parse({project,brief:project.goal,documents:[],messages:[],sourceBindings:[],observations:[],checkIns:[],eventSequence:0,connection:{mode:'fixture',inference:{available:false,reason:'Synthetic capability probe context.'},sync:'current',demoTiming:false}})};
+            const job:c.ManagerJob={id:jobId,projectId,kind:'initial_plan',baseProjectRevision:0,projectEpoch:0,grantVersions:[],state:'running',leaseGeneration:1,tries:1,runAfter:project.updatedAt,leaseExpiresAt:new Date(Date.now()+180000).toISOString(),inputMessageId:null,modelCalls:0,toolCalls:0,errorClass:null};
+            messages.push({ role: 'assistant', content: '', toolCalls: first.calls }, { role: 'tool', toolCallId: first.calls[0]!.id, content: JSON.stringify(executeReadTool(first.calls[0],context)) });
+            for(let attempt=0;attempt<2;attempt++){
+                try{
+                    const result=await this.turn({projectId,messages,remainingModelCalls:3-attempt,remainingToolCalls:5},signal);
+                    if(result.type!=='proposal')throw new ProviderError('unsupported_response');
+                    validateProposal(result.proposal,job,context);
+                    if(result.proposal.reply.text!==project.goal)throw new InvalidProposalError();
+                    report.toolContinuation=true;report.structuredProposal=true;report.available=true;
+                    report.reason='Authenticated automatic tool selection, scoped tool-result interpretation and strict raw proposal validation passed.';
+                    break;
+                }catch(error){
+                    const repairable=error instanceof InvalidProposalError||error instanceof Error&&error.message.startsWith('proposal_');
+                    if(attempt!==0||!repairable)throw error;
+                    messages.push({role:'user',content:'The proposal failed validation. Return RAW JSON using the required fences and exact project goal from the tool result. This is the only model correction attempt.'});
+                }
+            }
         }
         catch {
-            report.reason = 'Capability unavailable; inspect sanitized operator diagnostics and exact route support.';
+            report.reason = 'Automatic selection, tool-result interpretation or strict raw proposal validation is unavailable. No live capability is granted.';
         }
         return c.ModelCapabilityReportSchema.parse(report);
     }

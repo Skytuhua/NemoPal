@@ -1,14 +1,55 @@
 import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import * as c from '@living-playbooks/contracts';
 import { JobQueue } from '../../apps/cloud/src/jobs/queue';
 import { command, setup } from './helpers';
+import { issueGrant,redeem } from '../../apps/cloud/src/auth/credentials';
 let h: Awaited<ReturnType<typeof setup>>;
 let now: Date;
 let queue: JobQueue;
 beforeEach(async () => { h = await setup(); now = new Date(Date.now() + 1000); queue = new JobQueue(h.pool, () => now); });
 afterEach(async () => { await h?.close(); });
 const makeProposal = (job: c.ManagerJob, s: c.ProjectSnapshot): c.ManagerProposal => ({ schemaVersion: 1, jobId: job.id, baseProjectRevision: job.baseProjectRevision, projectEpoch: job.projectEpoch, grantVersions: job.grantVersions, taskChanges: [], decisionSuggestions: [], workspace: s.project.workspace, reply: { text: 'Scripted no-op reflection.', observationIds: [] } });
+test.each(['same project','different projects','different owners'])('independent connections reserve one durable global active slot across two jobs: %s',async(scope)=>{
+    const {projectId}=await h.create();
+    if(scope==='same project')
+        expect((await h.request('POST',`/v1/projects/${projectId}/messages`,command({text:'Second due job'},0))).statusCode).toBe(200);
+    else if(scope==='different projects')
+        expect((await h.request('POST','/v1/projects',command({title:'Second project',brief:'Synthetic competing job.'}))).statusCode).toBe(200);
+    else{
+        const other=await redeem(h.pool,(await issueGrant(h.pool,{timezone:'UTC'})).code);
+        expect((await h.request('POST','/v1/projects',command({title:'Other synthetic owner',brief:'Separate owner competing job.'}),other.token)).statusCode).toBe(200);
+    }
+    const firstPool=new Pool({connectionString:process.env.DATABASE_URL,max:1});
+    const secondPool=new Pool({connectionString:process.env.DATABASE_URL,max:1});
+    try{
+        const first=new JobQueue(firstPool,()=>now);const second=new JobQueue(secondPool,()=>now);
+        const pids=await Promise.all([firstPool.query('SELECT pg_backend_pid() AS pid'),secondPool.query('SELECT pg_backend_pid() AS pid')]);
+        expect(pids[0].rows[0].pid).not.toBe(pids[1].rows[0].pid);
+        const claimed=await Promise.all([first.claim(),second.claim()]);
+        expect(claimed.filter(Boolean)).toHaveLength(1);
+        const active=claimed.find(Boolean)!;
+        expect(await new JobQueue(secondPool,()=>now).claim()).toBeNull();
+        expect((await h.pool.query("SELECT 1 FROM jobs WHERE state='running' AND lease_expires_at>$1",[now])).rowCount).toBe(1);
+        const context=await first.context(active);const oldProposal=makeProposal(active,context.snapshot);
+        now=new Date(now.getTime()+181000);
+        const reclaimed=(await second.claim())!;
+        expect(reclaimed.id).toBe(active.id);expect(reclaimed.leaseGeneration).toBeGreaterThan(active.leaseGeneration);
+        await expect(first.commit(active,oldProposal)).rejects.toThrow('lease_lost');
+        expect(await first.claim()).toBeNull();
+        const current=await second.context(reclaimed);await second.commit(reclaimed,makeProposal(reclaimed,current.snapshot));
+        const next=await first.claim();expect(next).not.toBeNull();expect(next!.id).not.toBe(active.id);
+    }finally{await firstPool.end();await secondPool.end();}
+});
+test('owner cancellation releases the global slot and fences the cancelled generation',async()=>{
+    const {projectId}=await h.create();await h.request('POST',`/v1/projects/${projectId}/messages`,command({text:'Queued follow-up'},0));
+    const active=(await queue.claim())!;const context=await queue.context(active);
+    expect(await queue.claim()).toBeNull();
+    expect((await h.request('POST',`/v1/jobs/${active.id}/cancel`,command({}))).statusCode).toBe(200);
+    expect(await queue.claim()).not.toBeNull();
+    await expect(queue.commit(active,makeProposal(active,context.snapshot))).rejects.toThrow('lease_lost');
+});
 test('two claimers get one job; expired lease generation fences old completion', async () => {
     const { projectId } = await h.create();
     const [a, b] = await Promise.all([queue.claim(), queue.claim()]);

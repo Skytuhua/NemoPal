@@ -1,8 +1,14 @@
 CREATE TABLE IF NOT EXISTS owners (
  id uuid PRIMARY KEY, timezone text NOT NULL, reminders boolean NOT NULL DEFAULT false,
- quiet_start integer NOT NULL DEFAULT 22, quiet_end integer NOT NULL DEFAULT 8,
- attention_limit integer NOT NULL DEFAULT 6
+ quiet_start integer NOT NULL DEFAULT 21, quiet_end integer NOT NULL DEFAULT 9,
+ attention_limit integer NOT NULL DEFAULT 3
 );
+ALTER TABLE owners ALTER COLUMN quiet_start SET DEFAULT 21;
+ALTER TABLE owners ALTER COLUMN quiet_end SET DEFAULT 9;
+ALTER TABLE owners ALTER COLUMN attention_limit SET DEFAULT 3;
+-- Correct the prior baseline's exact default tuple; retain deliberately customized preferences.
+UPDATE owners SET quiet_start=21,quiet_end=9,attention_limit=3
+ WHERE quiet_start=22 AND quiet_end=8 AND attention_limit=6;
 CREATE TABLE IF NOT EXISTS credentials (
  id uuid PRIMARY KEY, owner_id uuid NOT NULL REFERENCES owners(id), device_id uuid,
  kind text NOT NULL CHECK (kind IN ('pairing','access')), secret_hash text UNIQUE NOT NULL,
@@ -35,6 +41,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON jobs(state,run_after);
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS authority jsonb;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS repair_attempted boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS checkins (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL,
  dependencies jsonb NOT NULL DEFAULT '[]', available_at timestamptz

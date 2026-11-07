@@ -18,7 +18,7 @@ export async function runJob(queue: JobQueue, adapter: c.NemotronAdapter, job: c
     }, 1000);
     try {
         const context = await queue.context(job);
-        const runner = new BoundedRunner(adapter, { beforeCall: async () => { await queue.context(job); await queue.countCall(job); }, beforeTool: () => queue.context(job), toolCount: () => queue.countTool(job), toolReceipt: receipt => queue.receipt(job, receipt) });
+        const runner = new BoundedRunner(adapter, { beforeCall: async () => { await queue.context(job); await queue.countCall(job); }, beforeTool: () => queue.context(job), toolCount: () => queue.countTool(job), toolReceipt: receipt => queue.receipt(job, receipt),beforeRepair:()=>queue.claimRepair(job) });
         const proposal = await runner.run(job, context, signal);
         await queue.commit(job, proposal);
     }

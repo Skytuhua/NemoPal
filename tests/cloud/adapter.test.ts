@@ -13,7 +13,7 @@ test('HTTP adapter translates an actual function call and tool-result continuati
     expect(result).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call-1', name: 'read_project_state', arguments: {} }] });
     expect(bodies[0]).toMatchObject({ model: settings.model, stream: false, parallel_tool_calls: false });
     await adapter.next({ ...input, messages: [...input.messages, { role: 'assistant', content: '', toolCalls: [{ id: 'call-1', name: 'read_project_state', arguments: {} }] }, { role: 'tool', content: '{"project":"synthetic"}', toolCallId: 'call-1' }] }, new AbortController().signal);
-    expect(bodies[1]).toMatchObject({ messages: [{ role: 'user', content: 'Synthetic tool test.' }, { role: 'assistant', content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'read_project_state', arguments: '{}' } }] }, { role: 'tool', content: '{"project":"synthetic"}', tool_call_id: 'call-1' }] });
+    expect(bodies[1]).toMatchObject({ messages: [{role:'system',content:expect.stringContaining('RAW JSON')},{ role: 'user', content: 'Synthetic tool test.' }, { role: 'assistant', content: '', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'read_project_state', arguments: '{}' } }] }, { role: 'tool', content: '{"project":"synthetic"}', tool_call_id: 'call-1' }] });
 });
 test('202 is unsupported pending and does not submit another request; errors are sanitized', async () => {
     let count = 0;

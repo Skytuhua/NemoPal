@@ -12,6 +12,10 @@ export class JobQueue {
     constructor(public pool: Pool, public now: () => Date = () => new Date()) { }
     async claim(): Promise<c.ManagerJob | null> {
         return transaction(this.pool, async (db) => {
+            // The running lease is the durable global slot; serialize its admission across processes.
+            await db.query('SELECT pg_advisory_xact_lock(7317503)');
+            if ((await db.query("SELECT id FROM jobs WHERE state='running' AND lease_expires_at>$1 LIMIT 1", [this.now()])).rowCount)
+                return null;
             const candidate = (await db.query("SELECT j.id,j.project_id,j.authority,p.owner_id FROM jobs j JOIN projects p ON p.id=j.project_id WHERE NOT p.deleted AND (j.state='queued' AND j.run_after<=$1 OR j.state='running' AND j.lease_expires_at<=$1) ORDER BY CASE WHEN j.state='running' THEN 0 ELSE 1 END,j.run_after,j.id LIMIT 1", [this.now()])).rows[0];
             if (!candidate)
                 return null;
@@ -75,6 +79,7 @@ export class JobQueue {
         throw new Error('lease_project_paused'); current.leaseExpiresAt = new Date(this.now().getTime() + 180000).toISOString(); await persistJob(db, current); }); }
     async countCall(job: c.ManagerJob) { return this.locked(job, async (db, current) => { if (current.modelCalls >= 4)
         throw new Error('model_budget'); current.modelCalls++; await persistJob(db, current); }); }
+    async claimRepair(job:c.ManagerJob){return this.locked(job,async db=>Boolean((await db.query('UPDATE jobs SET repair_attempted=true WHERE id=$1 AND NOT repair_attempted RETURNING id',[job.id])).rowCount));}
     async countTool(job: c.ManagerJob) { return this.locked(job, async (db, current) => { if (current.toolCalls >= 6)
         throw new Error('tool_budget'); current.toolCalls++; await persistJob(db, current); }); }
     async receipt(job: c.ManagerJob, receipt: ToolReceipt) { return this.locked(job, async (db) => { await db.query('UPDATE jobs SET tool_receipts=tool_receipts || $2::jsonb WHERE id=$1', [job.id, JSON.stringify([receipt])]); }); }
