@@ -131,13 +131,13 @@ export function createHttpClient(options: HttpClientOptions): c.PlaybooksClient 
   }
 
   const id = (value: string) => parseContract(c.IdSchema, value);
-  async function command<I, O>(path: string, method: string, input: unknown, inputSchema: Parser<I>, outputSchema: Parser<O>, matchesResource?: (result: O) => boolean): Promise<O> {
+  async function command<I, O>(path: string, method: string, input: unknown, inputSchema: Parser<I>, outputSchema: Parser<O>, matchesResource?: (result: O, body: I) => boolean): Promise<O> {
     const body = parseContract(inputSchema, input);
     const requestHash = await c.hashCommand(path, body);
     const result = await request(path, method, outputSchema, body);
     const receipt = result && typeof result === 'object' && 'receipt' in result ? result.receipt : result;
     if (!receipt || typeof receipt !== 'object' || !('operationId' in receipt) || !('requestHash' in receipt) || receipt.operationId !== (body as c.CommandEnvelope<unknown>).operationId || receipt.requestHash !== requestHash) throw new ClientError('invalid_response', 'The API returned a receipt for another command.');
-    if (matchesResource && !matchesResource(result)) throw new ClientError('invalid_response', 'The API returned a receipt for another resource.');
+    if (matchesResource && !matchesResource(result, body)) throw new ClientError('invalid_response', 'The API returned a receipt for another resource.');
     return result;
   }
 
@@ -159,7 +159,11 @@ export function createHttpClient(options: HttpClientOptions): c.PlaybooksClient 
     enrollSource: (projectId, input) => command(`/v1/projects/${id(projectId)}/sources`, 'POST', input, c.revisionedCommandSchema(c.EnrollSourceInputSchema), c.commandReceiptSchema(c.SourceBindingSchema), output => output.result.projectId === projectId),
     setSourceState: (bindingId, input) => command(`/v1/sources/${id(bindingId)}/state`, 'POST', input, c.commandEnvelopeSchema(c.SourceStateInputSchema), c.commandReceiptSchema(c.SourceBindingSchema), output => output.result.id === bindingId),
     revokeSource: (bindingId, input) => command(`/v1/sources/${id(bindingId)}/revoke`, 'POST', input, c.commandEnvelopeSchema(c.RevokeSourceInputSchema), c.commandReceiptSchema(c.SourceBindingSchema), output => output.result.id === bindingId),
-    ingestObservations: (bindingId, input) => command(`/v1/sources/${id(bindingId)}/observations`, 'POST', input, c.commandEnvelopeSchema(c.IngestObservationsInputSchema), c.commandReceiptSchema(c.IngestionResultSchema)),
+    ingestObservations: (bindingId, input) => command(`/v1/sources/${id(bindingId)}/observations`, 'POST', input, c.commandEnvelopeSchema(c.IngestObservationsInputSchema), c.commandReceiptSchema(c.IngestionResultSchema), (output, body) => {
+      const submitted = new Set(body.input.observations.map(observation => observation.id));
+      const acknowledged = [...output.result.acceptedIds, ...output.result.duplicateIds];
+      return acknowledged.length === submitted.size && new Set(acknowledged).size === acknowledged.length && acknowledged.every(observationId => submitted.has(observationId));
+    }),
     reportSourceHealth: (bindingId, input) => command(`/v1/sources/${id(bindingId)}/health`, 'POST', input, c.commandEnvelopeSchema(c.SourceHealthInputSchema), c.commandReceiptSchema(c.SourceBindingSchema), output => output.result.id === bindingId),
     deleteProject: (projectId, input) => command(`/v1/projects/${id(projectId)}`, 'DELETE', input, c.revisionedCommandSchema(c.EmptyInputSchema), c.commandReceiptSchema(c.AcceptedJobSchema.shape.receipt.shape.result)),
     cancelJob: (jobId, input) => command(`/v1/jobs/${id(jobId)}/cancel`, 'POST', input, c.commandEnvelopeSchema(c.EmptyInputSchema), c.commandReceiptSchema(c.AcceptedJobSchema.shape.receipt.shape.result)),
