@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS observations (
 CREATE TABLE IF NOT EXISTS messages (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL
 );
+ALTER TABLE observations ADD COLUMN IF NOT EXISTS received_at timestamptz NOT NULL DEFAULT now();
 CREATE TABLE IF NOT EXISTS documents (
  id uuid NOT NULL, project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL,
  PRIMARY KEY(project_id,id)
@@ -58,4 +59,9 @@ CREATE TABLE IF NOT EXISTS model_usage (
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), calls integer NOT NULL DEFAULT 0,
  reserved_tokens bigint NOT NULL DEFAULT 0, call_limit integer NOT NULL, token_limit bigint NOT NULL,
  configuration_hash text NOT NULL
+);
+CREATE TABLE IF NOT EXISTS generated_dependencies (
+ project_id uuid NOT NULL REFERENCES projects(id), resource_id uuid NOT NULL,
+ kind text NOT NULL CHECK(kind IN ('task','task_title','workspace')),
+ observation_id uuid NOT NULL, PRIMARY KEY(project_id,resource_id,kind,observation_id)
 );

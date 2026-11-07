@@ -21,6 +21,10 @@ Frozen base: `73175daa1f3d55595fcfeb7fe6beab5db337b7c3`. Ownership: cloud source
 - T08 green: 8 cloud files / 29 tests pass, with injected-clock availability, answer-before-presentation, duplicate scheduling, snooze/restart, quiet hours, account cap, consent, pause/resume, revision races, explicit cancellation and IANA DST boundaries. TypeScript passes.
 - Ruling: quiet-hours equality means no quiet interval. The account cap counts distinct authorized presentation identities in a rolling 24-hour window; repeat display acknowledgments do not consume additional attention. A snooze creates a new identity but retains the same logical question.
 - Ruling: routine suggestions are due no sooner than five minutes, or 20 seconds only under explicit `LP_DEMO_TIMING=true`. Snooze is an explicit owner-selected future instant within seven days, with its supplied IANA zone persisted separately. Demo timing remains visibly marked in the shared connection DTO.
+- T08 committed as `d2eab41`.
+- Final red/green corrections: omitted model citations initially left source-derived text after revocation; seven-day cleanup initially left persisted excerpts; paused-project cancellation initially returned 409; repeated operator bootstrap initially created a second owner. All four regressions now pass. Dependencies are server-owned, expired excerpts are actually purged, paused questions remain cancellable, and bootstrap reuses the provisioned owner.
+- Actual loopback HTTP exercises the shared client endpoint table and receipt hashes. The bundled cloud process is started and restarted twice with a snoozed question, then a persisted answer. No model credential is passed to those processes.
+- Latest pre-integration local result: 13 cloud files / 38 tests pass against the dedicated PostgreSQL database.
 
 ## RESULT
 
