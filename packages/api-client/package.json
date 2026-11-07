@@ -1,0 +1,1 @@
+{"name":"@living-playbooks/api-client","version":"0.1.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@living-playbooks/contracts":"workspace:*"}}

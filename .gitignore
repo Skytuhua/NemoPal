@@ -1,0 +1,14 @@
+node_modules/
+dist/
+out/
+coverage/
+test-results/
+playwright-report/
+.env
+.env.*
+!.env.example
+.superpowers/
+.worktrees/
+*.log
+*.tmp
+local-data/

@@ -1,0 +1,1 @@
+{"name":"@living-playbooks/desktop","version":"0.1.0","private":true,"type":"module","main":"dist/main/index.js","dependencies":{"@living-playbooks/contracts":"workspace:*","@living-playbooks/api-client":"workspace:*","@living-playbooks/codex-observer":"workspace:*"}}
