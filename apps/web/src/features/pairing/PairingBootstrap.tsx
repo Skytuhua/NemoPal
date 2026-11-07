@@ -47,21 +47,19 @@ export function PairingBootstrap({ bridge, children }: { bridge: DesktopBridge; 
       setError('Enter a pairing code and a short device name. If either is too long, shorten it.'); code.current?.focus(); return;
     }
     const request = ++generation.current, origin = current.origin;
-    let confirming = false;
     pending.current = true; setError(''); setCurrent({ state: 'pairing', origin });
     try {
       const result = PairingResultSchema.parse(await bridge.pair(input.data));
       if (request !== generation.current) return;
       if (!result.paired || (result.expiresAt && Date.parse(result.expiresAt) <= Date.now())) throw new Error('Pairing not confirmed');
-      confirming = true;
       const confirmed = await connection(bridge);
       if (request !== generation.current) return;
       if (confirmed.state !== 'paired' || confirmed.origin !== origin) throw new Error('Pairing not confirmed');
       setCurrent(confirmed);
     } catch {
       if (request === generation.current) {
-        setCurrent(confirming ? { state: 'unavailable' } : { state: 'unpaired', origin });
-        setError(confirming ? 'Pairing not confirmed. Retry the connection to check this desktop and its destination.' : 'Pairing not confirmed. Check the connection and destination, then enter a new code from your operator and try again.');
+        setCurrent({ state: 'unavailable' });
+        setError('Pairing not confirmed. Retry the connection to check this desktop and its destination.');
       }
     } finally {
       if (request === generation.current) pending.current = false;

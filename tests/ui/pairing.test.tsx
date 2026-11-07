@@ -112,14 +112,15 @@ test('successful pair waits for canonical capabilities before mounting, clears c
   expect(h.invoke).toHaveBeenCalledWith({ type: 'listProjects' });
 });
 
-test.each(['invalid', 'expired', 'unsafe provider detail'])('failed %s code stays closed and permits a new code', async reason => {
+test.each(['invalid', 'expired', 'unsafe provider detail'])('failed %s code stays closed until the connection is rechecked', async reason => {
   const h = harness(); h.pair.mockResolvedValueOnce({ paired: false, reason }).mockResolvedValueOnce({ paired: true });
   await start(h.bridge); await fill(); await submit();
-  expect(await screen.findByRole('alert')).toHaveTextContent(/not confirmed.*new code/i);
-  expect(screen.getByLabelText('Pairing code')).toHaveValue('');
+  expect(await screen.findByRole('alert')).toHaveTextContent(/not confirmed.*retry.*connection/i);
+  expect(screen.queryByLabelText('Pairing code')).not.toBeInTheDocument();
   expect(screen.queryByText(reason, { exact: true })).not.toBeInTheDocument(); expectClosed(h);
-  h.capabilities.mockResolvedValue(capabilities(true));
-  await userEvent.type(screen.getByLabelText('Pairing code'), 'replacement-code'); await submit();
+  await userEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
+  await fill('replacement-code');
+  h.capabilities.mockResolvedValue(capabilities(true)); await submit();
   expect(await screen.findByText('No projects yet')).toBeVisible();
   expect(h.pair).toHaveBeenCalledTimes(2);
 });
@@ -129,7 +130,7 @@ test('pair rejection hides raw errors and allows retry', async () => {
   await start(h.bridge); await fill(); await submit();
   expect(await screen.findByRole('alert')).toHaveTextContent(/not confirmed/i);
   expect(document.body.textContent).not.toMatch(/private-token|operator-code|internal\/error/);
-  expect(screen.getByRole('button', { name: 'Pair desktop' })).toBeEnabled(); expectClosed(h);
+  expect(screen.getByRole('button', { name: 'Retry connection' })).toBeEnabled(); expectClosed(h);
 });
 
 test.each([null, { paired: 'true' }, { paired: true, deviceId: 'wrong' }, { paired: true, token: 'private-token' }, { paired: true, expiresAt: '2000-01-01T00:00:00.000Z' }])('malformed or expired pair result fails closed: %j', async result => {
@@ -161,6 +162,38 @@ test('a changed destination must be reloaded and shown before another code can b
   await userEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
   expect(await screen.findByText('https://other.example')).toBeVisible();
   expect(screen.getByLabelText('Pairing code')).toHaveValue('');
+});
+
+test.each(['false', 'rejected', 'malformed', 'expired'] as const)('a %s pair outcome requires a destination recheck before another code', async outcome => {
+  const h = harness(); let destination = origin, paired = false;
+  h.capabilities.mockImplementation(async () => ({ ...capabilities(paired), cloudOrigin: destination }));
+  h.pair.mockImplementationOnce(async () => {
+    destination = 'https://other.example';
+    if (outcome === 'rejected') throw new Error('Uncertain pairing response');
+    if (outcome === 'malformed') return { paired: 'true' } as unknown as PairingResult;
+    if (outcome === 'expired') return { paired: true, expiresAt: '2000-01-01T00:00:00.000Z' };
+    return { paired: false };
+  }).mockImplementationOnce(async () => { paired = true; return { paired: true }; });
+  await start(h.bridge); await fill(); await submit();
+  await screen.findByRole('button', { name: 'Retry connection' });
+  expect(screen.queryByLabelText('Pairing code')).not.toBeInTheDocument();
+  expect(h.pair).toHaveBeenCalledTimes(1); expect(h.capabilities).toHaveBeenCalledTimes(1); expectClosed(h);
+  await userEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
+  expect(await screen.findByText('https://other.example')).toBeVisible();
+  expect(h.capabilities).toHaveBeenCalledTimes(2); expect(h.pair).toHaveBeenCalledTimes(1);
+  await fill('fresh-code'); await submit();
+  expect(await screen.findByText('No projects yet')).toBeVisible();
+  expect(h.pair).toHaveBeenCalledTimes(2); expect(h.capabilities).toHaveBeenCalledTimes(3);
+});
+
+test('a lost pairing response reconciles canonical paired state without redeeming a second code', async () => {
+  const h = harness();
+  h.pair.mockRejectedValue(new Error('Response lost after successful redemption'));
+  h.capabilities.mockResolvedValueOnce(capabilities()).mockResolvedValueOnce(capabilities(true));
+  await start(h.bridge); await fill(); await submit();
+  await userEvent.click(await screen.findByRole('button', { name: 'Retry connection' }));
+  expect(await screen.findByText('No projects yet')).toBeVisible();
+  expect(h.pair).toHaveBeenCalledTimes(1); expect(h.capabilities).toHaveBeenCalledTimes(2);
 });
 
 test.each([null, { ...capabilities(), paired: 'true' }, { ...capabilities(), token: 'private-token' }, { ...capabilities(), cloudOrigin: 'not-an-origin' }, { ...capabilities(), cloudOrigin: 'https://user:secret@pairing.example' }])('malformed capabilities offer retry and never unlock: %j', async value => {
@@ -206,11 +239,14 @@ test('sensitive code never reaches draft/browser storage, URL or logs and clears
   const code = screen.getByLabelText('Pairing code');
   await submit(); await screen.findByRole('alert');
   expect(code).toHaveValue('');
-  await userEvent.type(code, 'sensitive-pairing-code');
+  await userEvent.click(screen.getByRole('button', { name: 'Retry connection' }));
+  const unsent = await screen.findByLabelText('Pairing code');
+  await userEvent.type(unsent, 'sensitive-pairing-code');
   expect(storage).not.toHaveBeenCalled(); expect(idbOpen).not.toHaveBeenCalled(); expectClosed(h);
   expect(location.href).not.toContain('sensitive-pairing-code');
   await act(async () => { root!.unmount(); }); root = undefined;
   expect(code).toHaveValue('');
+  expect(unsent).toHaveValue('');
   expect(JSON.stringify([log.mock.calls, warn.mock.calls, error.mock.calls])).not.toContain('sensitive-pairing-code');
 });
 
