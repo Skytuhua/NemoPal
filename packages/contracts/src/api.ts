@@ -19,7 +19,7 @@ export const OwnerActionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('set_project_status'), status: ProjectStatusSchema }),
   z.strictObject({ type: z.literal('set_project_phase'), phase: ProjectPhaseSchema }),
 ]);
-export const SnoozeInputSchema = z.strictObject({ until: timestamp, timezone: boundedText(100, true).refine(value => { try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; } }, 'Invalid IANA timezone') });
+export const SnoozeInputSchema = z.strictObject({ until: timestamp, timezone: boundedText(100, true).refine(value => { if (/^[+-]/.test(value)) return false; try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; } }, 'Invalid IANA timezone') });
 export const EmptyInputSchema = z.strictObject({});
 export const EnrollSourceInputSchema = z.strictObject({ sourceKey: boundedText(128, true), adapterId: boundedText(80, true), adapterVersion: boundedText(40, true), capability: SourceCapabilitySchema, exportPolicy: ExportPolicySchema });
 export const SourceStateInputSchema = z.strictObject({ state: z.enum(['paused', 'following']), grantRevision: revision });
@@ -80,7 +80,7 @@ export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype) {
-    return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
+    return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(',')}}`;
   }
   throw new Error('Command arguments must be finite JSON values');
 }
