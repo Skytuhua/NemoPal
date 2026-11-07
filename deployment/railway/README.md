@@ -12,6 +12,8 @@ not a deployable application. Do not point Railway at it or enable PR previews.
 ## Service settings (coordinator owns the dashboard)
 
 - One always-running application service and persistent PostgreSQL; one replica.
+- Disable GitHub autodeploy and PR previews while provisioning. Keep deployment
+  paused until the coordinator approves the exact integrated source SHA.
 - Repository root directory `/`; leave Config File Path unset.
 - Set service variable `RAILWAY_DOCKERFILE_PATH` to
   `/deployment/railway/Dockerfile`; leave Build/Start command overrides empty.
@@ -23,6 +25,9 @@ not a deployable application. Do not point Railway at it or enable PR previews.
 - Keep serverless/sleep disabled. No cron, GPU, provider service or worker replica.
 - Generate the HTTPS domain, set the required variables, then deploy only the
   coordinator-approved integration SHA. No service has been provisioned here.
+
+This image serves the cloud API only. PR6 does not serve the web build; the
+desktop/UI deployment remains under its existing owners.
 
 Dashboard settings are deliberate. [Railway IaC documentation](https://docs.railway.com/infrastructure-as-code#iac-vs-config-as-code)
 states new services cannot opt into legacy `railway.json`/`railway.toml` and
@@ -115,8 +120,25 @@ remains separate from this model-off hosting gate.
 
 ## Evidence
 
-Pending local container build/runtime checks and independent parent review.
-No hosted deployment, provider call, source export or owner grant performed.
+Local Linux Docker checks used an ephemeral `git archive` context from PR6
+`d61bc552`, with these deployment files overlaid. No other Git worktree was
+created. This does not qualify the forthcoming corrected cloud SHA.
+
+- Frozen install passed for the four selected workspaces; cloud bundle 844.3 KB.
+- Runtime Node 24.14.0, UID 1000, SQL present; all three safe flags false; no
+  `.env`, desktop/web source or downloaded Electron binary.
+- Source migration passed twice against a new, isolated PostgreSQL 17 database.
+- From another container, custom `PORT` and HTTPS `PUBLIC_ORIGIN`: readiness
+  200, liveness 200, unauthenticated projects/SSE 401.
+- Graceful SIGTERM exited 0; app restart restored readiness and 14 schema tables.
+  Owners, jobs and model-usage rows stayed empty. No grant was issued.
+- Additional database-stop injection exposed an application crash; coordinator
+  must inspect the cloud-owned pool error/recovery behavior before deployment.
+
+Local model-off checks are separate from hosted TLS/SSE, authorized persistence,
+model/native/source acceptance. Independent review and corrected-cloud rerun
+remain required. No hosted deployment, provider call, source export or owner
+grant performed. Only test-owned containers/network were removed.
 
 Provider references: [Dockerfile path](https://docs.railway.com/builds/dockerfiles#custom-dockerfile-path),
 [pre-deploy](https://docs.railway.com/deployments/pre-deploy-command),
