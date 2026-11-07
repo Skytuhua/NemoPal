@@ -28,3 +28,19 @@ test('a new project has unknown progress and unavailable inference rather than g
   expect(screen.getByText('No tasks yet. Planning has not produced an accepted task list.')).toBeVisible();
   expect(screen.queryByText(/100%/)).not.toBeInTheDocument();
 });
+test('snapshot fixture provenance is visible even when a desktop adapter supplies it', async () => {
+  render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture={false} />);
+  expect(await screen.findByText('Fixture mode · synthetic data · no live model')).toBeVisible();
+});
+test('new project brief drafts survive remount before creation', async () => {
+  const client = createFixtureClient({ snapshots: [] }), store = memoryDrafts();
+  const view = render(<App client={client} drafts={store} fixture />);
+  await screen.findByText('No projects yet');
+  await userEvent.type(screen.getByLabelText('Project title'), 'Unfinished brief');
+  await userEvent.type(screen.getByLabelText('Project brief'), 'Preserve my planning input');
+  view.unmount();
+  render(<App client={client} drafts={store} fixture />);
+  await screen.findByText('No projects yet');
+  await waitFor(() => expect(screen.getByLabelText('Project title')).toHaveValue('Unfinished brief'));
+  expect(screen.getByLabelText('Project brief')).toHaveValue('Preserve my planning input');
+});

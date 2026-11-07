@@ -10,7 +10,7 @@ export interface DraftStore {
 export function createDraftStore(): DraftStore {
   let database: Promise<IDBDatabase> | undefined;
   let tail = Promise.resolve();
-  let failure: unknown;
+  const failures = new Map<string, unknown>();
   function open() {
     return database ??= new Promise<IDBDatabase>((resolve, reject) => {
       if (!globalThis.indexedDB) { reject(new Error('Draft storage unavailable. Keep this window open and copy your work.')); return; }
@@ -29,15 +29,15 @@ export function createDraftStore(): DraftStore {
       tx.onerror = tx.onabort = () => reject(new Error('Draft could not be persisted. Keep this window open and copy your work.'));
     });
   }
-  function queue(operation: () => Promise<unknown>): Promise<void> {
-    const task = tail.then(operation).then(() => { failure = undefined; });
-    tail = task.catch(error => { failure = error; });
+  function queue(key: string, operation: () => Promise<unknown>): Promise<void> {
+    const task = tail.then(operation).then(() => { failures.delete(key); });
+    tail = task.catch(error => { failures.set(key, error); });
     return task;
   }
   return {
     async read(key) { await tail; return transaction<LocalDraft | undefined>('readonly', store => store.get(key)); },
-    write: (key, value) => queue(() => transaction('readwrite', store => store.put(value, key))),
-    remove: key => queue(() => transaction('readwrite', store => store.delete(key))),
-    async flush() { await tail; if (failure) throw failure; },
+    write: (key, value) => queue(key, () => transaction('readwrite', store => store.put(value, key))),
+    remove: key => queue(key, () => transaction('readwrite', store => store.delete(key))),
+    async flush() { await tail; if (failures.size) throw failures.values().next().value; },
   };
 }

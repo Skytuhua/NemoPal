@@ -16,16 +16,18 @@ export function DocumentEditor({ document, heading, client, store, disabled, ref
       await local.saved(sent, result.result.revision, result.result.text);
       setNotice('Document saved'); await refresh();
     } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 'revision_conflict') {
-        setNotice('Conflict: your copy is preserved. Review the current document before retrying.');
-        try {
-          const snapshot = ProjectSnapshotSchema.parse(await client.getSnapshot(document.projectId));
-          if (snapshot.project.id !== document.projectId) throw new Error('Wrong project');
-          const canonical = snapshot.documents.find(item => item.id === document.id);
-          setRemote(canonical);
-          if (canonical) local.change({ ...local.current.current, conflict: canonical.text });
-        } catch { setNotice('Conflict: your copy is preserved. Current document is unavailable; refresh when connected.'); }
-      } else setNotice('Save failed. Your local copy is preserved; refresh before retrying.');
+      const conflict = error && typeof error === 'object' && 'code' in error && error.code === 'revision_conflict';
+      setNotice('Save not confirmed. Your local copy is preserved; refresh before retrying.');
+      try {
+        // Native IPC can omit custom error fields; canonical revision remains the fence.
+        const snapshot = ProjectSnapshotSchema.parse(await client.getSnapshot(document.projectId));
+        if (snapshot.project.id !== document.projectId) throw new Error('Wrong project');
+        const canonical = snapshot.documents.find(item => item.id === document.id);
+        if (canonical && (conflict || canonical.revision !== sent.baseRevision)) {
+          setNotice('Conflict: your copy is preserved. Review the current document before retrying.');
+          setRemote(canonical); local.change({ ...local.current.current, conflict: canonical.text });
+        }
+      } catch { if (conflict) setNotice('Conflict: your copy is preserved. Current document is unavailable; refresh when connected.'); }
     } finally { setBusy(false); }
   }
   return <>

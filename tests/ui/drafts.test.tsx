@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
 import { App } from '../../apps/web/src/app/App';
-import { memoryDrafts, snapshot } from './helpers';
+import { deferred, memoryDrafts, snapshot } from './helpers';
 afterEach(cleanup);
 test('document and chat drafts persist before switching project and after remount', async () => {
   const client = createFixtureClient({ snapshots: [snapshot(), snapshot(100)] }), drafts = memoryDrafts();
@@ -50,4 +50,46 @@ test('incoming rearrangement and document updates preserve focused editor and lo
   expect(screen.getByLabelText('Document: Demo notes')).toBe(editor);
   await userEvent.click(screen.getByRole('button', { name: 'Apply workspace arrangement' }));
   expect((screen.getByLabelText('Document: Demo notes') as HTMLTextAreaElement).value).toContain('Still editing');
+});
+test('typing during a document save preserves newer text and rebases its next explicit save', async () => {
+  const seed = snapshot(), client = createFixtureClient(), saved = client.saveDocument;
+  const release = deferred<void>();
+  client.saveDocument = async (...args) => { const receipt = await saved(...args); await release.promise; return receipt; };
+  render(<App client={client} drafts={memoryDrafts()} fixture />);
+  await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
+  const editor = screen.getByLabelText('Document: Demo notes');
+  await userEvent.type(editor, ' First');
+  await userEvent.click(screen.getByRole('button', { name: 'Save document' }));
+  await userEvent.type(editor, ' Second');
+  await act(async () => release.resolve());
+  expect((editor as HTMLTextAreaElement).value).toContain('First Second');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save document' })).toBeEnabled());
+  await userEvent.click(screen.getByRole('button', { name: 'Save document' }));
+  await screen.findByText('Document saved');
+  expect((await client.getSnapshot(seed.project.id)).documents[0]!.text).toContain('First Second');
+});
+test('failed draft persistence blocks project switching instead of discarding edits', async () => {
+  const store = memoryDrafts(); store.write = async () => { throw new Error('disk full'); }; store.flush = async () => { throw new Error('disk full'); };
+  // Initial project selection itself must remain possible before a write fails.
+  let failed = false;
+  store.write = async () => { failed = true; throw new Error('disk full'); };
+  store.flush = async () => { if (failed) throw new Error('disk full'); };
+  render(<App client={createFixtureClient({ snapshots: [snapshot(), snapshot(100)] })} drafts={store} fixture />);
+  await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
+  await userEvent.type(screen.getByLabelText('Document: Demo notes'), ' Keep this');
+  await userEvent.click(screen.getByRole('button', { name: /Second project/ }));
+  expect(await screen.findByText(/Copy your work before switching projects/)).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
+});
+test('document conflict survives native IPC errors that omit custom error codes', async () => {
+  const seed = snapshot(), client = createFixtureClient(), original = client.saveDocument;
+  render(<App client={client} drafts={memoryDrafts()} fixture />);
+  await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
+  await userEvent.type(screen.getByLabelText('Document: Demo notes'), ' Local owner text');
+  await act(async () => { await original(seed.project.id, seed.documents[0]!.id, { operationId: crypto.randomUUID(), expectedRevision: 0, input: { text: 'Native canonical revision' } }); });
+  client.saveDocument = async () => { throw new Error('Error invoking remote method'); };
+  await userEvent.click(screen.getByRole('button', { name: 'Save document' }));
+  expect(await screen.findByText(/Conflict: your copy is preserved/)).toBeVisible();
+  expect(screen.getByText('Native canonical revision')).toBeVisible();
+  expect((screen.getByLabelText('Document: Demo notes') as HTMLTextAreaElement).value).toContain('Local owner text');
 });
