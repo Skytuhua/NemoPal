@@ -31,3 +31,15 @@ it('bounds a large new turn without advancing beyond observations returned', asy
   expect(second.observations).toHaveLength(3);
   expect(new Set([...first.observations, ...second.observations].map(o => o.id)).size).toBe(23);
 });
+it('enrollment during an active turn tolerates completion of skipped baseline items without backfilling them', async () => {
+  const baselineItem = { ...finalMessage, id: 'already-present', text: 'Partial progress', phase: 'commentary', completedAtMs: null };
+  let page = { data: [turn('t', [baselineItem], 'inProgress')] };
+  const observer = new AppServerObserver({ version: async () => '0.166.0', request: async method => method === 'thread/read' ? metadata : page, mode: 'fixture' });
+  const signal = new AbortController().signal;
+  const baseline = await observer.readDelta(localBinding, null, signal);
+  page = { data: [turn('t', [{ ...baselineItem, text: 'Completed progress', completedAtMs: 1794050001000 }, finalMessage])] };
+  const fresh = await observer.readDelta(localBinding, baseline.nextCursor, signal);
+  expect(fresh.observations.map(o => o.sourceItemId)).toEqual(['t/message-final']);
+  page = { data: [turn('t', [{ ...baselineItem, text: 'Completed progress', completedAtMs: 1794050001000 }, { ...finalMessage, text: 'History was rewritten' }])] };
+  await expect(observer.readDelta(localBinding, fresh.nextCursor, signal)).rejects.toThrow('prefix changed');
+});

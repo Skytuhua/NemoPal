@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LocalBindingSchema, ObservationBatchSchema, type CodexObserver, type LocalBinding, type SourceCursor, type ObservationBatch, type Observation } from '@living-playbooks/contracts';
-import { ADAPTER, VERSION, decodeCursor, digest, makeCursor } from './cursor';
+import { ADAPTER, VERSION, decodeCursor, digest, makeCursor, prefixDigest } from './cursor';
 import { normalizeItem, validateItems } from './normalizer';
 
 export type ReadTransport = { request(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> };
@@ -48,7 +48,7 @@ export class AppServerObserver implements CodexObserver {
     const turns = [...page.data].reverse().map(turn => ({ ...turn, items: validateItems(turn.items) }));
     if (new Set(turns.map(t => t.id)).size !== turns.length) throw Error('Duplicate turn schema');
     const latest = turns.at(-1);
-    if (!anchor) return ObservationBatchSchema.parse({ observations: [], nextCursor: makeCursor(thread.id, birth, latest?.id ?? null, latest?.items ?? [], latest?.items.length ?? 0), mode: 'incremental_history', lastObservedAt: null, coverage: 'Enrolled current tail; no historical import. Completed persisted history only.' });
+    if (!anchor) return ObservationBatchSchema.parse({ observations: [], nextCursor: makeCursor(thread.id, birth, latest?.id ?? null, latest?.items ?? [], latest?.items.length ?? 0, true), mode: 'incremental_history', lastObservedAt: null, coverage: 'Enrolled current tail; no historical import. Completed persisted history only.' });
     const start = anchor.turn === null ? 0 : turns.findIndex(turn => turn.id === anchor.turn);
     if (start < 0 || (anchor.turn === null && page.nextCursor)) throw Error('Source history gap; explicit revalidation required');
     const observations: ObservationBatch['observations'] = [];
@@ -57,7 +57,7 @@ export class AppServerObserver implements CodexObserver {
     for (let t = start; t < turns.length; t++) {
       const turn = turns[t]!;
       let offset = t === start && anchor.turn !== null ? cursor!.offset : 0;
-      if (offset > turn.items.length || (t === start && anchor.turn !== null && digest(turn.items.slice(0, offset)) !== anchor.prefix)) throw Error('Source history truncated or prefix changed');
+      if (offset > turn.items.length || (t === start && anchor.turn !== null && prefixDigest(turn.items.slice(0, offset), anchor.baseline) !== anchor.prefix)) throw Error('Source history truncated or prefix changed');
       if (turn.status !== 'completed') break;
       const seen = new Set(turn.items.slice(0, offset).map(item => String(item.id)));
       while (offset < turn.items.length && observations.length < 20) {
