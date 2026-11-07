@@ -16,10 +16,13 @@ not a deployable application. Do not point Railway at it or enable PR previews.
   configured repository and trigger branch; do not treat a staged change as
   effective until it is applied. Keep deployment paused until the coordinator
   approves the exact integrated source SHA.
-- Review all pending changes in the canvas **Details** panel. Railway documents
-  holding Alt while clicking **Deploy** to apply staged changes without a
-  redeploy. Verify the resulting settings and deployment history; ordinary
-  **Deploy** can start affected services. Networking changes apply immediately.
+- Review all pending changes in the canvas **Details** panel. Leave a changeset
+  that creates or connects this new service unapplied until a documented or
+  tested sequence can prove the first deployment is controlled. Railway's
+  Alt-click option describes suppressing a redeploy; it does not establish that
+  creating a new source-connected service cannot start its first deployment.
+  Ordinary **Deploy** can start affected services. Networking changes apply
+  immediately. If the first-deployment behavior cannot be verified, hold.
 - Repository root directory `/`; leave Config File Path unset.
 - Set service variable `RAILWAY_DOCKERFILE_PATH` to
   `/deployment/railway/Dockerfile`; leave Build/Start command overrides empty.
@@ -32,11 +35,15 @@ not a deployable application. Do not point Railway at it or enable PR previews.
 - Generate the HTTPS domain and set the required variables. After correction
   and review, deploy only the coordinator-approved integrated commit using
   Railway's `serviceInstanceDeployV2` API with explicit `commitSha`, service ID
-  and environment ID. Check the returned deployment's actual commit SHA and
-  settings against the approved SHA before acceptance. Do not use **Deploy
-  Latest Commit**: a branch can advance between review and deployment. If a
-  pinned deployment or identity verification is unavailable, keep the service
-  staged and investigate instead of silently deploying a moving branch.
+  and environment ID. Record the returned deployment ID. Query that specific
+  ID via `deployment(id: $id) { id status meta }`, or open that deployment's
+  details by ID, and verify its source commit SHA and settings against the
+  approved SHA before acceptance. Do not assume the newest deployment is the
+  returned one. If the SHA is absent, ambiguous, or mismatched, stop and
+  investigate; do not accept the deployment. Do not use **Deploy Latest
+  Commit**: a branch can advance between review and deployment. If a pinned
+  deployment or identity verification is unavailable, hold instead of silently
+  deploying a moving branch.
 
 This image serves the cloud API only. PR6 does not serve the web build; the
 desktop/UI deployment remains under its existing owners.
@@ -156,6 +163,7 @@ Provider references: [Dockerfile path](https://docs.railway.com/builds/dockerfil
 [staged changes](https://docs.railway.com/deployments/staged-changes),
 [GitHub autodeploys](https://docs.railway.com/deployments/github-autodeploys),
 [commit-pinned deployment](https://docs.railway.com/integrations/api/manage-services),
+[deployment lookup](https://docs.railway.com/integrations/api/manage-deployments),
 [pre-deploy](https://docs.railway.com/deployments/pre-deploy-command),
 [healthchecks](https://docs.railway.com/deployments/healthchecks),
 [SSE](https://railway.com/guides/streaming-ai-responses).
