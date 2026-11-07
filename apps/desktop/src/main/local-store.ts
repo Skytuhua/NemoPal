@@ -14,6 +14,7 @@ const initial = (): Data => ({ version: 1, entries: [], uploads: [], sourceComma
 export class JournalStore implements LocalStore {
   private tail: Promise<unknown> = Promise.resolve();
   private fenced = new Set<string>();
+  private durabilityFailed = false;
   private constructor(private path: string, private data: Data, private limits: { count: number; bytes: number }) {}
   static async open(path: string, limits: { count?: number; bytes?: number } = {}): Promise<JournalStore> {
     let data = initial();
@@ -34,6 +35,7 @@ export class JournalStore implements LocalStore {
       const next = structuredClone(this.data); change(next); Journal.parse(next);
       const payload = JSON.stringify({ checksum: checksum(next), data: next });
       if (Buffer.byteLength(payload) > LIMITS.spoolBytes + 1024 * 1024) throw Error('Local spool journal limit reached');
+      try {
       await mkdir(dirname(this.path), { recursive: true });
       await writeFile(`${this.path}.tmp`, payload, { mode: 0o600, flush: true });
       // Preserve the valid prior primary without a window in which the primary is absent.
@@ -48,6 +50,7 @@ export class JournalStore implements LocalStore {
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       await rename(`${this.path}.tmp`, this.path);
       this.data = next;
+      } catch (error) { this.durabilityFailed = true; throw error; }
     });
     this.tail = operation.catch(() => {}); return operation;
   }
@@ -84,6 +87,10 @@ export class JournalStore implements LocalStore {
   async pendingUploads(limit: number): Promise<PendingUpload[]> { await this.tail; return structuredClone(this.data.uploads.filter(u => !this.fenced.has(u.bindingId)).slice(0, Math.max(0, Math.min(limit, 20)))); }
   async acknowledgeUploads(ids: string[]): Promise<void> { await this.mutate(data => { data.uploads = data.uploads.filter(u => !ids.includes(u.id)); }); }
   fence(id: string): void { this.fenced.add(id); }
+  async blockBinding(id: string): Promise<void> {
+    this.fence(id);
+    await this.mutate(data => { const entry = data.entries.find(e => e.local.binding.id === id); if (entry && entry.local.binding.state === 'following') entry.local.binding.state = 'blocked'; });
+  }
   async revokeBinding(bindingId: string, grantRevision: number): Promise<void> {
     this.fence(bindingId);
     await this.mutate(data => {
@@ -115,5 +122,5 @@ export class JournalStore implements LocalStore {
   async setPreference(input: PetPreference): Promise<void> { const preference = PetPreferenceSchema.parse(input); await this.mutate(data => { data.preference = preference; }); }
   position(): { x: number; y: number } | null { return structuredClone(this.data.position); }
   async setPosition(position: { x: number; y: number }): Promise<void> { await this.mutate(data => { data.position = position; }); }
-  async flush(): Promise<void> { await this.tail; }
+  async flush(): Promise<void> { await this.tail; if (this.durabilityFailed) throw Error('Local durability failed; explicit recovery required before Quit.'); }
 }

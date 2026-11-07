@@ -33,7 +33,7 @@ export function normalizeItem(item: Record<string, unknown>, turnId: string, com
   let text: string | undefined;
   let level: Observation['provenance']['evidenceLevel'];
   if (item.type === 'agentMessage') {
-    const message = z.object({ text: z.string(), phase: z.enum(['commentary', 'final_answer']).nullable().optional() }).parse(item);
+    const message = z.object({ text: z.string(), phase: z.enum(['commentary', 'partial_answer', 'final_answer']).nullable().optional() }).parse(item);
     if (message.phase !== 'final_answer') return null;
     fields = { kind: 'assistant_report', metadata: { type: 'message', role: 'assistant' } }; level = 'agent_reported'; text = message.text;
   } else if (item.type === 'userMessage') {
@@ -49,6 +49,6 @@ export function normalizeItem(item: Record<string, unknown>, turnId: string, com
   const hex = digest([binding.binding.id, binding.binding.grantRevision, sourceItemId]).slice(0, 32);
   const id = `${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-8${hex.slice(17,20)}-${hex.slice(20)}`;
   const excerpt = binding.binding.exportPolicy === 'approved_excerpts' && text ? safeExcerpt(text) : undefined;
-  return ObservationSchema.parse({ id, bindingId: binding.binding.id, grantRevision: binding.binding.grantRevision, sourceItemId, sourceRevision: digest(item), occurredAt: new Date(time).toISOString(), observedAt,
+  return ObservationSchema.parse({ id, bindingId: binding.binding.id, grantRevision: binding.binding.grantRevision, sourceItemId, sourceRevision: digest([sourceItemId, time, fields, excerpt ?? null]), occurredAt: new Date(time).toISOString(), observedAt,
     ...fields, ...(excerpt === undefined ? {} : { excerpt }), provenance: { adapterId: ADAPTER, adapterVersion: VERSION, mode, evidenceLevel: level } });
 }

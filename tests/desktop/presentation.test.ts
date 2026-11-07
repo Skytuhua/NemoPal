@@ -45,3 +45,19 @@ it('offline and focus preferences suppress questions; stale source alone does no
     expect(events.at(-1)?.state).toBe('idle');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+it('disconnect during a pending presentation cannot reveal a stale question', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lp-presentation-'));
+  try {
+    const store = await JournalStore.open(join(dir, 'journal')); const events: SafePetEvent[] = [];
+    let finish!: (value: unknown) => void;
+    const client = { presentCheckIn: () => new Promise(resolve => { finish = resolve; }) } as unknown as PlaybooksClient;
+    const presentation = new QuestionPresentation(store, client, event => { events.push(event); }, () => {}, () => Date.parse('2026-11-07T12:30:00.000Z'));
+    const pending = presentation.refresh(ProjectSnapshotSchema.parse(goldenSnapshot), true);
+    await Promise.resolve();
+    presentation.offline();
+    finish({ result: goldenSnapshot.checkIns[0] }); await pending;
+    expect(events.every(event => event.checkIn === null)).toBe(true);
+    await expect(presentation.command({ type: 'answer', checkInId: ids.checkIn, command: { operationId: ids.owner, expectedRevision: 0, input: { kind: 'recorded' } } })).rejects.toThrow();
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

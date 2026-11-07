@@ -15,12 +15,12 @@ export class SourceController {
         const cursor = this.store.cursor(id); const batch = await this.observer.readDelta(local, cursor, abort.signal);
         if (!abort.signal.aborted && this.store.isFollowing(id)) await this.store.commitObservationBatch(id, cursor, batch);
       } catch (error) {
-        if (!abort.signal.aborted) { this.store.fence(id); this.onBlock(id, error instanceof Error && /spool/.test(error.message) ? 'Local spool full; source cursor retained.' : 'Source read or durability blocked; cursor retained. Revalidate selected source.'); }
+        if (!abort.signal.aborted) { await this.store.blockBinding(id).catch(() => {}); this.onBlock(id, error instanceof Error && /spool/.test(error.message) ? 'Local spool full; source cursor retained.' : 'Source read or durability blocked; cursor retained. Revalidate selected source.'); }
       } finally { this.active.delete(id); }
     })();
     this.active.set(id, { abort, promise }); return promise;
   }
   async pause(id: string): Promise<void> { this.store.fence(id); this.active.get(id)?.abort.abort(); const saved = this.store.pauseBinding(id); await this.observer.stop(id); await saved; }
   async revoke(id: string): Promise<void> { this.store.fence(id); this.active.get(id)?.abort.abort(); const local = this.store.binding(id); if (!local) throw Error('Unknown source binding'); const saved = this.store.revokeBinding(id, local.binding.grantRevision); await this.observer.stop(id); await saved; }
-  async stop(): Promise<void> { this.stopped = true; for (const [id, run] of this.active) { run.abort.abort(); await this.observer.stop(id); } await Promise.all([...this.active.values()].map(run => run.promise)); }
+  async stop(): Promise<void> { this.stopped = true; const runs = [...this.active.values()]; for (const run of runs) run.abort.abort(); for (const local of this.store.bindings()) await this.observer.stop(local.binding.id); await Promise.all(runs.map(run => run.promise)); }
 }
