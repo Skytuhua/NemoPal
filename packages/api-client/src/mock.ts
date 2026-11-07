@@ -185,6 +185,7 @@ export function createFixtureClient(options: FixtureClientOptions = {}): c.Playb
     snoozeCheckIn: (checkInId, raw) => question(checkInId, raw, c.revisionedCommandSchema(c.SnoozeInputSchema), 'snooze', (checkIn, _snapshot, command) => {
       checkIn.state = 'snoozed';
       checkIn.snoozedUntil = command.input.until;
+      checkIn.presentationId = crypto.randomUUID();
     }),
     cancelCheckIn: (checkInId, raw) => question(checkInId, raw, c.revisionedCommandSchema(c.EmptyInputSchema), 'cancel', checkIn => {
       checkIn.state = 'cancelled';
