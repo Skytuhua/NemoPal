@@ -109,15 +109,19 @@ async function start() {
   }
   async function dispatch(operation: string, raw: unknown): Promise<unknown> {
     switch (operation) {
-      case 'capabilities': return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation: await observer.probe(), paired: Boolean(vault.authorization()), cloudOrigin: origin });
+      case 'capabilities': {
+        const capability = await observer.probe();
+        const sourceObservation = process.env.LP_SELECTED_SOURCE && process.env.LP_SYNTHETIC_SOURCE_NAME ? capability : { ...capability, available: false, capability: 'unavailable', reason: 'No exact named own synthetic project test source configured. General authorization permits source metadata only; live content observation is blocked.' };
+        return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: Boolean(vault.authorization()), cloudOrigin: origin });
+      }
       case 'pair': {
         if (!origin || (!await safeStorage.isAsyncEncryptionAvailable() && process.env.LP_TEMPORARY_PAIRING !== '1')) throw Error('Configured origin and protected storage or explicit temporary session required.');
         const response = await fetchBounded(new URL('/v1/auth/redeem', origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c.PairingInputSchema.parse(raw)), redirect: 'error', credentials: 'omit' });
         const result = await vault.save(await readPairingResponse(response)); credentialBlocker = ''; sync = new SyncEngine(store, client); void cycle(); return result;
       }
       case 'selectSource': {
-        const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE ?? process.env.CODEX_THREAD_ID;
-        if (!threadId || !c.IdSchema.safeParse(threadId).success) return { available: false, reason: 'No exact harmless thread identity configured. No archive scan is permitted.' };
+        const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE;
+        if (!threadId || !process.env.LP_SYNTHETIC_SOURCE_NAME || !c.IdSchema.safeParse(threadId).success) return { available: false, reason: 'No exact named own synthetic test source configured. No archive scan or implicit current-thread read is permitted.' };
         const choice = await dialog.showMessageBox(windows.workspace, { type: 'question', buttons: ['Preview this exact source', 'Cancel'], defaultId: 1, cancelId: 1, message: 'Select one harmless build/test conversation', detail: `Thread: ${threadId}\nWorkspace: ${process.cwd()}\nOnly this identity will be validated after local-read consent. Cloud sharing is a separate choice.`, noLink: true });
         return choice.response === 0 ? consent.offer(projectId, threadId, process.cwd()) : { available: false, reason: 'Source selection cancelled.' };
       }

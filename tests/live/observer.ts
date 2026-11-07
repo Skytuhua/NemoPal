@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { LocalBinding } from '@living-playbooks/contracts';
 
 const selectedSource = process.env.LP_SELECTED_SOURCE;
+if (!process.env.LP_SYNTHETIC_SOURCE_NAME || process.env.LP_OBSERVER_LOCAL_READ_CONSENT !== '1') { console.error('BLOCKED: general authorization permits metadata only. A named own synthetic test source and explicit local-content-read consent are required for this live reader.'); process.exit(2); }
 if (!selectedSource || selectedSource !== process.env.CODEX_THREAD_ID) { console.error('BLOCKED: this acceptance runner permits only its exact own project build/test vendor thread; no profile lookup.'); process.exit(2); }
 const binding: LocalBinding = { binding: { id: randomUUID(), projectId: randomUUID(), deviceId: randomUUID(), sourceKey: randomUUID(), adapterId: 'codex-app-server', adapterVersion: '0.166.0', capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null }, selectedSource, sourceIdentity: process.cwd(), localReadConsented: true };
 const observer = createInstalledObserver();

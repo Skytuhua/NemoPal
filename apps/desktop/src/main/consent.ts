@@ -8,7 +8,7 @@ export class ConsentSelections {
     IdSchema.parse(projectId); IdSchema.parse(threadId);
     this.selections.clear();
     const selectionId = randomUUID(); this.selections.set(selectionId, { projectId, threadId, workspace, expires: Date.now() + 300000 });
-    return { available: true, selectionId, projectId, displayName: 'Selected project build/test conversation', adapterId: 'codex-app-server', adapterVersion: '0.166.0', capability: 'incremental_history', cloudOrigin: this.origin ?? '',
+    return { available: true, selectionId, projectId, displayName: 'Selected project build/test conversation', adapterId: 'codex-app-server', adapterVersion: '0.166.0', capability: 'incremental_history', cloudOrigin: this.origin && this.receivingDisclosure ? this.origin : '',
       disclosure: `Local read: only selected thread ${threadId} in this project on this device. Completed visible messages and exit metadata only. Cloud sharing ${this.origin && this.receivingDisclosure ? `requires a separate choice: ${this.receivingDisclosure}` : 'OFF; no receiving model endpoint/disclosure configured'}. Filtering is best effort, not a guarantee. Pause stops collection; revoke stops locally immediately and removes queued exports; cloud confirmation may be pending. Already processed provider data cannot be recalled.` };
   }
   confirm(raw: ConfirmSourceInput) {
