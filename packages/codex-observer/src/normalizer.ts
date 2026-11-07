@@ -24,20 +24,19 @@ export function safeExcerpt(text: string): string | undefined {
   for (const point of text) { if (Buffer.byteLength(result + point) > LIMITS.excerptBytes) break; result += point; }
   return result.trim() || undefined;
 }
-export function normalizeItem(item: Record<string, unknown>, turnId: string, completedAt: number | null | undefined, binding: LocalBinding, mode: Observation['provenance']['mode'], observedAt: string): Observation | null {
+export function normalizeItem(item: Record<string, unknown>, turnId: string, completedAt: number | null | undefined, binding: LocalBinding, mode: Observation['provenance']['mode'], observedAt: string, terminalFailure = false): Observation | null {
   if (ignored.has(String(item.type))) return null;
-  const time = typeof item.completedAtMs === 'number' ? item.completedAtMs : typeof completedAt === 'number' ? completedAt * 1000 : null;
-  if (time === null) throw Error('Missing completed item timestamp schema');
   const sourceItemId = `${turnId}/${String(item.id)}`;
   let fields: Pick<Observation, 'kind' | 'metadata'>;
   let text: string | undefined;
   let level: Observation['provenance']['evidenceLevel'];
   if (item.type === 'agentMessage') {
     const message = z.object({ text: z.string(), phase: z.enum(['commentary', 'partial_answer', 'final_answer']).nullable().optional() }).parse(item);
-    if (message.phase !== 'final_answer') return null;
+    if (message.phase !== 'final_answer' || (terminalFailure && typeof item.completedAtMs !== 'number')) return null;
     fields = { kind: 'assistant_report', metadata: { type: 'message', role: 'assistant' } }; level = 'agent_reported'; text = message.text;
   } else if (item.type === 'userMessage') {
     const message = z.object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })) }).parse(item);
+    if (terminalFailure && typeof item.completedAtMs !== 'number') return null;
     fields = { kind: 'user_visible_message', metadata: { type: 'message', role: 'user' } }; level = 'user_reported';
     // Attachments, skill/path references and inline media are never exported.
     if (message.content.every(part => part.type === 'text' && part.text !== undefined)) text = message.content.map(part => part.text).join('\n');
@@ -46,6 +45,8 @@ export function normalizeItem(item: Record<string, unknown>, turnId: string, com
     if (!['completed', 'failed'].includes(command.status)) return null;
     fields = { kind: 'tool_result_metadata', metadata: { type: 'tool', exitCode: command.exitCode ?? null } }; level = 'source_tool_observed';
   }
+  const time = typeof item.completedAtMs === 'number' ? item.completedAtMs : typeof completedAt === 'number' ? completedAt * 1000 : null;
+  if (time === null) throw Error('Missing completed item timestamp schema');
   const hex = digest([binding.binding.id, binding.binding.grantRevision, sourceItemId]).slice(0, 32);
   const id = `${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-8${hex.slice(17,20)}-${hex.slice(20)}`;
   const excerpt = binding.binding.exportPolicy === 'approved_excerpts' && text ? safeExcerpt(text) : undefined;
