@@ -18,6 +18,7 @@ export const PetPreferenceSchema = z.strictObject({ hidden: z.boolean(), focus: 
 export const DesktopCapabilitiesSchema = z.strictObject({ nativePet: CapabilitySchema, sourceObservation: ObserverCapabilityReportSchema, paired: z.boolean(), cloudOrigin: boundedText(512).nullable() });
 export const SafePetEventSchema = z.strictObject({ type: z.literal('pet_state'), projectId: id.nullable(), managerName: boundedText(120), petPackId: boundedText(80), state: PetStateSchema, checkIn: CheckInSchema.nullable(), demoTiming: z.boolean(), preference: PetPreferenceSchema });
 export const SafeDesktopEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('open_project'), projectId: id }),
   z.strictObject({ type: z.literal('project_event'), event: ProjectEventSchema }),
   z.strictObject({ type: z.literal('connection'), connected: z.boolean(), reason: boundedText(512).optional() }),
   z.strictObject({ type: z.literal('source_state'), binding: SourceBindingSchema, cloudRevocationPending: z.boolean() }),

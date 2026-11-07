@@ -72,7 +72,11 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     const result = SafeDesktopEventSchema.safeParse(raw);
     if (result.success && result.data.type === 'connection') setConnected(result.data.connected);
     if (result.success && result.data.type === 'source_state' && result.data.binding.projectId === currentId.current) void refresh();
-  }), [bridge, refresh]);
+    if (result.success && result.data.type === 'open_project') {
+      const projectId = result.data.projectId;
+      if (projects.some(project => project.id === projectId)) void select(projectId);
+    }
+  }), [bridge, refresh, select, projects]);
   async function action(input: OwnerAction) {
     const record = activeSnapshot.current;
     if (!record || busy) return;
