@@ -12,8 +12,14 @@ not a deployable application. Do not point Railway at it or enable PR previews.
 ## Service settings (coordinator owns the dashboard)
 
 - One always-running application service and persistent PostgreSQL; one replica.
-- Disable GitHub autodeploy and PR previews while provisioning. Keep deployment
-  paused until the coordinator approves the exact integrated source SHA.
+- Disable GitHub autodeploy and PR previews while provisioning. Verify the
+  configured repository and trigger branch; do not treat a staged change as
+  effective until it is applied. Keep deployment paused until the coordinator
+  approves the exact integrated source SHA.
+- Review all pending changes in the canvas **Details** panel. Railway documents
+  holding Alt while clicking **Deploy** to apply staged changes without a
+  redeploy. Verify the resulting settings and deployment history; ordinary
+  **Deploy** can start affected services. Networking changes apply immediately.
 - Repository root directory `/`; leave Config File Path unset.
 - Set service variable `RAILWAY_DOCKERFILE_PATH` to
   `/deployment/railway/Dockerfile`; leave Build/Start command overrides empty.
@@ -23,8 +29,14 @@ not a deployable application. Do not point Railway at it or enable PR previews.
 - Restart policy On Failure, maximum 3 retries; overlap 0 seconds;
   draining 150 seconds. Verify these in the deployment details.
 - Keep serverless/sleep disabled. No cron, GPU, provider service or worker replica.
-- Generate the HTTPS domain, set the required variables, then deploy only the
-  coordinator-approved integration SHA. No service has been provisioned here.
+- Generate the HTTPS domain and set the required variables. After correction
+  and review, deploy only the coordinator-approved integrated commit using
+  Railway's `serviceInstanceDeployV2` API with explicit `commitSha`, service ID
+  and environment ID. Check the returned deployment's actual commit SHA and
+  settings against the approved SHA before acceptance. Do not use **Deploy
+  Latest Commit**: a branch can advance between review and deployment. If a
+  pinned deployment or identity verification is unavailable, keep the service
+  staged and investigate instead of silently deploying a moving branch.
 
 This image serves the cloud API only. PR6 does not serve the web build; the
 desktop/UI deployment remains under its existing owners.
@@ -137,10 +149,13 @@ created. This does not qualify the forthcoming corrected cloud SHA.
 
 Local model-off checks are separate from hosted TLS/SSE, authorized persistence,
 model/native/source acceptance. Independent review and corrected-cloud rerun
-remain required. No hosted deployment, provider call, source export or owner
+remain required. No hosted cloud-app deployment, provider call, source export or owner
 grant performed. Only test-owned containers/network were removed.
 
 Provider references: [Dockerfile path](https://docs.railway.com/builds/dockerfiles#custom-dockerfile-path),
+[staged changes](https://docs.railway.com/deployments/staged-changes),
+[GitHub autodeploys](https://docs.railway.com/deployments/github-autodeploys),
+[commit-pinned deployment](https://docs.railway.com/integrations/api/manage-services),
 [pre-deploy](https://docs.railway.com/deployments/pre-deploy-command),
 [healthchecks](https://docs.railway.com/deployments/healthchecks),
 [SSE](https://railway.com/guides/streaming-ai-responses).
