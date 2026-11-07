@@ -15,6 +15,8 @@ it('refuses unconsented reads, wrong identities and incompatible installed versi
   const observer = new AppServerObserver({ version: async () => '0.166.0', request: async (method, params) => { requests.push({ method, params }); return metadata; }, mode: 'fixture' });
   await expect(observer.readDelta({ ...localBinding, localReadConsented: false } as never, null, new AbortController().signal)).rejects.toThrow();
   expect(requests).toEqual([]);
+  await expect(observer.readDelta({ ...localBinding, binding: { ...localBinding.binding, adapterId: 'untrusted-adapter' } }, null, new AbortController().signal)).rejects.toThrow();
+  expect(requests).toEqual([]);
   const foreign = new AppServerObserver({ version: async () => '0.166.0', request: async () => ({ thread: { ...metadata.thread, id: 'foreign' } }), mode: 'fixture' });
   await expect(foreign.readDelta(localBinding, null, new AbortController().signal)).rejects.toThrow('identity');
   const drift = new AppServerObserver({ version: async () => '0.167.0', request: async () => { throw Error('must not read'); }, mode: 'fixture' });

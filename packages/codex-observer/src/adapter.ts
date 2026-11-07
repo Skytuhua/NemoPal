@@ -34,6 +34,7 @@ export class AppServerObserver implements CodexObserver {
   }
   async readDelta(input: LocalBinding, cursor: SourceCursor | null, signal: AbortSignal): Promise<ObservationBatch> {
     const binding = LocalBindingSchema.parse(input);
+    if (binding.binding.adapterId !== ADAPTER || binding.binding.adapterVersion !== VERSION) throw Error('Source adapter identity mismatch');
     if (this.stopped.has(binding.binding.id) || binding.binding.state !== 'following') throw Error('Source monitoring stopped');
     signal.throwIfAborted();
     if (!(await this.probe()).available) throw Error('Unsupported installed version');
