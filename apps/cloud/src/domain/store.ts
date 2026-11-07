@@ -181,6 +181,8 @@ export class Store {
                 reject(409, 'source_revoked', 'Source grant was revoked.');
             if (mode === 'observations') {
                 const input = e.input as c.IngestObservationsInput;
+                if(new Set(input.observations.map(observation=>observation.id)).size!==input.observations.length)
+                    reject(422,'duplicate_observation','Each observation ID must occur once per batch.');
                 if (source.state !== 'following' || source.exportPolicy === 'off' || x.status !== 'active')
                     reject(409, 'source_unavailable', 'Source export is not currently permitted.');
                 const acceptedIds: string[] = [];

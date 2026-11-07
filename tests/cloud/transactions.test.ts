@@ -7,6 +7,13 @@ import { command, setup } from './helpers';
 let h: Awaited<ReturnType<typeof setup>>;
 beforeEach(async () => { h = await setup(); });
 afterEach(async () => { await h?.close(); });
+test('duplicate observation IDs in one batch reject atomically instead of acknowledging the same ID twice',async()=>{
+  const {projectId}=await h.create();
+  const source=(await h.request('POST',`/v1/projects/${projectId}/sources`,command({sourceKey:'duplicate-batch',adapterId:'synthetic',adapterVersion:'1',capability:'history_only',exportPolicy:'metadata_only'},0))).json().result;
+  const observation={id:randomUUID(),bindingId:source.id,grantRevision:0,sourceItemId:'item',sourceRevision:'1',kind:'activity',occurredAt:new Date().toISOString(),observedAt:new Date().toISOString(),metadata:{type:'activity',state:'active'},provenance:{adapterId:'synthetic',adapterVersion:'1',mode:'fixture',evidenceLevel:'none'}};
+  expect((await h.request('POST',`/v1/sources/${source.id}/observations`,command({observations:[observation,observation]}))).statusCode).toBe(422);
+  expect((await h.pool.query('SELECT 1 FROM observations')).rowCount).toBe(0);
+});
 test('pairing is single use under concurrency, expires, and revoked credentials deny reads', async () => {
     const g = await issueGrant(h.pool, { ownerId: h.ownerId, timezone: 'UTC' });
     const results = await Promise.allSettled([redeem(h.pool, g.code), redeem(h.pool, g.code)]);
