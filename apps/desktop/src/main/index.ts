@@ -134,7 +134,8 @@ async function start() {
         await sources.poll(binding.id); sourceState(binding.id); return store.binding(binding.id)!.binding;
       }
       case 'pauseSource': case 'revokeSource': {
-        const id = raw as string; const local = store.binding(id); if (!local || !authority.projects.has(local.binding.projectId)) throw Error('Source not authorized');
+        const id = raw as string; const local = store.binding(id);
+        if (!local || local.binding.deviceId !== vault.localDeviceId()) throw Error('Local source is not in this device custody');
         if (operation === 'pauseSource') await sources.pause(id); else await sources.revoke(id); sourceState(id); void cycle(); return;
       }
       case 'invoke': return execute(c.AllowedClientCommandSchema.parse(raw));
