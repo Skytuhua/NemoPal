@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ProjectSummarySchema, SafeDesktopEventSchema, type DesktopBridge, type OwnerAction, type PlaybooksClient, type ProjectSnapshot, type ProjectSummary, type WorkspaceSpec } from '@living-playbooks/contracts';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { commandEnvelopeSchema, CreateProjectInputSchema, ProjectSummarySchema, SafeDesktopEventSchema, type DesktopBridge, type DocumentDraft, type OwnerAction, type PlaybooksClient, type ProjectSnapshot, type ProjectSummary, type WorkspaceSpec } from '@living-playbooks/contracts';
 import { WorkspaceCatalog } from '@living-playbooks/project-ui';
 import type { DraftStore } from '../features/documents/drafts';
 import { DocumentEditor } from '../features/documents/DocumentEditor';
@@ -15,10 +15,13 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const [loading, setLoading] = useState(true), [updating, setUpdating] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [rejected, setRejected] = useState(false), [connected, setConnected] = useState<boolean>();
   const [surface, setSurface] = useState('Workspace');
+  const [inspectedTask, setInspectedTask] = useState<string>(), [inspectorId] = useState(() => crypto.randomUUID());
   const titleDraft = useDraft(drafts, 'new-project:title', '', 0), briefDraft = useDraft(drafts, 'new-project:brief', '', 0);
+  const pendingCreation = useDraft(drafts, 'new-project:pending', '', 0);
   const title = titleDraft.draft.text, brief = briefDraft.draft.text;
   const currentId = useRef<string | undefined>(undefined), ticket = useRef(0), activeSnapshot = useRef<ProjectSnapshot | undefined>(undefined), editing = useRef(false);
   const lastLayout = useRef<WorkspaceSpec | undefined>(undefined), live = useRef(true), projectListTicket = useRef(0);
+  const heldDocuments = useRef<DocumentDraft[]>([]);
   const list = useCallback(async () => {
     const request = ++projectListTicket.current;
     const result = (await client.listProjects()).map(raw => ProjectSummarySchema.parse(raw));
@@ -36,7 +39,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
       const result = validateSnapshot(raw, lastLayout.current);
       if (activeSnapshot.current && result.snapshot.eventSequence < activeSnapshot.current.eventSequence) return;
       activeSnapshot.current = result.snapshot; setSnapshot(result.snapshot); setRejected(result.rejected);
-      if (!lastLayout.current || !editing.current) { lastLayout.current = result.snapshot.project.workspace; setLayout(lastLayout.current); }
+      if (!lastLayout.current || !editing.current) { lastLayout.current = result.snapshot.project.workspace; heldDocuments.current = result.snapshot.documents; setLayout(lastLayout.current); }
       setError('');
     } catch { if (live.current && currentId.current === id && request === ticket.current) setError('Project unavailable. Your local drafts are preserved. Retry when connected.'); }
     finally { if (live.current && currentId.current === id && request === ticket.current) { setUpdating(false); setLoading(false); } }
@@ -44,7 +47,8 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const select = useCallback(async (id: string) => {
     try { await drafts.flush(); } catch { setError('Draft storage failed. Copy your work before switching projects.'); return; }
     currentId.current = id; activeSnapshot.current = undefined; lastLayout.current = undefined; editing.current = false;
-    setSelected(id); setSnapshot(undefined); setLayout(undefined); setLoading(true); setBusy(false); setError(''); setSurface('Workspace');
+    heldDocuments.current = [];
+    setSelected(id); setSnapshot(undefined); setLayout(undefined); setLoading(true); setBusy(false); setError(''); setSurface('Workspace'); setInspectedTask(undefined);
     await refresh(id);
   }, [drafts, refresh]);
   useEffect(() => {
@@ -77,11 +81,46 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     catch { if (currentId.current === id) setError('Owner update not confirmed. Refresh before retrying; drafts are preserved.'); }
     finally { if (currentId.current === id) setBusy(false); }
   }
+  async function createProject() {
+    if (busy || !pendingCreation.ready) return;
+    setBusy(true);
+    const sentTitle = titleDraft.current.current, sentBrief = briefDraft.current.current, originatingProject = currentId.current;
+    try {
+      let pending = pendingCreation.current.current;
+      const command = pending.text ? commandEnvelopeSchema(CreateProjectInputSchema).parse(JSON.parse(pending.text)) : {
+        operationId: crypto.randomUUID(), input: CreateProjectInputSchema.parse({ title: sentTitle.text, brief: sentBrief.text, format: 'prompt' }),
+      };
+      if (!pending.text) { pending = { text: JSON.stringify(command), baseRevision: 0 }; pendingCreation.change(pending); }
+      await drafts.flush();
+      await client.createProject(command);
+      const items = await list(), created = items.find(item => !projects.some(existing => existing.id === item.id));
+      await titleDraft.saved(sentTitle, 0, ''); await briefDraft.saved(sentBrief, 0, '');
+      await pendingCreation.saved(pending, 0, '');
+      setError('');
+      if (created && currentId.current === originatingProject) await select(created.id);
+    } catch { setError('Project creation not confirmed. Retry the saved request to reconcile its outcome.'); }
+    finally { setBusy(false); }
+  }
   const offline = connected === false || snapshot?.connection.sync === 'offline';
   const fixtureMode = fixture || snapshot?.connection.mode === 'fixture';
   const disabled = busy || offline || !!error || !snapshot || snapshot.project.status === 'archived';
   const layoutChanged = layout && snapshot && JSON.stringify(layout.panels) !== JSON.stringify(snapshot.project.workspace.panels);
-  function openTask(id: string) { setSurface('Workspace'); requestAnimationFrame(() => document.getElementById(`task-${id}`)?.focus()); }
+  const needsTaskInspector = inspectedTask && snapshot?.project.tasks.some(task => task.id === inspectedTask) && !layout?.panels.some(panel => panel.type === 'checklist' && panel.taskIds.includes(inspectedTask));
+  async function applyLayout() {
+    const record = activeSnapshot.current;
+    if (!record) return;
+    try { await drafts.flush(); }
+    catch { setError('Draft storage failed. Copy your work before applying the workspace arrangement.'); return; }
+    if (currentId.current !== record.project.id || JSON.stringify(activeSnapshot.current?.project.workspace) !== JSON.stringify(record.project.workspace)) return;
+    lastLayout.current = record.project.workspace; heldDocuments.current = record.documents;
+    setLayout(lastLayout.current); editing.current = false;
+  }
+  function openTask(id: string) {
+    const record = activeSnapshot.current;
+    if (!record?.project.tasks.some(task => task.id === id)) return;
+    setSurface('Workspace'); setInspectedTask(id);
+    requestAnimationFrame(() => { if (currentId.current === record.project.id) document.getElementById(`task-${id}`)?.focus(); });
+  }
   return <div className="app-shell" data-surface={surface}>
     <a className="skip-link" href="#workspace">Skip to workspace</a>
     <header className="app-header"><strong>Living Playbooks</strong><span>{fixtureMode ? 'Fixture mode · synthetic data · no live model' : 'Desktop workspace'}</span><button onClick={() => { void list().catch(() => setError('Projects unavailable.')); void refresh(); }}>Refresh</button>{error && <div className="global-error notice error" role="alert">{error}<button onClick={() => { void list().catch(() => {}); void refresh(); }}>Retry</button></div>}</header>
@@ -89,11 +128,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     <aside className="projects-surface" aria-label="Projects"><h2>Projects</h2>
       {projects.length === 0 && !loading && <p>No projects yet</p>}
       <ul className="project-list">{projects.map(project => <li key={project.id}><button aria-current={selected === project.id ? 'page' : undefined} onClick={() => void select(project.id)}><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 21Q2 8 15 5Q29 3 27 19Q27 28 16 28Q8 28 6 21Z" fill="currentColor"/><circle cx="12" cy="15" r="1.3" fill="white"/><circle cx="21" cy="15" r="1.3" fill="white"/></svg><span><strong>{project.title}</strong><small>{project.status}{project.unreadCheckIns > 0 ? ` · ${project.unreadCheckIns} unread question${project.unreadCheckIns > 1 ? 's' : ''}` : ''}</small></span></button></li>)}</ul>
-      <details className="new-project" open={projects.length === 0}><summary>New project</summary><form onSubmit={event => { event.preventDefault(); if (busy) return; setBusy(true); void (async () => {
-        const sentTitle = titleDraft.current.current, sentBrief = briefDraft.current.current, originatingProject = currentId.current;
-        try { await drafts.flush(); await client.createProject({ operationId: crypto.randomUUID(), input: { title: sentTitle.text, brief: sentBrief.text, format: 'prompt' } }); const items = await list(); const created = items.find(item => !projects.some(existing => existing.id === item.id)); await titleDraft.saved(sentTitle, 0, ''); await briefDraft.saved(sentBrief, 0, ''); if (created && currentId.current === originatingProject) await select(created.id); }
-        catch { setError('Project creation not confirmed. Refresh the project list before retrying.'); } finally { setBusy(false); }
-      })(); }}><label>Project title<input value={title} disabled={!titleDraft.ready} onChange={event => titleDraft.change({ text: event.target.value, baseRevision: 0 })} required maxLength={160} /></label><label>Project brief<textarea value={brief} disabled={!briefDraft.ready} onChange={event => briefDraft.change({ text: event.target.value, baseRevision: 0 })} rows={5} required /></label><button disabled={busy || !titleDraft.ready || !briefDraft.ready || !!titleDraft.error || !!briefDraft.error || !title.trim() || !brief.trim() || offline}>Create project</button>{(titleDraft.error || briefDraft.error) && <p role="alert">{titleDraft.error || briefDraft.error}</p>}</form></details>
+      <details className="new-project" open={projects.length === 0}><summary>New project</summary><form onSubmit={event => { event.preventDefault(); void createProject(); }}><label>Project title<input value={title} disabled={!titleDraft.ready || !pendingCreation.ready || !!pendingCreation.draft.text} onChange={event => titleDraft.change({ text: event.target.value, baseRevision: 0 })} required maxLength={160} /></label><label>Project brief<textarea value={brief} disabled={!briefDraft.ready || !pendingCreation.ready || !!pendingCreation.draft.text} onChange={event => briefDraft.change({ text: event.target.value, baseRevision: 0 })} rows={5} required /></label><button disabled={busy || !pendingCreation.ready || !titleDraft.ready || !briefDraft.ready || !!titleDraft.error || !!briefDraft.error || !!pendingCreation.error || (!pendingCreation.draft.text && (!title.trim() || !brief.trim())) || offline}>{pendingCreation.draft.text ? 'Retry project creation' : 'Create project'}</button>{pendingCreation.draft.text && <p role="status">An unresolved creation is saved. Retrying uses its original brief and operation ID.</p>}{(titleDraft.error || briefDraft.error || pendingCreation.error) && <p role="alert">{titleDraft.error || briefDraft.error || pendingCreation.error}</p>}</form></details>
     </aside>
     <main className="workspace-surface" id="workspace" onInputCapture={() => { editing.current = true; }} onFocusCapture={event => { if ((event.target as HTMLElement).matches('textarea, input, select')) editing.current = true; }}>
       {loading && <div role="status" className="loading"><h1>Loading workspace…</h1><div /><div /></div>}
@@ -104,12 +139,16 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
         </header>
         <div className="connection-status"><p>Cloud {offline ? 'offline · writes unavailable' : snapshot.connection.sync === 'stale' ? 'stale · refresh recommended' : snapshot.connection.sync === 'updating' || updating ? 'updating…' : fixtureMode ? 'connection simulated' : 'snapshot current'}</p><p>Nemotron {snapshot.connection.inference.available ? 'available' : `unavailable · ${snapshot.connection.inference.reason}`}</p><p>Source freshness: {snapshot.sourceBindings.length ? snapshot.sourceBindings.map(source => `${source.state}${source.lastObservedAt && Date.now() - Date.parse(source.lastObservedAt) > 120000 ? ' · observation old' : ''}`).join(', ') : 'No source linked'}</p>{snapshot.project.status === 'paused' && <p>Project paused · observation and check-in scheduling require canonical service eligibility.</p>}{snapshot.connection.demoTiming && <p>Demo reminder timing</p>}</div>
         {rejected && <p className="notice" role="status">Layout rejected. Showing the last trusted layout or a plain task checklist.</p>}
-        {layoutChanged && <div className="notice"><p>Workspace arrangement update available. Your editor stays in place.</p><p>{snapshot.project.workspace.panels.map(panel => panel.heading).join(' · ')}</p><button onClick={() => { lastLayout.current = snapshot.project.workspace; setLayout(lastLayout.current); editing.current = false; }}>Apply workspace arrangement</button></div>}
+        {layoutChanged && <div className="notice"><p>Workspace arrangement update available. Your editor stays in place.</p><p>{snapshot.project.workspace.panels.map(panel => panel.heading).join(' · ')}</p><button onClick={() => void applyLayout()}>Apply workspace arrangement</button></div>}
         {snapshot.project.tasks.length === 0 && <p className="empty">No tasks yet. Planning has not produced an accepted task list.</p>}
         <WorkspaceCatalog snapshot={snapshot} panels={layout.panels} disabled={disabled} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} openTask={openTask}
-          document={(id, heading) => { const record = snapshot.documents.find(item => item.id === id); return record ? <DocumentEditor key={id} document={record} heading={heading} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} /> : <p>Document unavailable. Your local copy is preserved.</p>; }}
+          document={(id, heading) => {
+            const canonical = snapshot.documents.find(item => item.id === id), record = canonical ?? heldDocuments.current.find(item => item.id === id);
+            return record ? <Fragment key={id}><DocumentEditor document={record} heading={heading} client={client} store={drafts} disabled={disabled || !canonical} refresh={() => refresh(snapshot.project.id)} />{!canonical && <p role="status">Document removed from the current workspace. Your local editor is retained until you apply the arrangement; saving is unavailable.</p>}</Fragment> : <p>Document unavailable. Your local copy is preserved.</p>;
+          }}
           question={record => <Question key={record.id} question={record} disabled={disabled || snapshot.project.status === 'paused'} answer={async input => { await client.answerCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(snapshot.project.id); }} snooze={async input => { await client.snoozeCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(snapshot.project.id); }} cancel={async () => { await client.cancelCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input: {} }); await refresh(snapshot.project.id); }} openTask={() => openTask(record.taskId)} />}
         />
+        {needsTaskInspector && <WorkspaceCatalog snapshot={snapshot} panels={[{ id: inspectorId, type: 'checklist', heading: 'Selected task', taskIds: [inspectedTask!] }]} disabled={disabled} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} document={() => null} question={() => null} openTask={openTask} />}
         <SourceControls key={snapshot.project.id} bridge={bridge} snapshot={snapshot} refresh={() => refresh(snapshot.project.id)} />
       </>}
     </main>
