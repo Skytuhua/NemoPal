@@ -15,7 +15,7 @@ not a deployable application. Do not point Railway at it or enable PR previews.
 - Repository root directory `/`; Config File Path
   `/deployment/railway/railway.json`. Do not set root to `apps/cloud`.
 - Dockerfile is selected by config; leave dashboard Build/Start overrides empty.
-- Set pre-deploy timeout to 120 seconds. Failed migration must block promotion.
+- Config caps pre-deploy at 120 seconds. Failed migration must block promotion.
 - Keep serverless/sleep disabled. No cron, GPU, provider service or worker replica.
 - Generate the HTTPS domain, set the required variables, then deploy only the
   coordinator-approved integration SHA. No service has been provisioned here.
