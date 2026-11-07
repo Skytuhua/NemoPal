@@ -16,6 +16,11 @@ Frozen base: `73175daa1f3d55595fcfeb7fe6beab5db337b7c3`. Ownership: cloud source
 - Ruling: this adapter supports explicit HTTPS chat-completions routes with non-streamed JSON. It sends `stream:false`; unsolicited SSE and 202/pending responses are unsupported blockers. Exact selected endpoint compatibility remains a live gate, never assumed from NVIDIA documentation.
 - Ruling: setup additionally requires `LP_MODEL_LIVE_OPT_IN=true` and positive finite `LP_MODEL_TOKEN_BUDGET`. Durable conservative byte-plus-output token reservations include failed/unknown calls and capability probes. Budget exhaustion never rotates provider or resets counters on restart.
 - Ruling: model-created done/skipped states and user-reported labels are rejected. Owner actions/answers establish those states; genuine read metadata retains its source evidence label.
+- T03 committed as `bc6c025` after 20 cloud regressions and TypeScript passed.
+- T08 red: five persisted lifecycle tests failed with `checkins_unavailable` before the suggestion/scheduler/command implementation.
+- T08 green: 8 cloud files / 29 tests pass, with injected-clock availability, answer-before-presentation, duplicate scheduling, snooze/restart, quiet hours, account cap, consent, pause/resume, revision races, explicit cancellation and IANA DST boundaries. TypeScript passes.
+- Ruling: quiet-hours equality means no quiet interval. The account cap counts distinct authorized presentation identities in a rolling 24-hour window; repeat display acknowledgments do not consume additional attention. A snooze creates a new identity but retains the same logical question.
+- Ruling: routine suggestions are due no sooner than five minutes, or 20 seconds only under explicit `LP_DEMO_TIMING=true`. Snooze is an explicit owner-selected future instant within seven days, with its supplied IANA zone persisted separately. Demo timing remains visibly marked in the shared connection DTO.
 
 ## RESULT
 

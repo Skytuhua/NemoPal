@@ -5,6 +5,7 @@ import { validateProposal,type ToolReceipt } from '@living-playbooks/nemotron';
 import { reauthorize,type Principal } from '../auth/credentials';
 import { transaction } from '../db/migrate';
 import { lockProject,saveProject,appendEvent,queueJob,snapshotData } from '../domain/store';
+import { scheduleSuggestion } from '../checkins/scheduler';
 
 const grants=(sources:c.SourceBinding[])=>sources.filter(s=>s.state==='following'&&s.exportPolicy!=='off').map(s=>({bindingId:s.id,grantRevision:s.grantRevision})).sort((a,b)=>a.bindingId.localeCompare(b.bindingId));
 export async function persistJob(db:PoolClient,job:c.ManagerJob){await db.query('UPDATE jobs SET data=$2,state=$3,run_after=$4,lease_expires_at=$5,generation=$6 WHERE id=$1',[job.id,job,job.state,job.runAfter,job.leaseExpiresAt,job.leaseGeneration]);}
@@ -65,12 +66,10 @@ export class JobQueue {
       if(c.canonicalJson(project.workspace.panels)!==c.canonicalJson(proposal.workspace.panels)){project.workspace={...proposal.workspace,id:project.workspace.id,revision:project.workspace.revision+1};}
       const message:c.ChatMessage={id:randomUUID(),projectId:project.id,role:'manager',text:proposal.reply.text,createdAt:this.now().toISOString(),observationIds:proposal.reply.observationIds,jobId:job.id};
       await db.query('INSERT INTO messages(id,project_id,data) VALUES($1,$2,$3)',[message.id,project.id,message]);
-      // The check-in policy service consumes this suggestion in the same transaction (T08).
-      if(proposal.questionSuggestion)await this.scheduleSuggestion(db,project,proposal);
+      if(proposal.questionSuggestion)await scheduleSuggestion(db,project,proposal,authority,this.now());
       await saveProject(db,project,this.now());current.state='completed';current.leaseExpiresAt=null;await persistJob(db,current);await appendEvent(db,project,'project_updated',project.id);return 'completed';
     });
   }
-  protected async scheduleSuggestion(_db:PoolClient,_project:c.Project,_proposal:c.ManagerProposal){throw new Error('checkins_unavailable');}
   async fail(job:c.ManagerJob,code:string,retryAfterSeconds=60){
     return this.locked(job,async(db,current,project,authority,staleCount)=>{
       if(code==='proposal_stale'){

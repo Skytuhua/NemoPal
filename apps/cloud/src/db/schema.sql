@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS checkins (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS checkins_one_open ON checkins(project_id)
  WHERE data->>'state' IN ('scheduled','available','presented','snoozed');
+ALTER TABLE checkins ADD COLUMN IF NOT EXISTS authority jsonb;
+ALTER TABLE checkins ADD COLUMN IF NOT EXISTS snooze_timezone text;
+CREATE TABLE IF NOT EXISTS checkin_presentations (
+ presentation_id uuid PRIMARY KEY, checkin_id uuid NOT NULL REFERENCES checkins(id) ON DELETE CASCADE,
+ owner_id uuid NOT NULL REFERENCES owners(id), authorized_at timestamptz NOT NULL
+);
 CREATE TABLE IF NOT EXISTS command_receipts (
  actor_id uuid NOT NULL, operation_id uuid NOT NULL, project_id uuid REFERENCES projects(id),
  request_hash text NOT NULL, response jsonb, PRIMARY KEY(actor_id,operation_id)

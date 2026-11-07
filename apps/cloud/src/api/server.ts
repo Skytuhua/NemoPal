@@ -6,10 +6,12 @@ import { authenticate, redeem, type Principal } from '../auth/credentials';
 import { Store } from '../domain/store';
 import { DomainError, reject } from '../domain/errors';
 import { readEvents } from './events';
+import { CheckInCommands } from '../checkins/commands';
 
 export function buildServer(pool: Pool, options: { now?:()=>Date; inference?:c.ProjectSnapshot['connection']['inference'] }={}) {
   const app=Fastify({logger:false,bodyLimit:c.LIMITS.ingestionBytes+8192,requestTimeout:15000});
   const store=new Store(pool,options.now);
+  const checkins=new CheckInCommands(store);
   if(options.inference)store.inference=options.inference;
   const principals=new WeakMap<FastifyRequest,Principal>();
   const principal=(r:FastifyRequest)=>principals.get(r)!;
@@ -54,7 +56,10 @@ export function buildServer(pool: Pool, options: { now?:()=>Date; inference?:c.P
   app.post('/v1/sources/:id/health',r=>store.sourceCommand(principal(r),path(r),id(r),c.commandEnvelopeSchema(c.SourceHealthInputSchema).parse(r.body),'health'));
   app.post('/v1/sources/:id/observations',r=>store.sourceCommand(principal(r),path(r),id(r),c.commandEnvelopeSchema(c.IngestObservationsInputSchema).parse(r.body),'observations'));
   app.post('/v1/jobs/:id/cancel',r=>store.cancelJob(principal(r),path(r),id(r),c.commandEnvelopeSchema(c.EmptyInputSchema).parse(r.body)));
-  for(const suffix of ['presented','answer','snooze','cancel'])app.post(`/v1/checkins/:id/${suffix}`,async()=>reject(503,'checkins_unavailable','Check-in service has not started.'));
+  app.post('/v1/checkins/:id/presented',r=>checkins.apply(principal(r),path(r),id(r),c.commandEnvelopeSchema(c.PresentationInputSchema).parse(r.body),'presented'));
+  app.post('/v1/checkins/:id/answer',r=>checkins.apply(principal(r),path(r),id(r),c.revisionedCommandSchema(c.CheckInAnswerSchema).parse(r.body),'answer'));
+  app.post('/v1/checkins/:id/snooze',r=>checkins.apply(principal(r),path(r),id(r),c.revisionedCommandSchema(c.SnoozeInputSchema).parse(r.body),'snooze'));
+  app.post('/v1/checkins/:id/cancel',r=>checkins.apply(principal(r),path(r),id(r),c.revisionedCommandSchema(c.EmptyInputSchema).parse(r.body),'cancel'));
   app.get('/v1/events',async(r,reply)=>{
     const after=z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).parse((r.query as {after?:unknown}).after??0);
     let cursor=after;const initial=await readEvents(pool,principal(r),cursor,store.now());
