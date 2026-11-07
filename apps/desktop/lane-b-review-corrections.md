@@ -17,6 +17,9 @@ No shared DTO/signature changes. Local journal migration will fail closed for mi
 ## TEST COMMANDS AND OUTPUTS
 
 - Finding 1: real main IPC harness with synthetic OS/network ports, real journal/vault/boundary/controller/sync/presentation. Empty cloud authority after offline restart: pause and revoke both failed before the fix. Expired cloud credential also reproduced the withdrawal failure. After device-custody authorization, all 3 tests pass, general cloud snapshot authority remains denied, foreign-device withdrawal remains denied.
+- Finding 2: six expected RED failures across main restart/export-current-gate suites. GREEN: 7/7 focused tests. Restored queued excerpts are held for missing/changed endpoint or disclosure; legacy journals without acknowledged identity open but cannot export; matching acknowledged configuration retains the existing consented path; revocation attempts still reach the cloud port. Mid-drain identity change sends only the first permitted batch and retains the second. No actual OFF-state leak is asserted; all upload ports are synthetic.
+
+Journal migration: additive optional `entries[].receivingConsent` with grant revision and the acknowledged API origin, receiving-model endpoint and disclosure. Optional parsing preserves legacy checksums; absence fails closed for uploads, without blocking revocation. Only native explicit confirmation supplies this metadata. No shared DTO is changed or sent to cloud. Each upload rechecks the current identity; changed receivers require explicit revoke/relink consent, never inference from stored export policy.
 
 ## LIVE EVIDENCE
 

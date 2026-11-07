@@ -8,7 +8,7 @@ import { createInstalledObserver, ADAPTER, VERSION } from '@living-playbooks/cod
 import * as c from '@living-playbooks/contracts';
 import { CredentialVault } from './credentials';
 import { readPairingResponse } from './pairing';
-import { ConsentSelections } from './consent';
+import { ConsentSelections, receivingIdentity } from './consent';
 import { NativeBoundary, type Authority } from './ipc';
 import { JournalStore } from './local-store';
 import { SourceController } from './source-controller';
@@ -40,8 +40,8 @@ async function start() {
   const fetchBounded: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.headers && new Headers(init.headers).get('Accept') === 'text/event-stream' ? init.signal : AbortSignal.any([AbortSignal.timeout(15000), ...(init?.signal ? [init.signal] : [])]) });
   const client = createHttpClient({ origin: origin ?? 'http://127.0.0.1:4310', allowInsecureLoopback: !app.isPackaged, getAuthorization: () => vault.authorization(), fetch: fetchBounded });
   // Explicit owner configuration must name BOTH the actual receiving endpoint and a disclosure.
-  const receiving = process.env.LP_RECEIVING_MODEL_ENDPOINT && process.env.LP_EXPORT_DISCLOSURE ? `${process.env.LP_RECEIVING_MODEL_ENDPOINT}; ${process.env.LP_EXPORT_DISCLOSURE}` : null;
-  const consent = new ConsentSelections(origin, receiving);
+  const currentReceiving = () => receivingIdentity(origin, process.env.LP_RECEIVING_MODEL_ENDPOINT, process.env.LP_EXPORT_DISCLOSURE);
+  const consent = new ConsentSelections(origin, currentReceiving());
   const authority: Authority = { projects: new Set(), checkIns: new Map(), documents: new Map(), jobs: new Map() };
   let selectedProject: string | undefined;
   let connected = false;
@@ -59,7 +59,7 @@ async function start() {
   const sourceState = (id: string) => { const local = store.binding(id); if (local) sendDesktop({ type: 'source_state', binding: local.binding, cloudRevocationPending: store.pendingSourceCommands().some(command => command.bindingId === id && command.kind === 'revoke') }); };
   const makeController = () => new SourceController(store, observer, (id, reason) => { const local = store.binding(id); if (local) sendDesktop({ type: 'source_state', binding: { ...local.binding, state: 'blocked' }, cloudRevocationPending: false }); sendDesktop({ type: 'connection', connected, reason }); });
   let sources = makeController();
-  let sync = new SyncEngine(store, client);
+  let sync = new SyncEngine(store, client, currentReceiving);
   const windows = createNativeWindows({ renderer, preloadDirectory: resolve(base, '../preload'), position: store.position(), closeWorkspace: () => lifetime.closeWorkspace(), moved: point => { void store.setPosition(point).catch(() => { sendDesktop({ type: 'connection', connected: false, reason: 'Local position could not be saved.' }); }); } });
   const open = () => { windows.workspace.show(); windows.workspace.focus(); };
   const presentation = new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { void refresh(projectId).catch(disconnect); }, Date.now, projectId => { sendDesktop({ type: 'open_project', projectId }); open(); });
@@ -117,7 +117,7 @@ async function start() {
       case 'pair': {
         if (!origin || (!await safeStorage.isAsyncEncryptionAvailable() && process.env.LP_TEMPORARY_PAIRING !== '1')) throw Error('Configured origin and protected storage or explicit temporary session required.');
         const response = await fetchBounded(new URL('/v1/auth/redeem', origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c.PairingInputSchema.parse(raw)), redirect: 'error', credentials: 'omit' });
-        const result = await vault.save(await readPairingResponse(response)); credentialBlocker = ''; sync = new SyncEngine(store, client); void cycle(); return result;
+        const result = await vault.save(await readPairingResponse(response)); credentialBlocker = ''; sync = new SyncEngine(store, client, currentReceiving); void cycle(); return result;
       }
       case 'selectSource': {
         const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE;
@@ -130,7 +130,7 @@ async function start() {
         const snapshot = await client.getSnapshot(input.projectId);
         const deviceId = vault.deviceId()!;
         const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await client.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
-        await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, input.exportPolicy !== 'off');
+        await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, input.exportPolicy !== 'off', choice.receiving);
         await sources.poll(binding.id); sourceState(binding.id); return store.binding(binding.id)!.binding;
       }
       case 'pauseSource': case 'revokeSource': {

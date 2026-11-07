@@ -8,7 +8,7 @@ import { createHttpClient } from '@living-playbooks/api-client';
 import { hashCommand, ObservationBatchSchema } from '@living-playbooks/contracts';
 import { JournalStore } from '../../apps/desktop/src/main/local-store';
 import { SyncEngine } from '../../apps/desktop/src/main/sync';
-import { localBinding } from '../../fixtures/codex/synthetic';
+import { localBinding, syntheticReceiving } from '../../fixtures/codex/synthetic';
 import { goldenObservationBatch } from '../../fixtures/contracts/golden';
 
 it('real HTTP client reconnect retries one synthetic observation as one logical downstream update', async () => {
@@ -29,11 +29,11 @@ it('real HTTP client reconnect retries one synthetic observation as one logical 
   try {
     const address = server.address(); if (!address || typeof address === 'string') throw Error('Expected loopback port');
     const client = createHttpClient({ origin: `http://127.0.0.1:${address.port}`, allowInsecureLoopback: true, getAuthorization: () => 'Bearer synthetic-test-only' });
-    const path = join(directory, 'journal'); let store = await JournalStore.open(path); await store.putBinding(localBinding, true);
+    const path = join(directory, 'journal'); let store = await JournalStore.open(path); await store.putBinding(localBinding, true, syntheticReceiving);
     await store.commitObservationBatch(localBinding.binding.id, null, ObservationBatchSchema.parse(goldenObservationBatch));
-    expect((await new SyncEngine(store, client).run()).connected).toBe(false);
+    expect((await new SyncEngine(store, client, () => syntheticReceiving).run()).connected).toBe(false);
     store = await JournalStore.open(path);
-    expect((await new SyncEngine(store, client).run()).connected).toBe(true);
+    expect((await new SyncEngine(store, client, () => syntheticReceiving).run()).connected).toBe(true);
     expect(requests).toHaveLength(2); expect(requests[1]).toBe(requests[0]); expect(logicalUpdates).toBe(1);
     expect(await store.pendingUploads(20)).toEqual([]); expect(store.cursor(localBinding.binding.id)?.offset).toBe(100);
     for (const localOnly of [localBinding.selectedSource, localBinding.sourceIdentity, 'nextCursor', 'localReadConsented']) expect(requests[0]).not.toContain(localOnly);
