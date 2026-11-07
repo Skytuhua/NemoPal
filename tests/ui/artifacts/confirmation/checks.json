@@ -1,0 +1,30 @@
+{
+  "round": "confirmation",
+  "evidence": "Synthetic local browser only",
+  "desktop": {
+    "viewport": 1440,
+    "width": 1440,
+    "center": 936,
+    "panels": 6
+  },
+  "focus": {
+    "tag": "A",
+    "outline": "3px"
+  },
+  "targets": [
+    {
+      "viewport": 375,
+      "width": 375,
+      "smallTargets": []
+    },
+    {
+      "viewport": 812,
+      "width": 812,
+      "smallTargets": []
+    }
+  ],
+  "consoleErrors": [],
+  "indexedDBReload": "preserved",
+  "petReducedMotion": "none",
+  "nativeGate": "NOT RUN"
+}
