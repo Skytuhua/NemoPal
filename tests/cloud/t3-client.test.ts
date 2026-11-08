@@ -17,6 +17,7 @@ type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 
 async function fixture(mode: Mode = 'ok') {
   const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
   let onInitialized = () => {};
+  let onCall = () => {};
   let authorization: URL | undefined;
   let callback: string | undefined;
   let callbackClosed = false;
@@ -90,6 +91,7 @@ async function fixture(mode: Mode = 'ok') {
       }
       if (message.method === 'notifications/initialized') { onInitialized(); if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250)); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
       if (message.method === 'tools/call') {
+        onCall();
         if (mode === 'call-hang') return;
         if (mode === 'call-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'fixture error' } });
         if (mode === 'call-oversize') return send(res, { pad: 'x'.repeat(300000) });
@@ -128,6 +130,7 @@ async function fixture(mode: Mode = 'ok') {
   const result = {
     endpoint: `${origin}/mcp`, origin, requests,
     setOnInitialized(callback: () => void) { onInitialized = callback; },
+    setOnCall(callback: () => void) { onCall = callback; },
     get callback() { return callback; },
     get callbackClosed() { return callbackClosed; },
     async authorize(url: string, alter?: (url: URL) => void) {
@@ -524,4 +527,45 @@ it('terminates the session after a definitive server error', async () => {
   await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'mcp_error' });
   await session.close();
   expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+});
+
+
+it('does not start cleanup after expiry even when the timer is delayed', async () => {
+  const f = await fixture('session');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 100, onAuthorization: async url => { await f.authorize(url); } });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    const until = Date.now() + 150;
+    while (Date.now() < until) { /* prevent timer callbacks during expiry */ }
+    await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed' });
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { fetchSpy.mockRestore(); }
+});
+
+it('classifies an error processed after session expiry as deadline and does not clean up remotely', async () => {
+  const f = await fixture('call-error');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 5000, onAuthorization: async url => { await f.authorize(url); } });
+  let clock: ReturnType<typeof vi.spyOn> | undefined;
+  f.setOnCall(() => { clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 10000); });
+  try {
+    await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'deadline' });
+    await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+  } finally { clock?.mockRestore(); }
+});
+
+
+it('network boundary fences an expired session before initiating cleanup', async () => {
+  const f = await fixture('session');
+  const controller = new AbortController();
+  const onExpiry = vi.fn(() => controller.abort('deadline'));
+  const boundary = networkBoundary(new URL(f.endpoint), controller.signal, 1000, () => 'cleanup', () => {});
+  boundary.setBearer('fixture-secret-access-token');
+  boundary.enableScopedCalls({ environmentId: 'env', threadId: 'thread', expiresAt: Date.now() - 1, onExpiry });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(boundary.fetch(f.endpoint, { method: 'DELETE' })).rejects.toMatchObject({ code: 'deadline' });
+    expect(onExpiry).toHaveBeenCalledOnce();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  } finally { boundary.dispose(); fetchSpy.mockRestore(); }
 });

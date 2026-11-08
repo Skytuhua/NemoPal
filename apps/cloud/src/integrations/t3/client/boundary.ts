@@ -83,6 +83,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
       throw requestFailure;
     };
     if (url.origin !== endpoint.origin || url.username || url.password || url.search || url.hash) return fail('invalid_metadata');
+    if (scoped && url.href === endpoint.href && Date.now() >= scoped.expiresAt) { scoped.onExpiry(); return failRequest('deadline'); }
     let action = `${method} ${url.pathname}`;
     const publicActions = ['GET /.well-known/oauth-protected-resource/mcp', 'GET /.well-known/oauth-authorization-server',
       'POST /oauth/mcp/register', 'POST /oauth/mcp/token'];
@@ -92,7 +93,6 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
         let message: { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
         try { message = JSON.parse(String(init.body)); } catch { return fail('mcp_error'); }
         if (message.method === 'tools/call' && scoped) {
-          if (Date.now() >= scoped.expiresAt) { scoped.onExpiry(); return failRequest('deadline'); }
           const args = message.params?.arguments;
           const name = message.params?.name;
           if (!name || !permittedCall(name, args, scoped)) return fail('mcp_error');

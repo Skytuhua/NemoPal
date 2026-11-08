@@ -135,6 +135,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
         if (closing) return closing;
         closed = true;
         signal.removeEventListener('abort', onAbort);
+        if (Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
         if (busy && !signal.aborted) deadline.abort('cancelled');
         closing = (async () => {
           phase = 'cleanup';
@@ -179,6 +180,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
             if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'tool_call');
             return result;
           } catch {
+            if (Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
             const code = signal.aborted ? (signal.reason === 'deadline' ? 'deadline' : 'cancelled') :
               localRequestExpired || network.deadlineExpired ? 'deadline' :
               network.failure?.code === 'response_too_large' ? 'response_too_large' : 'mcp_error';
