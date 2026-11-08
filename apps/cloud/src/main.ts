@@ -14,4 +14,5 @@ await runCloudProcess({
     start: signal => startCloudApplication({ pool, env: process.env, listen: { host: loopback ? '127.0.0.1' : '0.0.0.0', port: Number(process.env.PORT ?? 4310) }, signal }),
     onStarted: application => console.log(`Living Playbooks cloud started. Nemotron capability: ${application.inferenceAvailable ? 'probe passed' : 'BLOCKED'}.`),
     onShutdownError: () => { console.error('Cloud shutdown failed.'); process.exitCode = 1; },
+    onStartupError: () => { console.error('Cloud startup failed during shutdown.'); process.exitCode = 1; },
 });
