@@ -66,7 +66,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   let bearer = '';
   let sessionId = '';
   let deadlineExpired = false;
-  let scoped: { environmentId: string; threadId: string } | undefined;
+  let scoped: { environmentId: string; threadId: string; expiresAt: number; onExpiry: () => void } | undefined;
   const fail = (code: ConnectionCode): never => {
     failure = new T3ConnectionError(code, phase()); throw failure;
   };
@@ -92,6 +92,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
         let message: { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
         try { message = JSON.parse(String(init.body)); } catch { return fail('mcp_error'); }
         if (message.method === 'tools/call' && scoped) {
+          if (Date.now() >= scoped.expiresAt) { scoped.onExpiry(); return failRequest('deadline'); }
           const args = message.params?.arguments;
           const name = message.params?.name;
           if (!name || !permittedCall(name, args, scoped)) return fail('mcp_error');
@@ -165,7 +166,8 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   return {
     fetch: guardedFetch,
     setBearer(value: string) { bearer = value; },
-    enableScopedCalls(value: { environmentId: string; threadId: string }) { scoped = value; },
+    enableScopedCalls(value: { environmentId: string; threadId: string; expiresAt: number; onExpiry: () => void }) { scoped = value; },
+    clearFailure() { failure = undefined; },
     get sessionId() { return sessionId; },
     get deadlineExpired() { return deadlineExpired; },
     expireDeadline() { deadlineExpired = true; for (const request of active.keys()) request.abort('deadline'); },

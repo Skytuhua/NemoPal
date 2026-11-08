@@ -12,7 +12,7 @@ afterEach(async () => { await Promise.all(fixtures.splice(0).map(f => f.close())
 type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 'oversize' |
   'redirect' | 'discovery-error' | 'token-error' | 'broad-token' | 'mcp-error' | 'missing-tool' | 'hang' |
   'session' | 'cleanup-error' | 'chunked-oversize' | 'mcp-oversize' | 'mcp-hang' | 'sse' | 'bad-token-endpoint' | 'bad-registration-endpoint' |
-  'call-hang' | 'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
+  'call-hang' | 'call-error' | 'call-oversize' | 'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
 
 async function fixture(mode: Mode = 'ok') {
   const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
@@ -84,13 +84,15 @@ async function fixture(mode: Mode = 'ok') {
       if (message.method === 'initialize') {
         if (mode === 'init-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
         if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250));
-        if (['session', 'call-hang', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty', 'slow-init-notification', 'background-oversize'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
+        if (['session', 'call-hang', 'call-error', 'call-oversize', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty', 'slow-init-notification', 'background-oversize'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
         return send(res, { jsonrpc: '2.0', id: message.id,
           result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'private-server-name', version: '0.1.7' } } });
       }
       if (message.method === 'notifications/initialized') { onInitialized(); if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250)); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
       if (message.method === 'tools/call') {
         if (mode === 'call-hang') return;
+        if (mode === 'call-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'fixture error' } });
+        if (mode === 'call-oversize') return send(res, { pad: 'x'.repeat(300000) });
         if (message.params.name !== 't3_thread_read') return send(res, { jsonrpc: '2.0', id: message.id, result: { structuredContent: { requestIds: [] }, content: [] } });
         const args = message.params.arguments;
         expect(args.environmentId).toBe('env'); expect(args.threadId).toBe('thread');
@@ -478,4 +480,48 @@ it('revoked authority prevents the observer from sending a read', async () => {
   expect((await observer.poll()).mode).toBe('revoked');
   expect(f.requests.filter(r => r.body.includes('tools/call'))).toHaveLength(0);
   await session.close();
+});
+
+
+const reviewReadArgs = { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 1, maxCharsPerItem: 1, runLimit: 1 };
+it('fences session deadline even when the event loop delays its timer', async () => {
+  const f = await fixture('session');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 100, onAuthorization: async url => { await f.authorize(url); } });
+  const until = Date.now() + 150;
+  while (Date.now() < until) { /* simulate a stalled event loop */ }
+  await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'deadline' });
+  expect(f.requests.filter(r => r.body.includes('tools/call'))).toHaveLength(0);
+  await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed' });
+});
+it('preserves pre-aborted and in-flight cancellation', async () => {
+  const f = await fixture('call-hang');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', onAuthorization: async url => { await f.authorize(url); } });
+  const pre = new AbortController(); pre.abort();
+  await expect(session.callTool('t3_thread_read', reviewReadArgs, pre.signal)).rejects.toMatchObject({ code: 'cancelled' });
+  expect(f.requests.filter(r => r.body.includes('tools/call'))).toHaveLength(0);
+  const controller = new AbortController();
+  const pending = session.callTool('t3_thread_read', reviewReadArgs, controller.signal);
+  const result = expect(pending).rejects.toMatchObject({ code: 'cancelled' });
+  await vi.waitFor(() => expect(f.requests.some(r => r.body.includes('tools/call'))).toBe(true));
+  controller.abort(); await result;
+  await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed' });
+});
+it('preserves a lifetime timeout during a pending call', async () => {
+  const f = await fixture('call-hang');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 200, onAuthorization: async url => { await f.authorize(url); } });
+  await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'deadline' });
+  await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed' });
+});
+it('preserves oversized tool response as a bounded error', async () => {
+  const f = await fixture('call-oversize');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', onAuthorization: async url => { await f.authorize(url); } });
+  await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'response_too_large' });
+  await session.close();
+});
+it('terminates the session after a definitive server error', async () => {
+  const f = await fixture('call-error');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', onAuthorization: async url => { await f.authorize(url); } });
+  await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'mcp_error' });
+  await session.close();
+  expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
 });

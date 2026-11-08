@@ -126,7 +126,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
       const remainingMs = tokenDeadline - Date.now();
       if (remainingMs <= 0) throw new T3ConnectionError('deadline', 'initialize');
       timer = setTimeout(() => deadline.abort('deadline'), remainingMs);
-      network.enableScopedCalls({ environmentId: scoped.environmentId, threadId: scoped.threadId });
+      network.enableScopedCalls({ environmentId: scoped.environmentId, threadId: scoped.threadId, expiresAt: tokenDeadline, onExpiry: () => deadline.abort('deadline') });
       let closed = false;
       let busy = false;
       let calls = 0;
@@ -161,20 +161,30 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
         configuration: Object.freeze({ endpoint: endpoint.href, environmentId: scoped.environmentId }),
         toolNames: Object.freeze([...T3_TOOLS]), permissions: Object.freeze(['orchestration:read']),
         async callTool(name: T3ToolName, args: Record<string, unknown>, requestSignal: AbortSignal) {
-          if (closed || signal.aborted || requestSignal.aborted || busy || calls >= 300 ||
-            !permittedCall(name, args, scoped))
+          if (Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
+          if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'tool_call');
+          if (requestSignal.aborted) throw new T3ConnectionError('cancelled', 'tool_call');
+          if (closed || busy || calls >= 300 || !permittedCall(name, args, scoped))
             throw new T3ConnectionError('mcp_error', 'tool_call');
+          network.clearFailure();
           busy = true; calls++;
           const cancel = () => deadline.abort('cancelled');
           requestSignal.addEventListener('abort', cancel, { once: true });
           if (requestSignal.aborted) cancel();
           phase = 'tool_call';
           try {
-            return await boundedMcp(inner => client!.callTool({ name, arguments: args }, undefined,
+            const result = await boundedMcp(inner => client!.callTool({ name, arguments: args }, undefined,
               { signal: inner, timeout: requestMs + 1000, maxTotalTimeout: requestMs + 1000 }));
+            if (Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
+            if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'tool_call');
+            return result;
           } catch {
-            deadline.abort(localRequestExpired || network.deadlineExpired ? 'deadline' : 'cancelled');
-            throw new T3ConnectionError(localRequestExpired || network.deadlineExpired ? 'deadline' : 'mcp_error', 'tool_call', 'uncertain');
+            const code = signal.aborted ? (signal.reason === 'deadline' ? 'deadline' : 'cancelled') :
+              localRequestExpired || network.deadlineExpired ? 'deadline' :
+              network.failure?.code === 'response_too_large' ? 'response_too_large' : 'mcp_error';
+            if (code === 'deadline' && !signal.aborted) deadline.abort('deadline');
+            if (!signal.aborted) { busy = false; await close().catch(() => {}); }
+            throw new T3ConnectionError(code, 'tool_call', 'uncertain');
           } finally { busy = false; requestSignal.removeEventListener('abort', cancel); }
         }, close,
       };
