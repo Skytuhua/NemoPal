@@ -6,17 +6,17 @@
 }
 .pet-surface.pet-speech .pet-bubble {
   position: relative; flex: 0 1 auto; min-height: 0;
-  width: 100%; max-height: 132px; padding: 6px;
+  width: 100%; max-height: 128px; padding: 6px;
   border-radius: 18px; transform-origin: 72% 100%;
 }
 .pet-surface.pet-speech .pet-bubble::after {
-  content: ''; position: absolute; right: 53px; bottom: -7px;
+  content: ''; position: absolute; right: 97px; bottom: -7px;
   width: 12px; height: 12px; background: #fffdf5;
   border-right: 1px solid #bdb6a2; border-bottom: 1px solid #bdb6a2;
   transform: skewY(30deg) rotate(30deg);
 }
 .pet-surface.pet-speech .pet-speech-body {
-  max-height: 118px; overflow: auto; scrollbar-width: thin;
+  max-height: 114px; overflow: auto; scrollbar-width: thin;
   scrollbar-color: #bdb6a2 #fffdf5; overscroll-behavior: contain;
   border-radius: 11px;
 }
@@ -25,7 +25,6 @@
   display: grid; gap: 6px;
 }
 .pet-surface.pet-speech .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 0; }
-.pet-surface.pet-speech fieldset > .actions > button:first-child:nth-last-child(3) { grid-column: 1 / -1; }
 .pet-surface.pet-speech button, .pet-surface.pet-speech input { font-size: 14px; }
 .pet-surface.pet-speech .actions button { min-width: 0; padding: 6px; min-height: 44px; }
 .pet-surface.pet-speech .question { min-width: 0; }
@@ -46,3 +45,31 @@
 @keyframes pet-speech-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px) scale(.96); } }
 .pet-speech[data-reduced-motion='true'] .pet-bubble { animation: none; }
 @media (prefers-reduced-motion: reduce) { .pet-surface.pet-speech .pet-bubble { animation: none; } }
+
+.pet-surface.pet-speech .pet-mouse-controls {
+  position: relative; flex: none; display: flex; align-items: flex-end;
+  width: 172px; height: 132px;
+}
+.pet-surface.pet-speech .pet-utilities {
+  position: absolute; right: 0; top: 0; display: grid;
+}
+.pet-surface.pet-speech .pet-utilities button {
+  display: grid; place-items: center; width: 44px; height: 44px;
+  min-height: 44px; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: #302d24;
+}
+.pet-surface.pet-speech .pet-utilities button:hover { background: #fffdf5; }
+.pet-surface.pet-speech .pet-utilities button[aria-pressed='true'] { background: #e2e7e0; }
+.pet-utilities button > span { font-size: 22px; line-height: 1; }
+.pet-utilities svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pet-surface.pet-speech button.pet-speech-toggle:disabled { opacity: 1; background: transparent; color: #302d24; cursor: default; }
+
+.pet-surface.pet-speech .pet-bubble[data-kind='thought'] {
+  border: 0; background: transparent; padding: 18px 20px;
+}
+.pet-thought-cloud { position: absolute; inset: 0; width: 100%; height: 100%; fill: #fffdf5; stroke: #bdb6a2; stroke-width: 1; }
+.pet-surface.pet-speech .pet-bubble[data-kind='thought'] .pet-speech-body { position: relative; text-align: center; }
+.pet-surface.pet-speech .pet-bubble[data-kind='thought']::after {
+  width: 7px; height: 7px; bottom: -9px; border: 1px solid #bdb6a2;
+  border-radius: 50%; transform: none;
+}
