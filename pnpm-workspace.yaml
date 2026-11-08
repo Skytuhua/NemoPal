@@ -4,3 +4,5 @@ packages:
 onlyBuiltDependencies:
   - electron
   - esbuild
+overrides:
+  fast-json-stringify: 7.3.1
