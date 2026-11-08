@@ -9,7 +9,7 @@ import { bindingKey, type T3Observation } from './observer';
 import type { T3Selection, T3ServiceStore } from './service';
 
 const nonnegative = z.number().int().nonnegative().safe();
-const enrollmentSchema = z.strictObject({ sourceGrantRevision: nonnegative, expectedT3GrantRevision: nonnegative, expectedMappingRevision: nonnegative, taskId: id, taskRevision: nonnegative,
+export const enrollmentSchema = z.strictObject({ sourceGrantRevision: nonnegative, expectedT3GrantRevision: nonnegative, expectedMappingRevision: nonnegative, taskId: id, taskRevision: nonnegative,
   environmentId: id, t3ProjectId: id, threadId: id, startPosition: nonnegative, runId: id,
   runOrdinal: z.number().int().positive().safe(), expiresAt: z.number().int().positive().safe(), localReadConsented: z.literal(true) });
 export type T3Enrollment = z.infer<typeof enrollmentSchema>;

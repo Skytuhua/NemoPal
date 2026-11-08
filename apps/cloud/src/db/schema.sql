@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS t3_enrollments (
  consent boolean NOT NULL, revoked boolean NOT NULL DEFAULT false,
  expires_at timestamptz NOT NULL, context jsonb NOT NULL, checkpoint jsonb
 );
+-- This row survives a crash; never automatically clear an unconfirmed T3 session.
+CREATE TABLE IF NOT EXISTS t3_host_fence (singleton boolean PRIMARY KEY CHECK (singleton), token uuid NOT NULL);
 CREATE TABLE IF NOT EXISTS observations (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), binding_id uuid NOT NULL REFERENCES source_bindings(id),
  source_item text NOT NULL, source_revision text NOT NULL, data jsonb,

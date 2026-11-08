@@ -7,13 +7,18 @@ import { Store } from '../domain/store';
 import { DomainError, reject } from '../domain/errors';
 import { readEvents } from './events';
 import { CheckInCommands } from '../checkins/commands';
+import { createT3Host } from '../integrations/t3/host';
+import { CanonicalT3Store } from '../integrations/t3/canonical-store';
+import { T3Error } from '../integrations/t3/model';
 export function buildServer(pool: Pool, options: {
     now?: () => Date;
     inference?: c.ProjectSnapshot['connection']['inference'];
+    localT3?: boolean;
 } = {}) {
     const app = Fastify({ logger: false, bodyLimit: c.LIMITS.ingestionBytes + 8192, requestTimeout: 15000 });
     const store = new Store(pool, options.now);
     const checkins = new CheckInCommands(store);
+    const t3 = options.localT3 ? createT3Host(pool, options.now) : undefined;
     if (options.inference)
         store.inference = options.inference;
     const principals = new WeakMap<FastifyRequest, Principal>();
@@ -26,8 +31,7 @@ export function buildServer(pool: Pool, options: {
         until: number;
     }>();
     const streams = new Set<() => void>();
-    app.addHook('onClose', async () => { for (const close of streams)
-        close(); });
+    app.addHook('onClose', async () => { for (const close of streams) close(); try { await t3?.shutdown(); } catch { console.error('Local T3 cleanup is unconfirmed; its restart fence remains in place.'); } });
     app.addHook('onRequest', async (r, reply) => {
         reply.header('Cache-Control', 'no-store');
         reply.header('X-Content-Type-Options', 'nosniff');
@@ -41,6 +45,8 @@ export function buildServer(pool: Pool, options: {
             return reply.code(422).send({ code: 'invalid_contract', message: 'Input does not match the shared contract.', retryable: false });
         if (error instanceof DomainError)
             return reply.code(error.status).send({ code: error.code, message: error.message, retryable: [429, 503].includes(error.status), ...(error.currentRevision === undefined ? {} : { currentRevision: error.currentRevision }) });
+        if (error instanceof T3Error)
+            return reply.code(error.code === 'wrong_owner' ? 403 : error.code === 'conflict' ? 409 : 503).send({ code: error.code, message: 'Local T3 operation unavailable.', retryable: false });
         if (error && typeof error === 'object' && 'code' in error && error.code === '23505')
             return reply.code(409).send({ code: 'identity_conflict', message: 'Record identity conflicts with existing state.', retryable: false });
         if (error && typeof error === 'object' && 'statusCode' in error && [400, 413, 415].includes(Number(error.statusCode)))
@@ -49,6 +55,16 @@ export function buildServer(pool: Pool, options: {
     });
     app.get('/health/live', async () => ({ live: true }));
     app.get('/health/ready', async () => { await pool.query('SELECT 1'); return { ready: true }; });
+    if (t3) {
+        const localOnly = (r: FastifyRequest) => { if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(r.ip)) reject(403, 'local_only', 'Local access required.'); };
+        app.get('/v1/local/t3/revisions/:projectId/:bindingId', async r => {
+            localOnly(r); const p = params(r); const owner = principal(r);
+            return new CanonicalT3Store(pool, owner, options.now).revisions({ ownerId: owner.ownerId, deviceId: owner.deviceId, projectId: p.projectId!, bindingId: p.bindingId! });
+        });
+        app.post('/v1/local/t3/start', async r => { localOnly(r); t3.start(principal(r), r.body); return { status: 'starting' }; });
+        app.get('/v1/local/t3/status', async r => { localOnly(r); return t3.view(principal(r)); });
+        app.post('/v1/local/t3/stop', async r => { localOnly(r); await t3.stop(principal(r)); return { status: 'stopped' }; });
+    }
     app.post('/v1/auth/redeem', async (r) => {
         const now = store.now().getTime();
         if (attempts.size > 1000)
