@@ -8,7 +8,10 @@ export function rendererTargets(base: string) {
   return { workspace: url.href, pet: `${url.href}?surface=pet`, petChat: `${url.href}?surface=pet-chat` };
 }
 export function clampPosition(point: { x: number; y: number }, size: { width: number; height: number }, areas: Rectangle[]) {
-  const area = areas.find(a => point.x >= a.x && point.x < a.x + a.width && point.y >= a.y && point.y < a.y + a.height) ?? areas[0];
+  const area = areas.find(a => point.x >= a.x && point.x < a.x + a.width && point.y >= a.y && point.y < a.y + a.height) ?? [...areas].sort((a, b) => {
+    const distance = (r: Rectangle) => Math.hypot(Math.max(r.x - point.x, 0, point.x - (r.x + r.width)), Math.max(r.y - point.y, 0, point.y - (r.y + r.height)));
+    return distance(a) - distance(b);
+  })[0];
   if (!area) throw Error('No available display');
   return { x: Math.round(Math.max(area.x, Math.min(point.x, area.x + area.width - size.width))), y: Math.round(Math.max(area.y, Math.min(point.y, area.y + area.height - size.height))) };
 }

@@ -70,6 +70,7 @@ export interface DesktopBridge {
 }
 export interface PetBridge {
   invoke(input: PetCommand): Promise<void>;
+  drag?(phase: 'start' | 'move' | 'end'): Promise<void>;
   onEvent(listener: (event: SafePetEvent) => void): () => void;
   onFocusControls?(listener: () => void): () => void;
 }

@@ -49,9 +49,25 @@ export function createNativeWindows(options: { renderer: string; preloadDirector
   workspace.on('close', event => { event.preventDefault(); options.closeWorkspace(); });
   pet.on('close', event => { event.preventDefault(); if (options.closePet) options.closePet(); else pet.hide(); });
   pet.on('moved', () => { const [x = 0, y = 0] = pet.getPosition(); options.moved({ x, y }); placeChat(); });
-  const clamp = () => { const [x = 0, y = 0] = pet.getPosition(); const point = clampPosition({ x, y }, { width: 240, height: 280 }, screen.getAllDisplays().map(d => d.workArea)); pet.setPosition(point.x, point.y, false); placeChat(); };
+  let drag: { cursor: Electron.Point; position: Electron.Point } | undefined;
+  const cancelPetDrag = () => { drag = undefined; };
+  const dragPet = (phase: 'start' | 'move' | 'end') => {
+    if (phase === 'end') { cancelPetDrag(); return; }
+    if (pet.isDestroyed() || !pet.isVisible()) { cancelPetDrag(); return; }
+    if (phase === 'start') {
+      const [x = 0, y = 0] = pet.getPosition();
+      drag = { cursor: screen.getCursorScreenPoint(), position: { x, y } };
+    } else if (drag) {
+      const cursor = screen.getCursorScreenPoint();
+      const point = clampPosition({ x: drag.position.x + cursor.x - drag.cursor.x, y: drag.position.y + cursor.y - drag.cursor.y }, { width: 240, height: 280 }, screen.getAllDisplays().map(d => d.workArea));
+      const [x, y] = pet.getPosition();
+      if (point.x !== x || point.y !== y) pet.setPosition(point.x, point.y, false);
+    }
+  };
+  pet.on('blur', cancelPetDrag); pet.on('hide', cancelPetDrag);
+  const clamp = () => { cancelPetDrag(); const [x = 0, y = 0] = pet.getPosition(); const point = clampPosition({ x, y }, { width: 240, height: 280 }, screen.getAllDisplays().map(d => d.workArea)); pet.setPosition(point.x, point.y, false); placeChat(); };
   screen.on('display-removed', clamp); screen.on('display-metrics-changed', clamp);
-  return { workspace, pet, get petChat() { return petChat; }, targets, clamp, showChat, destroyChat,
+  return { workspace, pet, get petChat() { return petChat; }, targets, clamp, showChat, destroyChat, dragPet, cancelPetDrag,
     resizeChat(value: boolean) { expanded = value; placeChat(); },
     hideChat(restoreFocus: boolean) { petChat?.hide(); if (restoreFocus && !pet.isDestroyed() && pet.isVisible()) { pet.focus(); pet.webContents.send('lp:pet-controls-focus'); } },
     sendChat(state: PetChatState) { chatEvent = state; if (petChat && !petChat.isDestroyed()) petChat.webContents.send('lp:pet-chat-event', state); },
