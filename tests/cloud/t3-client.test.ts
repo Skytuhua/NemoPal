@@ -11,10 +11,11 @@ afterEach(async () => { await Promise.all(fixtures.splice(0).map(f => f.close())
 type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 'oversize' |
   'redirect' | 'discovery-error' | 'token-error' | 'broad-token' | 'mcp-error' | 'missing-tool' | 'hang' |
   'session' | 'cleanup-error' | 'chunked-oversize' | 'mcp-oversize' | 'mcp-hang' | 'sse' | 'bad-token-endpoint' | 'bad-registration-endpoint' |
-  'pkce-mismatch' | 'invalid-registration' | 'init-error';
+  'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel';
 
 async function fixture(mode: Mode = 'ok') {
-  const requests: { path: string; method: string; body: string; authorization?: string }[] = [];
+  const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
+  let onInitialized = () => {};
   let authorization: URL | undefined;
   let callback: string | undefined;
   let callbackClosed = false;
@@ -25,7 +26,7 @@ async function fixture(mode: Mode = 'ok') {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     let body = '';
     for await (const chunk of req) body += chunk;
-    requests.push({ path: req.url!, method: req.method!, body, authorization: req.headers.authorization });
+    requests.push({ path: req.url!, method: req.method!, body, authorization: req.headers.authorization, session: req.headers['mcp-session-id'] as string | undefined });
     if (req.url === '/.well-known/oauth-protected-resource/mcp') {
       if (mode === 'hang') return;
       if (mode === 'oversize') return send(res, { pad: 'x'.repeat(300_000) });
@@ -77,15 +78,15 @@ async function fixture(mode: Mode = 'ok') {
     if (req.url === '/mcp') {
       expect(req.headers.authorization).toBe('Bearer fixture-secret-access-token');
       if (req.method === 'GET') return res.writeHead(405).end();
-      if (req.method === 'DELETE') return res.writeHead(mode === 'cleanup-error' ? 500 : 204).end();
+      if (req.method === 'DELETE') return res.writeHead(mode === 'cleanup-error' ? 500 : mode === 'delete405' ? 405 : 204).end();
       const message = JSON.parse(body);
       if (message.method === 'initialize') {
         if (mode === 'init-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
-        if (mode === 'session' || mode === 'cleanup-error') res.setHeader('mcp-session-id', 'fixture-session');
+        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
         return send(res, { jsonrpc: '2.0', id: message.id,
           result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'private-server-name', version: '0.1.7' } } });
       }
-      if (message.method === 'notifications/initialized') return res.writeHead(202).end();
+      if (message.method === 'notifications/initialized') { onInitialized(); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
       if (message.method === 'tools/list') {
         if (mode === 'mcp-hang') return;
         if (mode === 'mcp-oversize') return send(res, { pad: 'x'.repeat(300_000) });
@@ -106,6 +107,7 @@ async function fixture(mode: Mode = 'ok') {
   origin = `http://127.0.0.1:${address.port}`;
   const result = {
     endpoint: `${origin}/mcp`, origin, requests,
+    setOnInitialized(callback: () => void) { onInitialized = callback; },
     get callback() { return callback; },
     get callbackClosed() { return callbackClosed; },
     async authorize(url: string, alter?: (url: URL) => void) {
@@ -281,6 +283,34 @@ describe('dedicated local T3 OAuth and MCP connection', () => {
     await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, onAuthorization: async url => { await f.authorize(url); } }))
       .resolves.toMatchObject({ status: 'connected', session: 'closed' });
     if (mode === 'session') expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+    await f.checkCallbackClosed();
+  });
+
+  it('reports a refused session termination as uncertain', async () => {
+    const f = await fixture('delete405');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, onAuthorization: async url => { await f.authorize(url); } }))
+      .rejects.toMatchObject({ code: 'cleanup_failed', phase: 'cleanup', delivery: 'uncertain' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+    await f.checkCallbackClosed();
+  });
+
+  it('terminates an established session when the initialized notification fails', async () => {
+    const f = await fixture('initialized-error');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, onAuthorization: async url => { await f.authorize(url); } }))
+      .rejects.toMatchObject({ code: 'mcp_error', phase: 'initialize', delivery: 'uncertain' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+    expect(f.requests.find(r => r.method === 'DELETE')).toMatchObject({ session: 'fixture-session', authorization: 'Bearer fixture-secret-access-token' });
+    expect(f.requests.filter(r => r.path === '/oauth/mcp/token')).toHaveLength(1);
+    await f.checkCallbackClosed();
+  });
+
+  it('does not send session cleanup after operator cancellation', async () => {
+    const f = await fixture('initialized-cancel');
+    const controller = new AbortController();
+    f.setOnInitialized(() => controller.abort());
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, signal: controller.signal,
+      onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'cancelled', delivery: 'uncertain' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
     await f.checkCallbackClosed();
   });
 

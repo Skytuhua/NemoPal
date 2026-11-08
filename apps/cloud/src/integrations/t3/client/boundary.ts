@@ -50,6 +50,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   const active = new Map<AbortController, ReturnType<typeof setTimeout>>();
   let failure: T3ConnectionError | undefined;
   let bearer = '';
+  let sessionId = '';
   const fail = (code: ConnectionCode): never => {
     failure = new T3ConnectionError(code, phase()); throw failure;
   };
@@ -87,6 +88,10 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
       if (url.href === endpoint.href) headers.set('Authorization', `Bearer ${bearer}`);
       else headers.delete('Authorization');
       const response = await fetch(url, { ...init, headers, signal: combined, redirect: 'manual', credentials: 'omit', cache: 'no-store' });
+      if (url.href === endpoint.href && method === 'POST') {
+        const observed = response.headers.get('mcp-session-id');
+        if (observed) sessionId = observed;
+      }
       if (response.status >= 300 && response.status < 400) {
         await response.body?.cancel(); return fail('http_error');
       }
@@ -124,7 +129,8 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   return {
     fetch: guardedFetch,
     setBearer(value: string) { bearer = value; },
+    get sessionId() { return sessionId; },
     get failure() { return failure; },
-    dispose() { bearer = ''; for (const [request, timer] of active) { clearTimeout(timer); request.abort(); } active.clear(); },
+    dispose() { bearer = ''; sessionId = ''; for (const [request, timer] of active) { clearTimeout(timer); request.abort(); } active.clear(); },
   };
 }
