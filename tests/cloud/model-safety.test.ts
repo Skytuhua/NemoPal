@@ -1,0 +1,82 @@
+import { randomUUID } from 'node:crypto';
+import { afterEach, beforeEach, expect, test } from 'vitest';
+import * as c from '@living-playbooks/contracts';
+import { validateProposal, BoundedRunner,HttpNemotronAdapter } from '@living-playbooks/nemotron';
+import { JobQueue } from '../../apps/cloud/src/jobs/queue';
+import { reserveUsage, configureModel } from '../../apps/cloud/src/jobs/model-settings';
+import { runJob } from '../../apps/cloud/src/jobs/worker';
+import { command, setup } from './helpers';
+let h: Awaited<ReturnType<typeof setup>>;
+let queue: JobQueue;
+beforeEach(async () => { h = await setup(); queue = new JobQueue(h.pool, () => new Date(Date.now() + 1000)); });
+afterEach(async () => { await h?.close(); });
+const make = (j: c.ManagerJob, s: c.ProjectSnapshot): c.ManagerProposal => ({ schemaVersion: 1, jobId: j.id, baseProjectRevision: j.baseProjectRevision, projectEpoch: j.projectEpoch, grantVersions: j.grantVersions, taskChanges: [], decisionSuggestions: [], workspace: s.project.workspace, reply: { text: 'Synthetic proposal.', observationIds: [] } });
+test('raw schema failure on the fourth job call leaves the last valid view and cannot schedule a repair call',async()=>{
+    await h.create();const job=(await queue.claim())!;const context=await queue.context(job);let calls=0;
+    const adapter=new HttpNemotronAdapter({baseUrl:'https://synthetic.example/v1',model:'synthetic-nemotron',apiKey:'fixture',callBudget:8,tokenBudget:1000000},async()=>{calls++;return Response.json({choices:[{message:{content:'```json\n{}\n```'}}]});});
+    await expect(new BoundedRunner(adapter).run({...job,modelCalls:3},context,new AbortController().signal)).rejects.toThrow('model_contract');
+    expect(calls).toBe(1);expect((await h.pool.query('SELECT 1 FROM messages')).rowCount).toBe(0);
+});
+test('a network retry cannot replenish a job\'s one durable model correction allowance',async()=>{
+    await h.create();const job=(await queue.claim())!;let calls=0;
+    const adapter=new HttpNemotronAdapter({baseUrl:'https://synthetic.example/v1',model:'synthetic-nemotron',apiKey:'fixture',callBudget:8,tokenBudget:1000000},async()=>{
+        calls++;if(calls===2)throw new Error('Synthetic network interruption.');return Response.json({choices:[{message:{content:'```json\n{}\n```'}}]});
+    });
+    await runJob(queue,adapter,job,new AbortController().signal);
+    const first=(await h.pool.query('SELECT * FROM jobs WHERE id=$1',[job.id])).rows[0];expect(first.state).toBe('queued');expect(first.data.modelCalls).toBe(2);
+    queue.now=()=>new Date(Date.now()+62000);const retry=(await queue.claim())!;expect(retry).not.toBeNull();await runJob(queue,adapter,retry,new AbortController().signal);
+    const failed=(await h.pool.query('SELECT * FROM jobs WHERE id=$1',[job.id])).rows[0];expect(failed.state).toBe('failed');expect(failed.data).toMatchObject({modelCalls:3,errorClass:'model_contract'});expect(calls).toBe(3);
+});
+test('account reservations serialize and remain spent after adapter/process restart; missing settings never call out', async () => {
+    const settings = { baseUrl: 'https://synthetic.example/v1', model: 'synthetic-nemotron', apiKey: 'fixture', callBudget: 1, tokenBudget: 10000 };
+    const results = await Promise.allSettled([reserveUsage(h.pool, settings, 500), reserveUsage(h.pool, settings, 500)]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    await expect(reserveUsage(h.pool, settings, 500)).rejects.toThrow('account_budget');
+    expect((await configureModel(h.pool, {})).inference.available).toBe(false);
+});
+test('worker persists call/tool counts and digest receipts; no-op output produces no recursive work', async () => {
+    await h.create();
+    const job = (await queue.claim())!;
+    expect(job).not.toBeNull();
+    const context = await queue.context(job);
+    let count = 0;
+    const adapter: c.NemotronAdapter = { probe: async () => { throw new Error('not live'); }, next: async () => count++ === 0 ? { type: 'tool_calls', calls: [{ id: 'r1', name: 'read_project_state', arguments: {} }] } : { type: 'proposal', proposal: make(job, context.snapshot) } };
+    await runJob(queue, adapter, job, new AbortController().signal);
+    const row = (await h.pool.query('SELECT * FROM jobs')).rows[0];
+    expect(row.state).toBe('completed');
+    expect(row.data).toMatchObject({ modelCalls: 2, toolCalls: 1 });
+    expect(row.tool_receipts[0]).toMatchObject({ name: 'read_project_state', resultDigest: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect((await h.pool.query('SELECT 1 FROM jobs')).rowCount).toBe(1);
+});
+test('owner override survives a later model edit and generated completion cannot claim owner authority', async () => {
+    const { projectId } = await h.create();
+    const job = (await queue.claim())!;
+    const context = await queue.context(job);
+    const p = make(job, context.snapshot);
+    const taskId = randomUUID();
+    p.taskChanges = [{ type: 'create', task: { id: taskId, title: 'Owner-controlled task', status: 'todo', requirementOrigin: 'brief', evidenceLevel: 'none', evidenceIds: [] } }];
+    await queue.commit(job, p);
+    const snapshot = (await h.request('GET', `/v1/projects/${projectId}/snapshot`)).json();
+    await h.request('POST', `/v1/projects/${projectId}/actions`, command({ type: 'update_task', taskId, status: 'in_progress' }, snapshot.project.revision));
+    const current = (await h.request('GET', `/v1/projects/${projectId}/snapshot`)).json();
+    const synthetic = { ...job, baseProjectRevision: current.project.revision };
+    const edit = make(synthetic, current);
+    edit.taskChanges = [{ type: 'update', taskId, expectedRevision: 1, status: 'todo', evidenceLevel: 'none', evidenceIds: [] }];
+    expect(() => validateProposal(edit, synthetic, { snapshot: current, grantVersions: [] })).toThrow('proposal_owner_override');
+    const completion = make(synthetic, current);
+    completion.taskChanges = [{ type: 'create', task: { id: randomUUID(), title: 'Unsupported completion', status: 'done', requirementOrigin: 'model_suggestion', evidenceLevel: 'none', evidenceIds: [] } }];
+    expect(() => validateProposal(completion, synthetic, { snapshot: current, grantVersions: [] })).toThrow('proposal_completion_authority');
+});
+test('oversized context and output stop before publishing; six-tool bound prevents the seventh read', async () => {
+    await h.create();
+    const job = (await queue.claim())!;
+    const context = await queue.context(job);
+    let calls = 0;
+    const huge = structuredClone(context);
+    huge.snapshot.brief = 'x'.repeat(50000);
+    const adapter: c.NemotronAdapter = { probe: async () => { throw new Error('not live'); }, next: async () => { calls++; return { type: 'proposal', proposal: make(job, context.snapshot) }; } };
+    await expect(new BoundedRunner(adapter).run(job, huge, new AbortController().signal)).rejects.toThrow('input_budget');
+    expect(calls).toBe(0);
+    const tooMany: c.NemotronAdapter = { ...adapter, next: async () => ({ type: 'tool_calls', calls: Array.from({ length: 4 }, (_, i) => ({ id: String(i), name: 'read_project_state', arguments: {} })) }) };
+    await expect(new BoundedRunner(tooMany).run(job, context, new AbortController().signal)).rejects.toThrow('tool_budget');
+});
