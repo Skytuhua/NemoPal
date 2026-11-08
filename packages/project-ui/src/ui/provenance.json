@@ -1,0 +1,157 @@
+{
+  "repository": "https://github.com/shadcn-ui/ui",
+  "revision": "42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9",
+  "registry": "apps/v4/registry/new-york-v4/ui/",
+  "license": "MIT (LICENSE.shadcn.md)",
+  "notice": "Only the listed registry files were copied; no OpenBot source. Font has separate OFL provenance under apps/web/src/app/fonts.",
+  "files": [
+    {
+      "localFile": "sidebar.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/sidebar.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/sidebar.tsx",
+      "upstreamBytes": 21713,
+      "upstreamGitBlobSha1": "31cafe4cb8aa5127e050d883afb395b626565d2c",
+      "upstreamSha256": "2ba1a9b9422f4172373f4cd0587b675d2331a41f4fa68f65dab2b23ca98fd9d2",
+      "localSha256": "4df76d5f610545720264c950021dd46240f183d901bd45efd366ef3f461c74c3",
+      "adaptations": [
+        "Local relative imports and cn helper. Removed use-mobile, cookie persistence, global shortcut, fixed positioning, spacer/width drivers and alternate mobile content trees.",
+        "Provider retains controlled/uncontrolled open state only. Sidebar remains an in-flow, min-size-zero child. SidebarRail is a discrete toggle, never a resize mechanism.",
+        "Skeleton width fixed at 75 percent to avoid random presentation. Existing menu/header/footer/group APIs retained."
+      ]
+    },
+    {
+      "localFile": "resizable.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/resizable.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/resizable.tsx",
+      "upstreamBytes": 1805,
+      "upstreamGitBlobSha1": "709e5fd2f97527364ca1ebf1e8fe82b3f9ca8417",
+      "upstreamSha256": "aaf3ea20e8060c75dd86e06fedfca053d49f81071123ba647b5699efcbc010ea",
+      "localSha256": "f92cb92ced30be531848c508d471b55bc7e62cfd8d9bf2b526183306b8172db7",
+      "adaptations": [
+        "Local cn import. Group and Panel receive minimum-size-zero classes. Default separators use explicit 8 CSS pixel dimensions, independent of the root font size (16 total for two handles); className may override. All pointer/keyboard resizing remains react-resizable-panels v4."
+      ]
+    },
+    {
+      "localFile": "sheet.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/sheet.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/sheet.tsx",
+      "upstreamBytes": 4178,
+      "upstreamGitBlobSha1": "9f7ae5fed9763e9ddbe38692fbf5b3f67224b731",
+      "upstreamSha256": "ea473d38a26a9b0b879e5a13139899ad45e9782e896b3fa205c7763a6c506876",
+      "localSha256": "6406908210c7bcec80d4a18d03b2e03c571b22b05e5c191c350a4f0f1c15e1ae",
+      "adaptations": [
+        "Local cn import. Added portal, portalProps and showOverlay controls, forwarding forceMount through Portal and Content. Exported Portal and Overlay.",
+        "Portal content receives an explicit workspace-ui scope wrapper. Closed backdrop is hidden. Removed unsupported animation-plugin classes; no extra animation package.",
+        "Identity is preserved only while portal choice/container and Dialog Root.modal remain invariant. No application lifecycle, auth, focus manager or responsive state added."
+      ]
+    },
+    {
+      "localFile": "tooltip.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/tooltip.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/tooltip.tsx",
+      "upstreamBytes": 1820,
+      "upstreamGitBlobSha1": "c8c47cb146e6167c68f74f8a2f2f0c7c2d06ec72",
+      "upstreamSha256": "611e4305879b2773eafe76bf3c5caa69d8e47367fd97887a71634a27828f4433",
+      "localSha256": "bb1d40e56f8bd3359f4171193e1f94ba1d70f9b485f5ea937202cf8940be16bf",
+      "adaptations": [
+        "Local cn import. Added workspace-ui scope wrapper within Portal; removed animation-plugin classes rather than adding tw-animate-css."
+      ]
+    },
+    {
+      "localFile": "button.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/button.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/button.tsx",
+      "upstreamBytes": 2382,
+      "upstreamGitBlobSha1": "e3345d985d14c33e3cb9d8c45cf973807326c944",
+      "upstreamSha256": "79dd6f75f8136394442202d6b8b922fb269eaad0a5dba579397c9d5b41f893bb",
+      "localSha256": "e3b540a4f49d323f7ed5a8a2944d7a14a57d12f7291068cc84cfef63b0d6550f",
+      "adaptations": [
+        "Local cn import only. Upstream API, variants and Slot remain unchanged."
+      ]
+    },
+    {
+      "localFile": "input.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/input.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/input.tsx",
+      "upstreamBytes": 952,
+      "upstreamGitBlobSha1": "ddb9b315e34245addded54b1848bb32c80c418cc",
+      "upstreamSha256": "0c9457181f6ddc80969bcf854e92c362903a55b6e889fbef3fd85343ecc4af5b",
+      "localSha256": "5e8850459829591c2bbbbd5f267b9be394c51581925dac9129c8dadc96a50f8b",
+      "adaptations": [
+        "Local cn import only."
+      ]
+    },
+    {
+      "localFile": "textarea.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/textarea.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/textarea.tsx",
+      "upstreamBytes": 749,
+      "upstreamGitBlobSha1": "bf23f6c255978311c3069f5da3fa10c1d896e8cf",
+      "upstreamSha256": "5cafcfeeee29534f449387a16b585f5923d2faab1a0cdc50a874416b175f59ce",
+      "localSha256": "ca53206942d0123ddea5167a7883e02708ac71e45d3b0c1c17aaf767b5d33ce7",
+      "adaptations": [
+        "Local cn import only."
+      ]
+    },
+    {
+      "localFile": "separator.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/separator.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/separator.tsx",
+      "upstreamBytes": 684,
+      "upstreamGitBlobSha1": "6a553b978c11cf82c93817b2d0dde1db0e555835",
+      "upstreamSha256": "ad7d5403fe337160e41dbf04147896e448ae3a747b8d06660d627d74d60021bc",
+      "localSha256": "3ab91ca64a4eda7a2ae825675ff1e3b51135d740c8f4ddd3e87058b2b11d1627",
+      "adaptations": [
+        "Local cn import only."
+      ]
+    },
+    {
+      "localFile": "avatar.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/avatar.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/avatar.tsx",
+      "upstreamBytes": 2906,
+      "upstreamGitBlobSha1": "561f04be186f94896ec31e618fee6818c7fcc6c8",
+      "upstreamSha256": "0c5c48b8a1dff4fdc5ff9b6cb79cc9cd138682b7d86868068f571befe9675e88",
+      "localSha256": "31deb051fef027d889bfa7f266c46b9b8d7bca797f0a532479fb688730b0043f",
+      "adaptations": [
+        "Local cn import only; upstream AvatarBadge and grouping exports retained."
+      ]
+    },
+    {
+      "localFile": "skeleton.tsx",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/skeleton.tsx",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/ui/skeleton.tsx",
+      "upstreamBytes": 267,
+      "upstreamGitBlobSha1": "a1ceb0545be73aa39a336271ecb69ed6aa69a64d",
+      "upstreamSha256": "f51ce0fcd31e5c31437382e80ea0af94b4fc3d64221d27091d36824546780a43",
+      "localSha256": "825a8cdcf7dee78983a3c56b0b28b636e6dffbaea62b8d86dea8831d8bebe637",
+      "adaptations": [
+        "Local cn import only. Required internally by SidebarMenuSkeleton."
+      ]
+    },
+    {
+      "localFile": "utils.ts",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/lib/utils.ts",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/apps/v4/registry/new-york-v4/lib/utils.ts",
+      "upstreamBytes": 24,
+      "upstreamGitBlobSha1": "f815ded4d7865413255682a8b1f8f95beb620d0a",
+      "upstreamSha256": "14300d758170c270c75b057f38fedb3793a5920ea872f0477e29fb131185e8a7",
+      "localSha256": "5e5de48e44b555db44d06071972f1cbbdc2bfcf6c1ddaa34caf35d215b36e2eb",
+      "adaptations": [
+        "Upstream registry file only re-exports cn from a separate package. Replaced that alias with a local clsx + tailwind-merge helper; no cn package installed."
+      ]
+    },
+    {
+      "localFile": "LICENSE.shadcn.md",
+      "origin": "https://github.com/shadcn-ui/ui/blob/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/LICENSE.md",
+      "rawUrl": "https://raw.githubusercontent.com/shadcn-ui/ui/42f3bb63b46a69e52a24bd005cdc9ec15ba7a7b9/LICENSE.md",
+      "upstreamBytes": 1063,
+      "upstreamGitBlobSha1": "fad4d887a681dd49233e5ed01ee2c7a1513089a0",
+      "upstreamSha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
+      "localSha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
+      "adaptations": [
+        "Copied unchanged from repository LICENSE.md."
+      ]
+    }
+  ]
+}

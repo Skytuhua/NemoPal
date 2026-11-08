@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { linkSync, mkdirSync, mkdtempSync, openSync, closeSync, ftruncateSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, mkdtempSync, openSync, closeSync, ftruncateSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -243,5 +243,43 @@ for (const change of ['changed', 'appended', 'other-name'] as const) test(`a ${c
   if (change === 'changed') bytes[100] = bytes[100]! ^ 1;
   writeFileSync(join(root, change === 'other-name' ? 'apps/web/dist/assets/other-image.png' : spritePath),
     change === 'appended' ? Buffer.concat([bytes, Buffer.from('extra')]) : bytes);
+  assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
+}));
+
+const fontPath = 'apps/web/dist/assets/geist-variable-Test_123.woff2';
+const approvedFont = () => readFileSync(new URL('../apps/web/src/app/fonts/geist-variable.woff2', import.meta.url));
+
+test('only the exact reviewed Geist font is inventoried as opaque bytes', () => fixture(root => {
+  writeFileSync(join(root, fontPath), approvedFont());
+  const result = auditBuildOutput(root);
+  assert.equal(result.fileCount, 11);
+  assert.deepEqual(result.files.find(file => file.path === fontPath), {
+    path: fontPath, bytes: 69760,
+    sha256: '2ffebe993e969069a9789d15164b7715d42491b5835516c5e3b935d5f81b05f1',
+  });
+}));
+
+for (const change of ['changed', 'appended', 'truncated', 'other-name', 'no-suffix', 'other-format'] as const)
+  test(`a ${change} font is rejected`, () => fixture(root => {
+    let bytes = Buffer.from(approvedFont());
+    let path = fontPath;
+    if (change === 'changed') bytes[100] = bytes[100]! ^ 1;
+    if (change === 'appended') bytes = Buffer.concat([bytes, Buffer.from('extra')]);
+    if (change === 'truncated') bytes = bytes.subarray(0, -1);
+    if (change === 'other-name') path = 'apps/web/dist/assets/other-font-Test_123.woff2';
+    if (change === 'no-suffix') path = 'apps/web/dist/assets/geist-variable.woff2';
+    if (change === 'other-format') path = 'apps/web/dist/assets/geist-variable-Test_123.ttf';
+    writeFileSync(join(root, path), bytes);
+    assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
+  }));
+
+test('font admission does not exempt ordinary text outputs from credential scanning', () => fixture(root => {
+  writeFileSync(join(root, fontPath), approvedFont());
+  write(root, outputs[0]!, 'nvapi-' + 'SYNTHETIC'.repeat(8));
+  assert.throws(() => auditBuildOutput(root), { message: 'Build audit blocked: credential-like text.' });
+}));
+
+test('arbitrary binary output with a font-shaped name is rejected', () => fixture(root => {
+  writeFileSync(join(root, fontPath), Buffer.alloc(69760));
   assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
 }));

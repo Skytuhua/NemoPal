@@ -1,1 +1,1 @@
-{"name":"@living-playbooks/project-ui","version":"0.1.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@living-playbooks/contracts":"workspace:*","react":"19.3.1"}}
+{"name":"@living-playbooks/project-ui","version":"0.1.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@living-playbooks/contracts":"workspace:*","class-variance-authority":"0.7.1","clsx":"2.1.1","lucide-react":"1.70.0","radix-ui":"1.8.1","react":"19.3.1","react-dom":"19.3.1","react-resizable-panels":"4.19.1","tailwind-merge":"3.7.0"}}

@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { WorkspaceRoot } from './app/WorkspaceRoot';
 import { Pet } from './pet/Pet';
 import './styles.css';
+import './workspace-ui.css';
 const root = createRoot(document.getElementById('root')!);
 if (new URLSearchParams(location.search).get('surface') === 'pet') {
   document.body.classList.add('pet-window');
