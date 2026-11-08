@@ -89,6 +89,6 @@ The two counted items are the kinds shown above, not two assistant replies or
 independently verified tool checks. A later harmless producer reply is outside
 this receipt and adds no claimed observation. No task completion, cloud upload,
 manager interpretation, evidence card or native UI outcome follows from this
-gate. Personal-source consent, J2, full J3/J4/J5 and final demonstration remain
-separate requirements. The bounded-history/version/clock limitations in
+gate. J2, full J3/J4/J5 and final demonstration remain separate requirements.
+The bounded-history/version/clock limitations in
 `observer-gate.md` still apply.
