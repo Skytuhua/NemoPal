@@ -19,6 +19,11 @@ const defaults = {
 };
 export type CloudDependencies = typeof defaults;
 
+class CloudStartupCancelled extends Error {}
+class CloudStartupCleanupError extends Error {
+  constructor(readonly startupFailed: boolean) { super('Cloud startup cleanup failed.'); }
+}
+
 /** Owns the cloud resources passed to it, including the pool on failed startup. */
 export async function startCloudApplication(options: {
   pool: Pool;
@@ -48,11 +53,11 @@ export async function startCloudApplication(options: {
   };
 
   try {
-    options.signal?.throwIfAborted();
+    if (options.signal?.aborted) throw new CloudStartupCancelled();
     const phoneConfig = sendblueConfig(options.env);
     if (phoneConfig.enabled && !capability(phoneConfig).available) throw new Error('Sendblue configuration is invalid.');
     const model = await deps.configureModel(pool);
-    options.signal?.throwIfAborted();
+    if (options.signal?.aborted) throw new CloudStartupCancelled();
     app = deps.buildServer(pool, { inference: model.inference, sendblue: phoneConfig });
     stops.push(deps.startManager(deps.createQueue(pool, phoneConfig), model.adapter));
     stops.push(deps.startCheckins(pool));
@@ -64,11 +69,12 @@ export async function startCloudApplication(options: {
     });
     stops.push(() => runtime.stop());
     await app.listen(options.listen);
-    options.signal?.throwIfAborted();
+    if (options.signal?.aborted) throw new CloudStartupCancelled();
     runtime.start();
     return { close, inferenceAvailable: model.inference.available };
   } catch (error) {
-    try { await close(); } catch { /* Preserve the startup error after cleanup. */ }
+    try { await close(); }
+    catch { throw new CloudStartupCleanupError(!(error instanceof CloudStartupCancelled)); }
     throw error;
   }
 }
@@ -86,6 +92,7 @@ export async function runCloudProcess(options: {
   start(signal: AbortSignal): Promise<CloudProcessApplication>;
   onStarted(application: CloudProcessApplication): void;
   onShutdownError(): void;
+  onStartupError?(): void;
 }): Promise<void> {
   const controller = new AbortController();
   let stopping: Promise<void> | undefined;
@@ -105,12 +112,24 @@ export async function runCloudProcess(options: {
   };
   options.signals.on('SIGTERM', onSignal);
   options.signals.on('SIGINT', onSignal);
+  let application: CloudProcessApplication | undefined;
+  const report = (callback: (() => void) | undefined) => { try { callback?.(); } catch { /* Keep error reports contained. */ } };
   try {
-    const application = await startup;
+    application = await startup;
     if (controller.signal.aborted) { if (stopping) await stopping; }
     else options.onStarted(application);
   } catch (error) {
-    if (controller.signal.aborted) { if (stopping) await stopping; }
-    else { detach(); throw error; }
+    if (application && !controller.signal.aborted) {
+      onSignal();
+      if (stopping) await stopping;
+      throw error;
+    }
+    if (controller.signal.aborted) {
+      if (stopping) await stopping;
+      if (error instanceof CloudStartupCleanupError) {
+        report(options.onShutdownError);
+        if (error.startupFailed) report(options.onStartupError ?? options.onShutdownError);
+      } else if (!(error instanceof CloudStartupCancelled)) report(options.onStartupError ?? options.onShutdownError);
+    } else { detach(); throw error; }
   }
 }
