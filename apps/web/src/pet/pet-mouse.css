@@ -1,0 +1,66 @@
+/* Specificity keeps the global pebble transforms out, regardless of import order. */
+.pet-surface .pet-art.pet-mouse {
+  display: block;
+  flex: none;
+  width: 128px;
+  height: 128px;
+  background-image: url('../../../../assets/pet/pixel-mouse-idle-v1.png');
+  background-size: 400% 400%;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  transform: none;
+  animation: none;
+}
+
+.pet-surface .pet-mouse.state-idle {
+  animation: pet-mouse-idle 4.8s steps(1, end) infinite;
+}
+
+.pet-surface .pet-mouse.state-reviewing {
+  animation: pet-mouse-idle 3.2s steps(1, end) infinite;
+}
+
+.pet-surface .pet-mouse.state-milestone {
+  animation: pet-mouse-idle 1.6s steps(1, end) 2;
+}
+
+.pet-surface .pet-mouse.state-offline,
+.pet-surface .pet-mouse.state-snoozed {
+  opacity: .8;
+}
+
+/* Equal cells use relative positions even when the source dimensions are odd. */
+@keyframes pet-mouse-idle {
+  0%, 100% { background-position: 0 0; }
+  6.25% { background-position: calc(100% / 3) 0; }
+  12.5% { background-position: calc(200% / 3) 0; }
+  18.75% { background-position: 100% 0; }
+  25% { background-position: 0 calc(100% / 3); }
+  31.25% { background-position: calc(100% / 3) calc(100% / 3); }
+  37.5% { background-position: calc(200% / 3) calc(100% / 3); }
+  43.75% { background-position: 100% calc(100% / 3); }
+  50% { background-position: 0 calc(200% / 3); }
+  56.25% { background-position: calc(100% / 3) calc(200% / 3); }
+  62.5% { background-position: calc(200% / 3) calc(200% / 3); }
+  68.75% { background-position: 100% calc(200% / 3); }
+  75% { background-position: 0 100%; }
+  81.25% { background-position: calc(100% / 3) 100%; }
+  87.5% { background-position: calc(200% / 3) 100%; }
+  93.75% { background-position: 100% 100%; }
+}
+
+.pet-surface[data-reduced-motion='true'] .pet-art.pet-mouse {
+  animation: none;
+  background-position: 0 0;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-surface .pet-art.pet-mouse {
+    animation: none;
+    background-position: 0 0;
+    transform: none;
+  }
+}

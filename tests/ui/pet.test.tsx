@@ -47,6 +47,55 @@ test('six deterministic pet states render locally and cloud offline outranks a q
   }
   expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
 });
+test('mouse keeps its accessible state identity when reduced motion changes', () => {
+  const h = harness(); render(<Pet bridge={h.bridge} />);
+  for (const state of ['idle', 'reviewing', 'waiting_for_you', 'milestone', 'snoozed', 'offline'] as const) {
+    for (const reducedMotion of [false, true]) {
+      h.emit({ ...h.event, state, checkIn: state === 'waiting_for_you' ? h.event.checkIn : null, preference: { ...h.event.preference, reducedMotion } });
+      const mouse = screen.getByRole('img', { name: `Nemo · ${state.replaceAll('_', ' ')}` });
+      expect(mouse).toHaveClass('pet-mouse');
+      expect(mouse.closest('main')).toHaveAttribute('data-reduced-motion', String(reducedMotion));
+    }
+  }
+});
+test('pet preference actions wait for desktop state and preserve keyboard focus', async () => {
+  const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
+  const open = screen.getByRole('button', { name: 'Open project' });
+  await userEvent.click(open);
+  expect(h.invoke).toHaveBeenLastCalledWith({ type: 'openProject', projectId: h.event.projectId });
+  expect(open).toHaveFocus();
+  h.emit({ ...h.event, preference: { ...h.event.preference, reducedMotion: true } });
+  expect(open).toHaveFocus();
+  await userEvent.click(screen.getByRole('button', { name: 'Hide pet' }));
+  expect(h.invoke).toHaveBeenLastCalledWith({ type: 'setPreference', preference: { ...h.event.preference, hidden: true, reducedMotion: true } });
+  expect(screen.getByRole('img')).toBeInTheDocument();
+  h.emit({ ...h.event, preference: { ...h.event.preference, hidden: true, reducedMotion: true } });
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Show pet' }));
+  expect(h.invoke).toHaveBeenLastCalledWith({ type: 'setPreference', preference: { ...h.event.preference, reducedMotion: true } });
+  h.emit();
+  await userEvent.click(screen.getByRole('button', { name: 'Focus mode' }));
+  expect(h.invoke).toHaveBeenLastCalledWith({ type: 'setPreference', preference: { ...h.event.preference, focus: true } });
+  expect(screen.getByRole('button', { name: 'Recorded' })).toBeInTheDocument();
+  h.emit({ ...h.event, preference: { ...h.event.preference, focus: true } });
+  expect(screen.getByRole('button', { name: 'Focus mode' })).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'Focus mode' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('img')).toHaveAttribute('data-pet-state', 'snoozed');
+  expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
+});
+test('snoozing keeps the revisioned command and waits for canonical desktop state', async () => {
+  const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
+  await userEvent.type(screen.getByLabelText('Snooze until'), '2026-11-08T15:00');
+  await userEvent.click(screen.getByRole('button', { name: 'Snooze question' }));
+  expect(h.invoke).toHaveBeenCalledOnce();
+  expect(h.invoke).toHaveBeenCalledWith({ type: 'snooze', checkInId: h.event.checkIn!.id, command: { operationId: expect.any(String), expectedRevision: 0, input: { until: new Date('2026-11-08T15:00').toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } } });
+  expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
+  expect(screen.getByRole('img')).toHaveAttribute('data-pet-state', 'waiting_for_you');
+  h.emit({ ...h.event, state: 'snoozed', checkIn: { ...h.event.checkIn!, state: 'snoozed', revision: 1 } });
+  expect(screen.getByRole('img')).toHaveAttribute('data-pet-state', 'snoozed');
+  expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
+});
 test('pet canonical answer event removes question without manufacturing a local completion', async () => {
   const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
   expect(screen.getByRole('button', { name: 'Recorded' })).toBeVisible();
