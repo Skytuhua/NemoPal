@@ -1,9 +1,12 @@
 import '@testing-library/jest-dom/vitest';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import { useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { Sidebar, SidebarProvider, SidebarTrigger, useSidebar, Sheet, SheetContent, SheetDescription, SheetTitle } from '@living-playbooks/project-ui';
+import { Sidebar, SidebarProvider, SidebarTrigger, useSidebar, Sheet, SheetContent, SheetDescription, SheetTitle, ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@living-playbooks/project-ui';
 
 const mediaListeners = new Set<() => void>();
 const originalWidth = window.innerWidth;
@@ -79,3 +82,39 @@ for (const portal of [false, true]) test(`a force-mounted sheet keeps its editor
   expect(screen.getByLabelText('Draft')).toBe(editor);
   expect(editor).toHaveValue('Keep this draft');
 });
+
+const { compile } = createRequire(resolve('apps/web/package.json'))('tailwindcss') as {
+  compile(css: string): Promise<{ build(candidates: string[]): string }>;
+};
+
+test.each([14, 16].flatMap(root => ['horizontal', 'vertical'].map(orientation => ({ root, orientation }))))(
+  'compiled $orientation handle dimensions retain the 16px budget at a $root-px root', async ({ root, orientation }) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(<ResizablePanelGroup orientation={orientation as 'horizontal' | 'vertical'}>
+      <ResizablePanel id="projects" /><ResizableHandle /><ResizablePanel id="workspace" /><ResizableHandle /><ResizablePanel id="manager" />
+    </ResizablePanelGroup>);
+    const handles = [...host.querySelectorAll('[data-slot="resizable-handle"]')];
+    expect(handles).toHaveLength(2);
+    const sizes: number[] = [];
+    for (const handle of handles) {
+      const horizontalGroup = orientation === 'horizontal';
+      expect(handle.getAttribute('aria-orientation')).toBe(horizontalGroup ? 'vertical' : 'horizontal');
+      const candidate = [...handle.classList].find(name => horizontalGroup ? name.startsWith('w-') : name.startsWith('aria-[orientation=horizontal]:h-'));
+      expect(candidate).toBeDefined();
+      // Compile the real rendered utility through the consuming package's pinned
+      // Tailwind compiler, with its standard spacing unit. No browser geometry is claimed.
+      const compiler = await compile('@theme { --spacing: 0.25rem; } @tailwind utilities;');
+      const css = compiler.build([candidate!]);
+      const property = horizontalGroup ? 'width' : 'height';
+      const value = css.match(new RegExp(`\\b${property}:\\s*([^;]+);`))?.[1]?.trim();
+      expect(value).toBeDefined();
+      const literal = value!.match(/^(\d+(?:\.\d+)?)px$/);
+      const spacing = value!.match(/^calc\(var\(--spacing\) \* (\d+(?:\.\d+)?)\)$/);
+      if (!literal && !spacing) throw new Error(`Unsupported generated dimension: ${value}`);
+      const pixels = literal ? Number(literal[1]) : root * 0.25 * Number(spacing![1]);
+      sizes.push(pixels);
+      expect(pixels).toBe(8);
+    }
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(16);
+  },
+);

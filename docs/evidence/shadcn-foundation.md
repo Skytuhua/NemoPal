@@ -84,3 +84,29 @@ Only local bounded checks were run. Logs are in this checkout's ignored `.superp
 Final production output audit: 12 files, 6,482,833 total bytes; canonical manifest SHA256 `5b0610231778f5adc6e367698f518114b36e6e338caa5ded248d8a958f7faf70`. Included `geist-variable-DPGgOCY9.woff2` at the pinned size/hash and unchanged approved mouse PNG. Production CSS is 44,108 bytes. This is a build-local receipt; a parent composition rebuild will have its own manifest. The final build exited 0; an earlier build emitted a non-fatal plugin timing advisory.
 
 Author review checked the scoped diff, source inventory/hashes, unchanged baseline dependency entries and no whitespace errors. It is not independent review. Parent review and native/visual/interaction acceptance remain pending. No browser/app/dev server, native GUI, database/service, provider/model/source/export/reminder, VM/deployment, full/cloud suite, prior blocked test retry, or acceptance-ledger promotion. No PR watch/merge/self-archive/children. PR33 remains DRAFT/HOLD/unaccepted. Held checkout and side preview/session remain untouched. User first-shell visual approval remains the gate before phase-two domain migration.
+
+## Parent correction and divider regression
+
+Independent review at `13ff50a` found that `w-2` and the orientation-specific
+`h-2` use rem spacing: the incumbent 14px root produces 7px handles, contradicting
+the 16px combined layout budget. Commit `47f8995311f18aad358f85d0bbb0f4716d4f0d01`
+already corrects both dimensions to explicit 8px utilities and refreshes the
+adapted component's provenance digest; the parent preserved that commit.
+
+The parent added four source-to-generated-CSS regressions. They render actual
+v4 separators in both group orientations, compile the rendered dimension utility
+with the consuming package's pinned Tailwind compiler, and resolve its pixel
+budget under 14px and 16px roots. Against `13ff50a`, both 14px cases failed with
+**7 versus 8**; the 16px controls passed. After the preserved correction,
+**9/9 foundation tests PASS**. An initial test-harness URL-resolution error was
+fixed before this meaningful RED run and is not feature evidence.
+
+This is compiler/static-markup evidence, not browser geometry or native proof.
+The combined shell still needs real divider, drawer and editor-lifetime checks.
+Parent typecheck, production build and whitespace checks passed. The fresh bounded
+audit passed: 12 files / 6,482,803 bytes, manifest SHA256
+`47bbaa60ca93d0636e43796f13cc397c303c142639940cfbeac411e934308dfe`.
+Font/mouse bytes remain unchanged and `secretAbsenceProven` remains false.
+The earlier full UI/contracts and 64-auditor-fixture receipts above remain
+historical; they were not repeated for this test-only follow-up. Fresh independent
+correction review and exact-head hosted checks remain pending.
