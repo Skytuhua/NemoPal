@@ -21,6 +21,16 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS source_bindings (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL
 );
+-- No credentials or transcript content: authority and bounded observer metadata only.
+CREATE TABLE IF NOT EXISTS t3_enrollments (
+ binding_id uuid PRIMARY KEY REFERENCES source_bindings(id) ON DELETE CASCADE,
+ owner_id uuid NOT NULL REFERENCES owners(id), device_id uuid NOT NULL,
+ project_id uuid NOT NULL REFERENCES projects(id), source_grant_revision bigint NOT NULL,
+ project_epoch bigint NOT NULL, grant_revision bigint NOT NULL CHECK (grant_revision > 0),
+ mapping_revision bigint NOT NULL CHECK (mapping_revision > 0),
+ consent boolean NOT NULL, revoked boolean NOT NULL DEFAULT false,
+ expires_at timestamptz NOT NULL, context jsonb NOT NULL, checkpoint jsonb
+);
 CREATE TABLE IF NOT EXISTS observations (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), binding_id uuid NOT NULL REFERENCES source_bindings(id),
  source_item text NOT NULL, source_revision text NOT NULL, data jsonb,
