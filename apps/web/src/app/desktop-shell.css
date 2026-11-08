@@ -26,7 +26,6 @@
 .workspace-brand { display: flex; gap: 10px; align-items: center; padding: 0 8px 22px; flex: none; }
 .workspace-brand strong { font-size: 18px; letter-spacing: -.025em; }
 .workspace-brand .demo-indicator { margin-left: auto; }
-.app-monogram { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #515151; border-radius: 7px; color: #e5e5e5; background: #222; font-size: 18px; font-weight: 600; }
 .project-search-row { position: relative; display: flex; align-items: center; flex: none; gap: 6px; margin-bottom: 22px; }
 .project-filter { position: relative; display: block; flex: 1; min-width: 0; }
 .project-filter svg { position: absolute; top: 11px; left: 12px; width: 17px; height: 17px; color: #a9a9a9; pointer-events: none; }
@@ -51,7 +50,7 @@
 .new-project label { display: grid; gap: 6px; color: #d0d0d0; font-size: 13px; }
 .new-project :is(input,textarea) { min-width: 0; width: 100%; font-size: 15px; }
 .new-project form p { color: #c5c5c5; font-size: 13px; line-height: 1.6; }
-.sidebar-footer { display: flex; align-items: center; flex: none; gap: 4px; margin-top: 14px; padding: 10px 0 0; border-top: 1px solid #252525; }
+.sidebar-footer { display: flex; align-items: center; justify-content: center; flex: none; gap: 4px; margin-top: 14px; padding: 10px 0 0; border-top: 1px solid #252525; }
 .sidebar-footer .settings-button { flex: none; width: 36px; min-width: 36px; height: 36px; justify-content: center; gap: 0; padding: 0; border-radius: 9px; font-size: 14px; font-weight: 400; color: #bfbfbf; }
 .sidebar-footer .settings-button:hover:not(:disabled) { color: #f5f5f5; background: #242424; }
 .sidebar-footer .settings-button svg { width: 20px; height: 20px; flex: none; }
