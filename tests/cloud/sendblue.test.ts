@@ -5,6 +5,8 @@ import * as c from '@living-playbooks/contracts';
 import { buildServer } from '../../apps/cloud/src/api/server';
 import { goldenSnapshot } from '../../fixtures/contracts/golden';
 import { Store } from '../../apps/cloud/src/domain/store';
+import { Messaging } from '../../apps/cloud/src/domain/messaging';
+import { SendbluePoll } from '../../apps/cloud/src/integrations/sendblue/poll';
 import { JobQueue } from '../../apps/cloud/src/jobs/queue';
 import { SendblueDelivery } from '../../apps/cloud/src/jobs/sendblue-delivery';
 import { enqueueNotification } from '../../apps/cloud/src/integrations/sendblue/outbox';
@@ -19,6 +21,35 @@ const ownerId = goldenSnapshot.project.ownerId;
 const principal = { credentialId: randomUUID(), ownerId, deviceId: randomUUID() };
 const payload = (overrides: Record<string, unknown> = {}) => ({ accountEmail: config.account, message_handle: 'opaque-not-a-uuid', from_number: sender, to_number: config.line, sendblue_number: config.line, number: sender, content: 'What remains?', is_outbound: false, status: 'RECEIVED', message_type: 'message', group_id: '', media_url: '', ...overrides });
 const command = <T>(input: T, expectedRevision = 0) => ({ operationId: randomUUID(), expectedRevision, input });
+
+test('an in-flight poll from a revoked link cannot import into its replacement', async () => {
+  const h = await harness();
+  try {
+    await h.link(); const oldId = h.db.links[0].id;
+    await h.link();
+    const messaging = new Messaging(new Store(h.db.pool, h.now, config));
+    await expect(messaging.accept(payload(), oldId)).rejects.toThrow();
+    expect(h.db.messages).toHaveLength(0);
+    expect(h.db.jobs).toHaveLength(0);
+  } finally { await h.app.close(); }
+});
+
+test('polled messages use canonical receipts and STOP revokes pending work', async () => {
+  const h = await harness();
+  try {
+    await h.link(); h.advance(120000);
+    const data = [payload({ date_sent: '2026-11-08T12:01:00Z' })];
+    const fetcher = async () => new Response(JSON.stringify({ status: 'OK', data, pagination: { offset: 0, limit: 50, total: data.length, hasMore: false } }));
+    const poll = new SendbluePoll(h.db.pool, config, new Messaging(new Store(h.db.pool, h.now, config)), fetcher, h.now);
+    await poll.tick(new AbortController().signal);
+    await poll.tick(new AbortController().signal);
+    expect(h.db.messages).toHaveLength(1); expect(h.db.jobs).toHaveLength(1); expect(h.db.receipts).toHaveLength(1);
+    data.push(payload({ message_handle: 'stop', content: 'STOP', date_sent: '2026-11-08T12:01:30Z' }));
+    await poll.tick(new AbortController().signal);
+    expect(h.db.links[0].active).toBe(false); expect(h.db.jobs[0].state).toBe('cancelled');
+    expect(h.db.messages).toHaveLength(1); expect(h.db.receipts).toHaveLength(2);
+  } finally { await h.app.close(); }
+});
 
 test('phone status is authenticated, project scoped, and survives a fresh read through revocation', async () => {
   const h = await harness();
@@ -420,7 +451,8 @@ class MemoryQueries {
     if (q.startsWith('SELECT * FROM sendblue_links WHERE id=')) return rows(this.links.filter(r => r.id === args[0]));
     if (q.startsWith('SELECT * FROM sendblue_links WHERE owner_id=')) return rows(this.links.filter(r => r.owner_id === args[0] && r.project_id === args[1] && r.active));
     if (q.startsWith('SELECT * FROM sendblue_links WHERE account=')) return rows(this.links.filter(r => r.account === args[0] && r.receiving_line === args[1] && r.sender === args[2] && r.active));
-    if (q.startsWith('INSERT INTO sendblue_links')) { this.links.push({ id: args[0], owner_id: args[1], project_id: args[2], account: args[3], receiving_line: args[4], sender: args[5], actions: args[6], expires_at: args[7], revision: 0, active: true }); return rows(); }
+    if (q.startsWith('SELECT id,account,receiving_line,sender,linked_at,expires_at FROM sendblue_links')) return rows(this.links.filter(r => r.active && r.linked_at && new Date(r.expires_at) > args[0] && r.account === args[1] && r.receiving_line === args[2]));
+    if (q.startsWith('INSERT INTO sendblue_links')) { this.links.push({ id: args[0], owner_id: args[1], project_id: args[2], account: args[3], receiving_line: args[4], sender: args[5], actions: args[6], expires_at: args[7], linked_at: args[8], revision: 0, active: true }); return rows(); }
     if (q.startsWith('UPDATE sendblue_links SET active=')) { const r = this.links.find(r => r.id === args[0]); r.active = false; r.revision++; return rows(); }
     if (q.startsWith('SELECT count(*) FROM sendblue_receipts')) return rows([{ count: this.receipts.filter(r => r.link_id === args[0] && !r.outbound && new Date(r.created_at) > args[1]).length }]);
     if (q.startsWith('INSERT INTO sendblue_receipts')) { this.receipts.push({ account: args[0], handle: args[1], outbound: args[2], status: args[3], payload_hash: args[4], link_id: args[5], owner_message_id: args[6], job_id: args[7], created_at: args[8] }); return rows(); }

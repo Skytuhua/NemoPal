@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS sendblue_links (
  expires_at timestamptz NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS sendblue_active_sender ON sendblue_links(account,receiving_line,sender) WHERE active;
+-- Existing links have no trustworthy consent time and must be re-linked to poll.
+ALTER TABLE sendblue_links ADD COLUMN IF NOT EXISTS linked_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS sendblue_active_project ON sendblue_links(owner_id,project_id) WHERE active;
 CREATE TABLE IF NOT EXISTS sendblue_receipts (
  account text NOT NULL, handle text NOT NULL, outbound boolean NOT NULL, status text NOT NULL,

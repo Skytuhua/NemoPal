@@ -3,6 +3,9 @@ import { buildServer } from './api/server';
 import { CheckInScheduler, startCheckInDispatcher } from './checkins/scheduler';
 import { capability, sendblueConfig, type SendblueConfig } from './integrations/sendblue/config';
 import { createSendblueRuntime } from './integrations/sendblue/runtime';
+import { SendbluePoll } from './integrations/sendblue/poll';
+import { Messaging } from './domain/messaging';
+import { Store } from './domain/store';
 import { configureModel } from './jobs/model-settings';
 import { JobQueue } from './jobs/queue';
 import { SendblueDelivery } from './jobs/sendblue-delivery';
@@ -15,6 +18,7 @@ const defaults = {
   startManager: startManagerDispatcher,
   startCheckins: (pool: Pool) => startCheckInDispatcher(new CheckInScheduler(pool)),
   createDelivery: (pool: Pool, config: SendblueConfig) => new SendblueDelivery(pool, config),
+  createPoll: (pool: Pool, config: SendblueConfig) => new SendbluePoll(pool, config, new Messaging(new Store(pool, undefined, config))),
   reportError: () => console.error('Sendblue delivery unavailable.'),
 };
 export type CloudDependencies = typeof defaults;
@@ -62,9 +66,14 @@ export async function startCloudApplication(options: {
     stops.push(deps.startManager(deps.createQueue(pool, phoneConfig), model.adapter));
     stops.push(deps.startCheckins(pool));
     const delivery = phoneConfig.enabled ? deps.createDelivery(pool, phoneConfig) : undefined;
+    const polling = phoneConfig.enabled && options.env.NEMOPAL_SENDBLUE_POLL_ENABLED === 'true';
+    const poll = polling ? deps.createPoll(pool, phoneConfig) : undefined;
     const runtime = createSendblueRuntime({
       enabled: phoneConfig.enabled,
-      tick: phoneConfig.enabled ? (signal => delivery!.tick(signal)) : async () => {},
+      tick: async signal => {
+        if (poll) await poll.tick(signal);
+        if (delivery && !signal.aborted) await delivery.tick(signal);
+      },
       onError: deps.reportError,
     });
     stops.push(() => runtime.stop());
