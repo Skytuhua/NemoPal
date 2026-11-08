@@ -18,7 +18,7 @@ beforeEach(async()=>{
     app=buildServer(h.pool,{now:()=>now});
 });
 afterEach(async()=>{await app.close();await h.close();});
-const request=(method:'GET'|'POST',url:string,payload?:unknown)=>app.inject({method,url,headers:{authorization:`Bearer ${h.auth.token}`},...(payload?{payload:payload as object}:{})});
+const request=(method:'GET'|'POST'|'DELETE',url:string,payload?:unknown)=>app.inject({method,url,headers:{authorization:`Bearer ${h.auth.token}`},...(payload?{payload:payload as object}:{})});
 async function schedule(){
     expect((await request('POST','/v1/projects',command({title:'Synthetic policy project',brief:'Record a synthetic demo.'}))).statusCode).toBe(200);
     const queue=new JobQueue(h.pool,()=>now);const job=(await queue.claim())!;expect(job).not.toBeNull();const context=await queue.context(job);const taskId=randomUUID();
@@ -94,4 +94,25 @@ test('account spacing is persisted across independent schedulers/projects; demo 
         const admitted=new Set((await h.pool.query('SELECT checkin_id FROM checkin_presentations')).rows.map(row=>row.checkin_id));
         const fourth=entries.find(entry=>!admitted.has(entry.q.id))!;expect((await snapshot(fourth.projectId)).checkIns[0]!.state).toBe('scheduled');
     }finally{if(previous===undefined)delete process.env.LP_DEMO_TIMING;else process.env.LP_DEMO_TIMING=previous;await otherPool.end();}
+});
+
+test.each([1,3])('deleting %i charged projects retains account-wide attention limits after migration',async(charged)=>{
+    await h.pool.query("UPDATE owners SET timezone='UTC',quiet_start=0,quiet_end=0");
+    const scheduler=new CheckInScheduler(h.pool,()=>now);
+    for(let i=0;i<charged;i++){
+        const {projectId,q}=await schedule();now=new Date(q.dueAt);await scheduler.tick();
+        const before=await snapshot(projectId);expect(before.checkIns[0]!.state).toBe('available');
+        // Recreate the deployed legacy relationship with a live charge before upgrading it.
+        if(i===0)await h.pool.query('ALTER TABLE checkin_presentations DROP CONSTRAINT checkin_presentations_checkin_id_fkey; ALTER TABLE checkin_presentations ALTER COLUMN checkin_id SET NOT NULL; ALTER TABLE checkin_presentations ADD CONSTRAINT checkin_presentations_checkin_id_fkey FOREIGN KEY(checkin_id) REFERENCES checkins(id) ON DELETE CASCADE');
+        await migrate(h.pool);await migrate(h.pool);
+        expect((await request('DELETE',`/v1/projects/${projectId}`,command({},before.project.revision))).statusCode).toBe(200);
+        if(i+1<charged)now=new Date(now.getTime()+3600000);
+    }
+    const next=await schedule();now=new Date(next.q.dueAt);await scheduler.tick();
+    expect((await snapshot(next.projectId)).checkIns[0]!.state).toBe('scheduled');
+    const reservations=await h.pool.query('SELECT checkin_id FROM checkin_presentations WHERE owner_id=$1',[h.ownerId]);
+    expect(reservations.rows).toHaveLength(charged);
+    expect(reservations.rows.every(row=>row.checkin_id===null)).toBe(true);
+    if(charged===1){now=new Date(now.getTime()+3600000);await scheduler.tick();expect((await snapshot(next.projectId)).checkIns[0]!.state).toBe('available');}
+    else{now=new Date(now.getTime()+3600000);await scheduler.tick();expect((await snapshot(next.projectId)).checkIns[0]!.state).toBe('scheduled');}
 });

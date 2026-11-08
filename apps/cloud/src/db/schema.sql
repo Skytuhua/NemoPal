@@ -51,9 +51,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS checkins_one_open ON checkins(project_id)
 ALTER TABLE checkins ADD COLUMN IF NOT EXISTS authority jsonb;
 ALTER TABLE checkins ADD COLUMN IF NOT EXISTS snooze_timezone text;
 CREATE TABLE IF NOT EXISTS checkin_presentations (
- presentation_id uuid PRIMARY KEY, checkin_id uuid NOT NULL REFERENCES checkins(id) ON DELETE CASCADE,
+ presentation_id uuid PRIMARY KEY, checkin_id uuid REFERENCES checkins(id) ON DELETE SET NULL,
  owner_id uuid NOT NULL REFERENCES owners(id), authorized_at timestamptz NOT NULL
 );
+-- Project cleanup removes content, while account attention reservations survive their charged window.
+ALTER TABLE checkin_presentations ALTER COLUMN checkin_id DROP NOT NULL;
+ALTER TABLE checkin_presentations DROP CONSTRAINT IF EXISTS checkin_presentations_checkin_id_fkey;
+ALTER TABLE checkin_presentations ADD CONSTRAINT checkin_presentations_checkin_id_fkey
+ FOREIGN KEY(checkin_id) REFERENCES checkins(id) ON DELETE SET NULL;
 CREATE TABLE IF NOT EXISTS command_receipts (
  actor_id uuid NOT NULL, operation_id uuid NOT NULL, project_id uuid REFERENCES projects(id),
  request_hash text NOT NULL, response jsonb, PRIMARY KEY(actor_id,operation_id)
