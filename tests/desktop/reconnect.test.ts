@@ -57,7 +57,7 @@ it.each([
       const envelope = JSON.parse(String(init?.body));
       return Response.json({ operationId: envelope.operationId, requestHash: await hashCommand(path, envelope), status: 'completed', result: { acceptedIds: batch.observations.map(o => o.id), duplicateIds: [] }, projectRevision: 0, eventSequence: 1 });
     } });
-    expect((await new SyncEngine(store, client, () => syntheticReceiving, localBinding.binding.deviceId).run()).connected).toBe(true);
+    expect((await new SyncEngine(store, client, () => syntheticReceiving).run()).connected).toBe(true);
     expect(calls).toEqual(['revoke', 'upload']);
     const restarted = await JournalStore.open(path);
     expect(restarted.pendingSourceCommands()).toEqual([]);
