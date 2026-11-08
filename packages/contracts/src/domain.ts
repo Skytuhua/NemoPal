@@ -60,14 +60,18 @@ export const DocumentDraftSchema = z.strictObject({ projectId: id, id, revision,
 export const CheckInAnswerSchema = z.strictObject({ kind: z.enum(['recorded', 'not_yet']), note: boundedText(2048).optional() });
 export const CheckInSchema = z.strictObject({ id, projectId: id, taskId: id, revision, subjectRevision: revision, question: boundedText(512, true), dueAt: timestamp, expiresAt: timestamp, state: CheckInStateSchema, presentationId: id, snoozedUntil: timestamp.optional(), answer: CheckInAnswerSchema.nullable() });
 export const ChatMessageSchema = z.strictObject({ id, projectId: id, role: z.enum(['owner', 'manager']), text: boundedText(16384, true), createdAt: timestamp, observationIds: z.array(id).max(100), operationId: id.optional(), jobId: id.optional() });
+export const CodexRequestSchema = z.strictObject({ id, projectId: id, taskId: id, text: boundedText(8192, true), state: z.enum(['pending', 'claimed', 'completed', 'failed', 'interrupted', 'unknown']), output: boundedText(8192) });
+export const CodexResultSchema = z.strictObject({ status: z.enum(['completed', 'failed', 'interrupted', 'unknown']), output: boundedText(8192) });
+export type CodexResult = z.infer<typeof CodexResultSchema>;
 export const ConnectionSchema = z.strictObject({ mode: z.enum(['live', 'fixture']), inference: CapabilitySchema, sync: z.enum(['current', 'offline', 'stale', 'updating']), demoTiming: z.boolean() });
-export const ProjectSnapshotSchema = z.strictObject({ project: ProjectSchema, brief: boundedText(LIMITS.briefBytes), documents: z.array(DocumentDraftSchema).max(40), messages: z.array(ChatMessageSchema).max(200), sourceBindings: z.array(SourceBindingSchema).max(10), observations: z.array(ObservationSchema).max(100), checkIns: z.array(CheckInSchema).max(40), eventSequence: revision, connection: ConnectionSchema })
+export const ProjectSnapshotSchema = z.strictObject({ project: ProjectSchema, brief: boundedText(LIMITS.briefBytes), documents: z.array(DocumentDraftSchema).max(40), messages: z.array(ChatMessageSchema).max(200), sourceBindings: z.array(SourceBindingSchema).max(10), observations: z.array(ObservationSchema).max(100), checkIns: z.array(CheckInSchema).max(40), codexRequests: z.array(CodexRequestSchema).max(100).optional(), eventSequence: revision, connection: ConnectionSchema })
   .superRefine((value, ctx) => {
     const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
     for (const records of [value.documents, value.messages, value.sourceBindings, value.checkIns]) {
       if (records.some(record => record.projectId !== value.project.id)) fail('Foreign project record');
       if (new Set(records.map(record => record.id)).size !== records.length) fail('Duplicate record identity');
     }
+    if (value.codexRequests?.some(request => request.projectId !== value.project.id)) fail('Foreign Codex request');
     const bindings = new Map(value.sourceBindings.map(binding => [binding.id, binding]));
     const evidence = new Set(value.observations.map(observation => observation.id));
     const tasks = new Set(value.project.tasks.map(task => task.id));

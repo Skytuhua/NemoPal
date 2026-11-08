@@ -1,4 +1,5 @@
 import * as c from '@living-playbooks/contracts';
+import { z } from 'zod';
 import { ClientError, CursorExpiredError } from './errors';
 
 export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -148,6 +149,14 @@ export function createHttpClient(options: HttpClientOptions): c.PlaybooksClient 
       const result = await request(`/v1/projects/${id(projectId)}/snapshot`, 'GET', c.ProjectSnapshotSchema, undefined, signal);
       if (result.project.id !== projectId) throw new ClientError('invalid_response', 'The API returned another project snapshot.');
       return result;
+    },
+    async claimCodexRequest(projectId) {
+      const result = await request(`/v1/projects/${id(projectId)}/codex/claim`, 'POST', c.CodexRequestSchema.nullable(), {});
+      if (result && (result.projectId !== projectId || result.state !== 'claimed')) throw new ClientError('invalid_response', 'The API returned another request.');
+      return result;
+    },
+    async finishCodexRequest(projectId, requestId, result) {
+      await request(`/v1/projects/${id(projectId)}/codex/${id(requestId)}/result`, 'POST', z.strictObject({ recorded: z.literal(true) }), parseContract(c.CodexResultSchema, result));
     },
     getPhoneStatus: projectId => request(`/v1/projects/${id(projectId)}/sendblue`, 'GET', c.PhoneStatusSchema),
     linkPhone: (projectId, input) => command(`/v1/projects/${id(projectId)}/sendblue/link`, 'POST', input, c.revisionedCommandSchema(c.PhoneLinkInputSchema), c.commandReceiptSchema(c.PhoneLinkSchema)),

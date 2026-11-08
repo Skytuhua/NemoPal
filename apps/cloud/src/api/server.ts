@@ -10,6 +10,7 @@ import { CheckInCommands } from '../checkins/commands';
 import { Messaging } from '../domain/messaging';
 import { registerSendblue } from './sendblue';
 import type { SendblueConfig } from '../integrations/sendblue/config';
+import { claimCodexRequest, finishCodexRequest } from './codex-handoff';
 export function buildServer(pool: Pool, options: {
     now?: () => Date;
     inference?: c.ProjectSnapshot['connection']['inference'];
@@ -75,6 +76,8 @@ export function buildServer(pool: Pool, options: {
     app.get('/v1/projects', r => store.list(principal(r)));
     app.post('/v1/projects', r => store.createProject(principal(r), path(r), c.commandEnvelopeSchema(c.CreateProjectInputSchema).parse(r.body)));
     app.get('/v1/projects/:id/snapshot', r => store.snapshot(principal(r), id(r)));
+    app.post('/v1/projects/:id/codex/claim', r => { c.EmptyInputSchema.parse(r.body); return claimCodexRequest(pool, principal(r), id(r), store.now()); });
+    app.post('/v1/projects/:id/codex/:requestId/result', async r => { await finishCodexRequest(pool, principal(r), id(r), params(r).requestId!, c.CodexResultSchema.parse(r.body), store.now()); return { recorded: true }; });
     app.post('/v1/projects/:id/actions', r => store.action(principal(r), path(r), id(r), c.revisionedCommandSchema(c.OwnerActionSchema).parse(r.body)));
     app.post('/v1/projects/:id/messages', r => store.message(principal(r), path(r), id(r), c.revisionedCommandSchema(c.MessageInputSchema).parse(r.body)));
     app.put('/v1/projects/:id/documents/:documentId', r => store.document(principal(r), path(r), id(r), params(r).documentId!, c.revisionedCommandSchema(c.DocumentInputSchema).parse(r.body)));

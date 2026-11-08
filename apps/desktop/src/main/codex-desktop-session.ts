@@ -8,6 +8,7 @@ export class CodexDesktopSession {
   private sending = false;
   private starting?: AbortController;
   constructor(private command: () => { executable: string; args: string[] }) {}
+  available(project: string) { return !!this.session && this.project === project && !this.sending; }
 
   async start(project: string, workspace: string) {
     this.close();

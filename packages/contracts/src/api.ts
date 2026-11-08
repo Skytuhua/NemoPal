@@ -65,6 +65,8 @@ export interface PlaybooksClient {
   listProjects(signal?: AbortSignal): Promise<ProjectSummary[]>;
   createProject(input: CommandEnvelope<CreateProjectInput>): Promise<AcceptedJob>;
   getSnapshot(projectId: string, signal?: AbortSignal): Promise<z.infer<typeof ProjectSnapshotSchema>>;
+  claimCodexRequest?(projectId: string): Promise<z.infer<typeof import('./domain').CodexRequestSchema> | null>;
+  finishCodexRequest?(projectId: string, requestId: string, result: import('./domain').CodexResult): Promise<void>;
   getPhoneStatus(projectId: string): Promise<z.infer<typeof PhoneStatusSchema>>;
   linkPhone(projectId: string, input: RevisionedCommandEnvelope<z.infer<typeof PhoneLinkInputSchema>>): Promise<CommandReceipt<z.infer<typeof PhoneLinkSchema>>>;
   revokePhone(projectId: string, input: RevisionedCommandEnvelope<{ linkId: string }>): Promise<CommandReceipt<null>>;

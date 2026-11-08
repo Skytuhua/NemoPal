@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS jobs (
  state text NOT NULL, stale_count integer NOT NULL DEFAULT 0, tool_receipts jsonb NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON jobs(state,run_after);
+CREATE TABLE IF NOT EXISTS codex_requests (
+ id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), job_id uuid NOT NULL UNIQUE REFERENCES jobs(id),
+ task_id uuid NOT NULL, project_epoch bigint NOT NULL, text text NOT NULL,
+ state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','claimed','completed','failed','interrupted','unknown')),
+ device_id uuid, output text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE codex_requests ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS authority jsonb;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS repair_attempted boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS checkins (
@@ -77,6 +84,8 @@ CREATE TABLE IF NOT EXISTS generated_dependencies (
  kind text NOT NULL CHECK(kind IN ('task','task_title','workspace')),
  observation_id uuid NOT NULL, PRIMARY KEY(project_id,resource_id,kind,observation_id)
 );
+ALTER TABLE generated_dependencies DROP CONSTRAINT IF EXISTS generated_dependencies_kind_check;
+ALTER TABLE generated_dependencies ADD CONSTRAINT generated_dependencies_kind_check CHECK(kind IN ('task','task_title','workspace','codex_request'));
 -- Sendblue is a transport over canonical messages/jobs, never another project store.
 CREATE TABLE IF NOT EXISTS sendblue_links (
  id uuid PRIMARY KEY, owner_id uuid NOT NULL REFERENCES owners(id), project_id uuid NOT NULL REFERENCES projects(id),

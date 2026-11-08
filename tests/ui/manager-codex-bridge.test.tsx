@@ -13,6 +13,18 @@ import { memoryDrafts, snapshot } from './helpers';
 
 afterEach(cleanup);
 
+it('shows pending and uncertain manager requests and labels returned activity untrusted', () => {
+  const current = snapshot();
+  current.codexRequests = [
+    { id: crypto.randomUUID(), projectId: current.project.id, taskId: current.project.tasks[0]!.id, text: 'Build the demo', state: 'pending', output: '' },
+    { id: crypto.randomUUID(), projectId: current.project.id, taskId: current.project.tasks[0]!.id, text: 'Inspect the demo', state: 'claimed', output: 'Untrusted report' },
+  ];
+  render(<Chat snapshot={current} client={createFixtureClient()} store={memoryDrafts()} disabled={false} refresh={async () => {}} />);
+  expect(screen.getByText(/Pending: start a demo/)).toBeVisible();
+  expect(screen.getByText(/outcome not yet confirmed/)).toBeVisible();
+  expect(screen.getByText('Codex activity (untrusted)')).toBeVisible();
+});
+
 it('forwards an explicit manager request to the same owned session and lets the user review activity before sharing with the manager', async () => {
   const current = snapshot();
   current.connection.inference = { available: true };

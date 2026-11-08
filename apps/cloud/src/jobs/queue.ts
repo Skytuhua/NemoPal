@@ -151,11 +151,15 @@ export class JobQueue {
                 return 'superseded';
             }
             const proposal = validateProposal(raw, current, { snapshot, grantVersions });
+            const codexRequestId = proposal.codexTask ? randomUUID() : null;
+            if (proposal.codexTask)
+                await db.query('INSERT INTO codex_requests(id,project_id,job_id,task_id,project_epoch,text) VALUES($1,$2,$3,$4,$5,$6)', [codexRequestId, project.id, job.id, proposal.codexTask.taskId, project.epoch, proposal.codexTask.text]);
             const dependencies = snapshot.observations.map(o => o.id);
             const remember = async (resourceId: string, kind: string) => {
                 for (const observationId of dependencies)
                     await db.query('INSERT INTO generated_dependencies(project_id,resource_id,kind,observation_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING', [project.id, resourceId, kind, observationId]);
             };
+            if (codexRequestId) await remember(codexRequestId, 'codex_request');
             for (const change of proposal.taskChanges) {
                 if (change.type === 'create')
                     project.tasks.push({ ...change.task, revision: 0, ownerOverride: false });

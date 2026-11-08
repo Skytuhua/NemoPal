@@ -61,5 +61,7 @@ export function validateProposal(raw: unknown, job: c.ManagerJob, context: c.Aut
         if (!task || task.revision !== q.subjectRevision || ['done', 'skipped'].includes(task.status))
             throw new Error('proposal_question_subject');
     }
+    if (proposal.codexTask && !project.tasks.some(task => task.id === proposal.codexTask!.taskId && !['done', 'skipped'].includes(task.status)))
+        throw new Error('proposal_codex_task');
     return proposal;
 }

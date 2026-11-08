@@ -273,7 +273,7 @@ export class Store {
             for (const link of links) await disableLink(db, link.id);
             await db.query('UPDATE sendblue_outbox SET text=NULL WHERE project_id=$1', [id]);
             await db.query("UPDATE jobs SET state='cancelled',generation=generation+1,lease_expires_at=NULL,data=jsonb_build_object('id',id,'projectId',project_id,'state','cancelled') WHERE project_id=$1", [id]);
-            for (const table of ['generated_dependencies', 'checkins', 'messages', 'documents', 'observations', 'source_bindings'])
+            for (const table of ['codex_requests', 'generated_dependencies', 'checkins', 'messages', 'documents', 'observations', 'source_bindings'])
                 await db.query(`DELETE FROM ${table} WHERE project_id=$1`, [id]);
             await db.query('UPDATE command_receipts SET response=NULL WHERE project_id=$1', [id]);
             await db.query('UPDATE projects SET data=NULL,deleted=true,epoch=$2,revision=$3 WHERE id=$1', [id, x.epoch, x.revision]);
@@ -333,7 +333,8 @@ export async function snapshotData(db: PoolClient, project: c.Project, now: Date
         if (o.excerpt !== undefined && new Date(o.observedAt).getTime() < now.getTime() - 7 * 86400000)
             delete o.excerpt;
     const seq = Number((await db.query('SELECT coalesce(max(seq),0) AS seq FROM events WHERE owner_id=$1', [project.ownerId])).rows[0].seq);
-    return c.ProjectSnapshotSchema.parse({ project, brief: project.goal, documents: await load('documents', 40), messages: (await load('messages', 200)).reverse(), sourceBindings, observations, checkIns: await load('checkins', 40), eventSequence: seq, connection: { mode: 'live', inference: { available: false, reason: 'Live Nemotron capability gate has not passed.' }, sync: 'current', demoTiming: process.env.LP_DEMO_TIMING === 'true' } });
+    const codexRequests = (await db.query("SELECT id,project_id AS \"projectId\",task_id AS \"taskId\",text,state,output FROM codex_requests WHERE project_id=$1 ORDER BY CASE WHEN state IN ('pending','claimed') THEN 0 ELSE 1 END,created_at DESC LIMIT 100", [id])).rows;
+    return c.ProjectSnapshotSchema.parse({ project, brief: project.goal, documents: await load('documents', 40), messages: (await load('messages', 200)).reverse(), sourceBindings, observations, checkIns: await load('checkins', 40), codexRequests, eventSequence: seq, connection: { mode: 'live', inference: { available: false, reason: 'Live Nemotron capability gate has not passed.' }, sync: 'current', demoTiming: process.env.LP_DEMO_TIMING === 'true' } });
 }
 export async function withdrawEvidence(db: PoolClient, project: c.Project, bindingId: string, now: Date) {
     const ids = new Set<string>((await db.query('SELECT id FROM observations WHERE binding_id=$1', [bindingId])).rows.map(r => r.id));
@@ -353,6 +354,11 @@ async function withdrawObservations(db: PoolClient, project: c.Project, ids: Set
     const affected = (refs: string[]) => refs.some(ref => ids.has(ref));
     const dependencies = (await db.query('SELECT resource_id,kind FROM generated_dependencies WHERE project_id=$1 AND observation_id=ANY($2::uuid[])', [project.id, [...ids]])).rows;
     const derived = (resourceId: string, kind: string) => dependencies.some(d => d.resource_id === resourceId && d.kind === kind);
+    const withdrawnRequests = dependencies.filter(d => d.kind === 'codex_request').map(d => d.resource_id);
+    if (withdrawnRequests.length) {
+        await db.query('DELETE FROM codex_requests WHERE project_id=$1 AND id=ANY($2::uuid[])', [project.id, withdrawnRequests]);
+        await db.query("DELETE FROM generated_dependencies WHERE project_id=$1 AND kind='codex_request' AND resource_id=ANY($2::uuid[])", [project.id, withdrawnRequests]);
+    }
     for (const task of project.tasks) {
         const title = derived(task.id, 'task_title');
         const evidence = affected(task.evidenceIds) || derived(task.id, 'task');

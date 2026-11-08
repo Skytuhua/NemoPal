@@ -19,6 +19,7 @@ import { createCompanionTray } from './tray';
 import { CompanionLifetime } from './windows';
 import { desktopOrigin, unavailableDesktopClient } from './desktop-origin';
 import { CodexDesktopSession } from './codex-desktop-session';
+import { AutomaticCodexHandoff } from './automatic-codex-handoff';
 import { PetChatController } from './pet-chat';
 type SourceEnrollment = { operationId: string; deviceId: string; cloud: boolean; bindingId?: string; withdrawal?: 'pause' | 'revoke'; completion: Promise<void>; failed: boolean };
 
@@ -90,6 +91,22 @@ async function start() {
   const codexDemo = new CodexDesktopSession(() => ({ executable: resolveCodexExecutable(), args: ['app-server', '--listen', 'stdio://', '-c', 'analytics.enabled=false'] }));
   let demoActivation = 0;
   const stopDemo = () => { demoActivation++; codexDemo.close(); };
+  const handoff = new AutomaticCodexHandoff({
+    ready: project => !quitting && !suspended && ownerReady && connected && selectedProject === project && codexDemo.available(project) ? `${ownerGeneration}:${demoActivation}` : null,
+    claim: project => client.claimCodexRequest!(project),
+    send: async (project, text) => {
+      const activation = demoActivation;
+      sendDesktop({ type: 'codex_automatic', projectId: project, state: 'sending' });
+      const result = await codexDemo.send(project, text).catch(() => ({ status: 'unknown' as const, replies: [] }));
+      if (activation === demoActivation && selectedProject === project) sendDesktop({ type: 'codex_automatic', projectId: project, state: result.status });
+      return result;
+    },
+    finish: async (project, id, result) => {
+      let output = Buffer.from(result.replies.join('\n\n')).subarray(0, 8192).toString('utf8');
+      while (Buffer.byteLength(output) > 8192) output = output.slice(0, -1);
+      await client.finishCodexRequest!(project, id, { status: result.status, output });
+    },
+  });
   let pinnedProject = store.preference().pinnedProjectId;
   let selectionGeneration = 0;
   const petProject = () => pinnedProject ?? selectedProject;
@@ -353,11 +370,12 @@ async function start() {
         const choice = await dialog.showOpenDialog(windows.workspace, { title: 'Choose the Codex demo workspace', properties: ['openDirectory'] });
         if (choice.canceled || !choice.filePaths[0]) return 'cancelled';
         if (activation !== demoActivation || selectedProject !== projectId || quitting || suspended) throw Error('Selection changed');
-        const confirm = await dialog.showMessageBox(windows.workspace, { type: 'warning', buttons: ['Start new demo thread', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true, message: 'Start a new local Codex demo thread?', detail: `Workspace: ${choice.filePaths[0]}\nThis creates a new thread; it does not attach an existing conversation. Codex uses a read-only sandbox and approval policy never, but may read outside this folder and configured tools can have their own permissions. Provider usage may incur costs. Approval requests will not be accepted.` });
+        const confirm = await dialog.showMessageBox(windows.workspace, { type: 'warning', buttons: ['Start new demo thread', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true, message: 'Start a new local Codex demo thread?', detail: `Workspace: ${choice.filePaths[0]}\nThis creates a new thread; it does not attach an existing conversation. While this project is selected, its manager may automatically send task requests to this thread and return Codex replies as untrusted project activity. Codex uses a read-only sandbox and approval policy never, but may read outside this folder and configured tools can have their own permissions. Provider usage may incur costs. Approval requests will not be accepted.` });
         if (confirm.response !== 0) return 'cancelled';
         if (activation !== demoActivation || selectedProject !== projectId || quitting || suspended) throw Error('Selection changed');
         await codexDemo.start(projectId, choice.filePaths[0]);
         if (activation !== demoActivation || selectedProject !== projectId || quitting || suspended) { codexDemo.close(); throw Error('Selection changed'); }
+        void cycle();
         return 'started';
       }
       case 'sendCodexDemo': {
@@ -408,6 +426,7 @@ async function start() {
         const uploaded = await ownerSync.run(); assertOwner(owner); connected = uploaded.connected; if (!connected) { disconnect(); return; }
         const project = petProject(); if (project && authority.projects.has(project)) { await refresh(project); assertOwner(owner); }
         else if (!eventSequence && projects[0]) { const snapshot = await ownerClient.getSnapshot(projects[0].id); assertOwner(owner); eventSequence = snapshot.eventSequence; }
+        if (selectedProject && authority.projects.has(selectedProject)) void handoff.run(selectedProject).catch(() => {});
         if (!eventsAbort || eventsAbort.signal.aborted) {
           const subscription = new AbortController(); eventsAbort = subscription; const signal = subscription.signal;
           void ownerClient.subscribe(eventSequence, event => { if (owner !== ownerGeneration || signal.aborted || quitting) return; eventSequence = Math.max(eventSequence, event.seq); if (authority.projects.has(event.projectId)) { sendDesktop({ type: 'project_event', event }); if (event.kind === 'job_updated') authority.jobs.set(event.resourceId, event.projectId); if (event.projectId === petProject()) { if (event.kind === 'project_deleted') { authority.projects.delete(event.projectId); chat.contextChanged(); } else void chat.refresh(); } void cycle(); } }, signal).catch(() => { if (owner === ownerGeneration && !signal.aborted && !quitting) { eventSequence = 0; disconnect(); subscription.abort(); } });

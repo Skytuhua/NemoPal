@@ -3,8 +3,22 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CodexDemo } from '../../apps/web/src/features/chat/CodexDemo';
+import type { SafeDesktopEvent } from '@living-playbooks/contracts';
 
 afterEach(cleanup);
+
+it('blocks manual sends during an automatic turn and warns when its outcome is unknown', async () => {
+  const projectId = crypto.randomUUID();
+  let listener!: (event: SafeDesktopEvent) => void;
+  render(<CodexDemo projectId={projectId} start={async () => 'started'} send={vi.fn()} stop={async () => {}} onEvent={fn => { listener = fn; return () => {}; }} />);
+  await userEvent.click(screen.getByRole('button', { name: /start codex demo/i }));
+  await userEvent.type(screen.getByLabelText('Message to Codex'), 'manual draft');
+  act(() => listener({ type: 'codex_automatic', projectId, state: 'sending' }));
+  expect(screen.getByRole('button', { name: 'Send to Codex' })).toBeDisabled();
+  act(() => listener({ type: 'codex_automatic', projectId, state: 'unknown' }));
+  expect(screen.getByRole('status')).toHaveTextContent('delivery is unknown');
+  expect(screen.getByLabelText('Message to Codex')).toHaveValue('manual draft');
+});
 
 it('requires activation, displays replies, and preserves an uncertain message', async () => {
   const start = vi.fn(async () => 'started' as const);

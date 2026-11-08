@@ -1,11 +1,11 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { Button, Textarea } from '@living-playbooks/project-ui';
-import type { DesktopBridge } from '@living-playbooks/contracts';
+import { SafeDesktopEventSchema, type DesktopBridge } from '@living-playbooks/contracts';
 
 export type DemoActivity = { active: boolean; busy: boolean; uncertain: boolean; messages: { role: string; text: string }[] };
 export type CodexDemoHandle = { forward(text: string): Promise<'completed' | 'failed' | 'interrupted' | 'unknown'> };
 
-export function CodexDemo({ projectId, start, send, stop, onGuardChange, onActivity, ref }: { projectId: string; start: NonNullable<DesktopBridge['startCodexDemo']>; send: NonNullable<DesktopBridge['sendCodexDemo']>; stop: NonNullable<DesktopBridge['stopCodexDemo']>; onGuardChange?: (blocked: boolean) => void; onActivity?: (activity: DemoActivity) => void; ref?: Ref<CodexDemoHandle> }) {
+export function CodexDemo({ projectId, start, send, stop, onEvent, onGuardChange, onActivity, ref }: { projectId: string; start: NonNullable<DesktopBridge['startCodexDemo']>; send: NonNullable<DesktopBridge['sendCodexDemo']>; stop: NonNullable<DesktopBridge['stopCodexDemo']>; onEvent?: DesktopBridge['onEvent']; onGuardChange?: (blocked: boolean) => void; onActivity?: (activity: DemoActivity) => void; ref?: Ref<CodexDemoHandle> }) {
   const [active, setActive] = useState(false), [busy, setBusy] = useState(false), [draft, setDraft] = useState(''), [status, setStatus] = useState('');
   const [uncertain, setUncertain] = useState(false);
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
@@ -14,6 +14,16 @@ export function CodexDemo({ projectId, start, send, stop, onGuardChange, onActiv
   useEffect(() => { onGuardChange?.(active || busy || !!draft || uncertain); return () => onGuardChange?.(false); }, [active, busy, draft, uncertain, onGuardChange]);
   useEffect(() => { onActivity?.({ active, busy, uncertain, messages }); }, [active, busy, uncertain, messages, onActivity]);
   useEffect(() => () => { generation.current++; }, []);
+  useEffect(() => onEvent?.(raw => {
+    const event = SafeDesktopEventSchema.safeParse(raw);
+    if (!event.success || event.data.type !== 'codex_automatic' || event.data.projectId !== projectId) return;
+    if (event.data.state === 'sending') { setBusy(true); setStatus('Manager task is being sent to the demo.'); }
+    else {
+      setBusy(false);
+      if (event.data.state === 'unknown') { setActive(false); setUncertain(true); setStatus('Manager task delivery is unknown; check the project activity before continuing.'); }
+      else { if (event.data.state !== 'completed') setUncertain(true); setStatus(`Manager task turn ${event.data.state}. See project activity.`); }
+    }
+  }), [onEvent, projectId]);
   async function activate() {
     const current = ++generation.current; setBusy(true); setStatus('');
     try {

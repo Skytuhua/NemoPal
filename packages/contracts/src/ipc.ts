@@ -22,6 +22,7 @@ export const SafeDesktopEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('project_event'), event: ProjectEventSchema }),
   z.strictObject({ type: z.literal('connection'), connected: z.boolean(), reason: boundedText(512).optional() }),
   z.strictObject({ type: z.literal('source_state'), binding: SourceBindingSchema, cloudRevocationPending: z.boolean() }),
+  z.strictObject({ type: z.literal('codex_automatic'), projectId: id, state: z.enum(['sending', 'completed', 'failed', 'interrupted', 'unknown']) }),
 ]);
 
 export const AllowedClientCommandSchema = z.discriminatedUnion('type', [
