@@ -260,14 +260,17 @@ test('unmount during pairing ignores late success and never opens workspace', as
 
 test.each([{ development: false, fixture: true }, { development: true, fixture: false }])('missing bridge retains unavailable screen without implicit fixtures: %j', async options => {
   await start(undefined, options);
-  expect(screen.getByRole('heading', { name: 'Desktop capability unavailable' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Open your project workspace' })).toBeVisible();
+  expect(screen.getByText(/This browser window isn’t connected/)).toBeVisible();
+  await userEvent.click(screen.getByText('Connection details'));
   expect(screen.queryByLabelText('Pairing code')).not.toBeInTheDocument();
   if (options.development) expect(screen.getByText(/VITE_DEV_FIXTURES=true/)).toBeVisible();
 });
 
 test('intentional development fixtures remain visibly labeled', async () => {
   await start(undefined, { development: true, fixture: true });
-  expect(await screen.findByText(/Fixture mode.*synthetic data.*no live model/)).toBeVisible();
+  await userEvent.click(await screen.findByText('Demo', { selector: 'summary' }));
+  expect(screen.getByText(/Fixture mode.*synthetic data.*no live model/)).toBeVisible();
   expect(screen.queryByLabelText('Pairing code')).not.toBeInTheDocument();
 });
 

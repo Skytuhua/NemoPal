@@ -18,14 +18,16 @@ test.each(['saved', 'conflict'] as const)('a late document %s response preserves
     return receipt;
   };
   const view = render(<App client={client} drafts={store} fixture />);
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.clear(screen.getByLabelText('Document: Demo notes'));
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), 'Submitted text');
   await userEvent.click(screen.getByRole('button', { name: 'Save document' }));
   await started.promise;
   await userEvent.click(screen.getByRole('button', { name: /Second project/ }));
-  await screen.findByRole('heading', { name: 'Second project' });
+  await screen.findByRole('heading', { name: 'Second project', level: 1 });
   await userEvent.click(screen.getByRole('button', { name: /Hackathon demo/ }));
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.clear(screen.getByLabelText('Document: Demo notes'));
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), 'Newer text after return');
@@ -33,6 +35,7 @@ test.each(['saved', 'conflict'] as const)('a late document %s response preserves
   await waitFor(async () => expect((await store.read(`${a.project.id}:document:${a.documents[0]!.id}`))?.text).toBe('Newer text after return'));
   view.unmount();
   render(<App client={client} drafts={store} fixture />);
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toHaveValue('Newer text after return'));
 });
 
@@ -48,7 +51,7 @@ test('a late chat acknowledgment cannot remove the newer composer draft after re
   await userEvent.type(screen.getByLabelText('Message to Nemo'), 'First question');
   await userEvent.click(screen.getByRole('button', { name: 'Send message' })); await started.promise;
   await userEvent.click(screen.getByRole('button', { name: /Second project/ }));
-  await screen.findByRole('heading', { name: 'Second project' });
+  await screen.findByRole('heading', { name: 'Second project', level: 1 });
   await userEvent.click(screen.getByRole('button', { name: /Hackathon demo/ }));
   await waitFor(() => expect(screen.getByLabelText('Message to Nemo')).toBeEnabled());
   await userEvent.clear(screen.getByLabelText('Message to Nemo'));
@@ -62,6 +65,7 @@ test('a late chat acknowledgment cannot remove the newer composer draft after re
 test('a replacement document keeps the focused old editor until its owner applies the layout', async () => {
   const a = snapshot(), client = createFixtureClient(), store = memoryDrafts();
   render(<App client={client} drafts={store} fixture />);
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   const editor = screen.getByLabelText('Document: Demo notes');
   await userEvent.type(editor, ' Keep this local text');
@@ -78,6 +82,7 @@ test('a replacement document keeps the focused old editor until its owner applie
   expect(screen.getByRole('button', { name: 'Save document' })).toBeDisabled();
   await userEvent.click(screen.getByRole('button', { name: 'Apply workspace arrangement' }));
   expect(editor.isConnected).toBe(false);
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toHaveValue('Replacement document'));
   expect((await store.read(`${a.project.id}:document:${a.documents[0]!.id}`))?.text).toContain('Keep this local text');
 });
@@ -98,7 +103,7 @@ test('project creation replays the exact persisted command after a lost response
   await userEvent.click(screen.getByRole('button', { name: 'Create project' }));
   await screen.findByText(/Project creation not confirmed/);
   view.unmount(); render(<App client={client} drafts={store} fixture />);
-  await screen.findByRole('heading', { name: 'Retry safe project' });
+  await screen.findByRole('heading', { name: 'Retry safe project', level: 1 });
   await userEvent.click(screen.getByText('New project', { selector: 'summary' }));
   await waitFor(() => expect(screen.getByRole('button', { name: /Create project|Retry project creation/ })).toBeEnabled());
   await userEvent.click(screen.getByRole('button', { name: /Create project|Retry project creation/ }));

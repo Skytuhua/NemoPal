@@ -1,11 +1,12 @@
-# Workspace and pet
+# Compact project desk
 
-Mode: Operate. Approved source: docs/briefs/lane-c.md and owner dispatch.
+Mode: Operate. Binding direction: docs/superpowers/plans/2026-11-07-visual-workspace-rebuild.md and supplied reference/rejection images. The prior spacious long-page DESIGN.md was rejected evidence.
 
-THESIS: A precise project desk keeps canonical work visible and owner corrections close to the task.
-OWN-WORLD: Neutral paper surfaces, Segoe UI/system typography, fine separators, square native controls and generous section spacing. No decorative rails, gradients, metric dashboards or structural emoji.
-STORY: Choose a project, inspect work and evidence, correct a task or edit notes, then ask its manager when useful.
-FIRST VIEWPORT: Compact project list left, broad goal/tasks/editor center, restrained manager conversation right. Unavailable capabilities and fixture provenance stay explicit.
-FORM: Fixed readable type scale; 44px interactive targets; narrow navigation selects exactly one surface. Pet is an original geometric local character with deterministic six-state animation.
+THESIS: Understand the real project and act from one desktop view.
+OWN-WORLD: Crisp charcoal panels, blue controls, green recorded task progress, authored consistent outline icons, and the unchanged grey pixel mouse. Original composition; supported actions and supplied records only.
+FIRST VIEWPORT: 56px header / 200px project rail / flexible desk / 290px manager. Identity, progress plus review, next action, connected steps, lower task/evidence/notes cards, full-width check-in and manager composer. Tasks and evidence/notes have bounded lists. No clipping of controls or whole-app scaling.
+FORM: Real native semantic controls and visible keyboard focus. Details hold long notes, evidence, settings and privacy. Narrow surfaces switch Projects / Workspace / Chat; text scaling may reflow and scroll.
 
-The approved master plan and exact supplied visual direction settle the design questions. This lane does not reopen approval or choose a marketing concept. Build code-first as an app surface. Independent final review belongs to the parent; nested review is prohibited.
+B owns manager internals with .manager-desk and padding. C owns compact Question/DocumentEditor with default=false plus the source disclosure. App opts into compact=true, passes guarded manager callbacks and keeps the editor mounted through detail open/close and overview navigation. Canonical questions remain reachable even without a layout card.
+
+Parent owns initial batched 1366x768/1440x900/mobile/text-scale capture, at most one correction batch, independent review and integration. No worker screenshot loops. DOM and focused CSS checks are not visual acceptance. No native/model/source-read/deployment acceptance is inferred.
