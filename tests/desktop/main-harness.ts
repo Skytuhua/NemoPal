@@ -20,7 +20,7 @@ export function projectSnapshot(which: 'A' | 'B') {
 export function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 
 // Real main, IPC, vault, journal, controller, sync and presentation. Only OS/network ports are synthetic.
-export async function startSyntheticMain(options: { seed?(store: JournalStore): Promise<void>; client?: Partial<PlaybooksClient>; credentialDevice?: string; credentialExpiry?: string; credentialEncryption?: () => Promise<void>; withoutCredential?: boolean; apiOrigin?: string; receivingEndpoint?: string; disclosure?: string; windowLoad?: Promise<void> } = {}) {
+export async function startSyntheticMain(options: { seed?(store: JournalStore): Promise<void>; client?: Partial<PlaybooksClient>; clientFactory?(configuration: HttpClientOptions, defaults: Pick<PlaybooksClient, 'getSnapshot' | 'subscribe'>): PlaybooksClient; credentialDevice?: string; credentialExpiry?: string; credentialEncryption?: () => Promise<void>; withoutCredential?: boolean; apiOrigin?: string; receivingEndpoint?: string; disclosure?: string; windowLoad?: Promise<void> } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'lp-main-boundary-'));
   const profile = join(directory, 'LivingPlaybooks'); const path = join(profile, 'journal.json');
   const store = await JournalStore.open(path); await options.seed?.(store);
@@ -66,7 +66,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   const protectedStorage = { isAsyncEncryptionAvailable: vi.fn(async () => true), encryptStringAsync: async (value: string) => { await options.credentialEncryption?.(); return Buffer.from(value); }, decryptStringAsync: async (value: Buffer) => ({ result: value.toString(), shouldReEncrypt: false }) };
   vi.doMock('electron', () => ({ app, dialog, Menu, Tray, nativeImage: { createFromBitmap: () => ({}) }, ipcMain: { handle: (channel: string, handler: typeof handlers extends Map<string, infer H> ? H : never) => handlers.set(channel, handler) }, powerMonitor: new EventEmitter(), safeStorage: protectedStorage }));
   vi.doMock('../../apps/desktop/src/main/native-windows', () => ({ createNativeWindows: () => windows }));
-  vi.doMock('@living-playbooks/api-client', async () => ({ ...await vi.importActual('@living-playbooks/api-client'), createHttpClient: (configuration: HttpClientOptions) => { transport = configuration.fetch; clientConfigurations.push(configuration); return client; } }));
+  vi.doMock('@living-playbooks/api-client', async () => ({ ...await vi.importActual('@living-playbooks/api-client'), createHttpClient: (configuration: HttpClientOptions) => { transport = configuration.fetch; clientConfigurations.push(configuration); return options.clientFactory?.(configuration, client) ?? client; } }));
   vi.doMock('@living-playbooks/codex-observer', () => ({ ADAPTER: 'codex-app-server', VERSION: '0.166.0', createInstalledObserver: () => observer }));
   await import('../../apps/desktop/src/main/index');
   await vi.waitFor(() => { expect(dialog.showErrorBox).not.toHaveBeenCalled(); expect(windows.load).toHaveBeenCalled(); if (!options.windowLoad) expect((vi.isMockFunction(client.subscribe) && client.subscribe.mock.calls.length > 0) || desktopEvents.some(e => e.type === 'connection' && !e.connected)).toBe(true); });

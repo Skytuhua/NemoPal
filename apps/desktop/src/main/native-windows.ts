@@ -9,7 +9,7 @@ export function createNativeWindows(options: { renderer: string; preloadDirector
   nativeSession.webRequest.onHeadersReceived((details, callback) => callback({ responseHeaders: { ...details.responseHeaders,
     'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"],
   } }));
-  const workspace = new BrowserWindow({ width: 1240, height: 820, minWidth: 800, minHeight: 600, show: false, title: 'Living Playbooks', webPreferences: { ...securePreferences(`${options.preloadDirectory}/workspace.cjs`), session: nativeSession } });
+  const workspace = new BrowserWindow({ width: 1240, height: 820, minWidth: 800, minHeight: 600, show: false, title: 'NemoPal', webPreferences: { ...securePreferences(`${options.preloadDirectory}/workspace.cjs`), session: nativeSession } });
   const point = clampPosition(options.position ?? { x: screen.getPrimaryDisplay().workArea.x + screen.getPrimaryDisplay().workArea.width - 250, y: screen.getPrimaryDisplay().workArea.y + screen.getPrimaryDisplay().workArea.height - 290 }, { width: 240, height: 280 }, screen.getAllDisplays().map(d => d.workArea));
   const pet = new BrowserWindow({ ...point, width: 240, height: 280, show: false, frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, focusable: false, resizable: false, minimizable: false, maximizable: false, hasShadow: false, title: 'Living Playbooks companion', webPreferences: { ...securePreferences(`${options.preloadDirectory}/pet.cjs`), session: nativeSession } });
   for (const [role, window] of Object.entries({ workspace, pet }) as ['workspace' | 'pet', BrowserWindow][]) {
