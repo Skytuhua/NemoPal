@@ -7,17 +7,22 @@ import { Store } from '../domain/store';
 import { DomainError, reject } from '../domain/errors';
 import { readEvents } from './events';
 import { CheckInCommands } from '../checkins/commands';
+import { Messaging } from '../domain/messaging';
+import { registerSendblue } from './sendblue';
+import type { SendblueConfig } from '../integrations/sendblue/config';
 export function buildServer(pool: Pool, options: {
     now?: () => Date;
     inference?: c.ProjectSnapshot['connection']['inference'];
+    sendblue?: SendblueConfig;
 } = {}) {
     const app = Fastify({ logger: false, bodyLimit: c.LIMITS.ingestionBytes + 8192, requestTimeout: 15000 });
-    const store = new Store(pool, options.now);
+    const store = new Store(pool, options.now, options.sendblue);
     const checkins = new CheckInCommands(store);
     if (options.inference)
         store.inference = options.inference;
     const principals = new WeakMap<FastifyRequest, Principal>();
     const principal = (r: FastifyRequest) => principals.get(r)!;
+    registerSendblue(app, new Messaging(store), principal);
     const params = (r: FastifyRequest) => z.record(z.string(), c.IdSchema).parse(r.params);
     const id = (r: FastifyRequest) => params(r).id!;
     const path = (r: FastifyRequest) => r.url.split('?')[0]!;
