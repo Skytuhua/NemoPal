@@ -121,4 +121,32 @@ it('rejects expired authority and project changes on both load and checkpoint co
   await expect(store.load(selected())).rejects.toThrow();
   expect(await store.commitIfCurrent(context, observed(context))).toBe(false);
 });
+
+it('rejects a binding belonging to a different source adapter', async () => {
+  await pool.query("UPDATE source_bindings SET data=jsonb_set(data, '{adapterId}', '\"codex\"'::jsonb) WHERE id=$1", [bindingId]);
+  await expect(store.enroll(selected(), input())).rejects.toThrow();
+});
+
+it('persists changed-run checkpoints with only the changed run metadata', async () => {
+  const context = await store.enroll(selected(), input());
+  const changed = { ...observed(context), mode: 'unmapped' as const, runId: 'new-run', runOrdinal: 2,
+    items: [{ itemId: 'new-item', position: 1, runId: 'new-run', sourceThreadId: 'thread', visibility: 'local' as const, status: 'running' as const, updatedAt: now.toISOString() }] };
+  expect(await store.commitIfCurrent(context, changed)).toBe(true);
+  expect((await store.load(selected())).checkpoint?.runId).toBe('new-run');
+});
+
+it('rejects a competing checkpoint based on an obsolete snapshot', async () => {
+  const context = await store.enroll(selected(), input());
+  const first = observed(context);
+  expect(await store.commitIfCurrent(context, first)).toBe(true);
+  expect(await store.commitIfCurrent(context, { ...first, cursor: 2 })).toBe(false);
+  expect((await store.load(selected())).checkpoint?.cursor).toBe(1);
+});
+
+it('fails closed instead of restoring a checkpoint from another thread', async () => {
+  const context = await store.enroll(selected(), input());
+  const forged = { ...observed(context), items: [{ itemId: 'item', position: 1, runId: 'run', sourceThreadId: 'other-thread', visibility: 'local', status: 'running', updatedAt: now.toISOString() }] };
+  await pool.query('UPDATE t3_enrollments SET checkpoint=$2 WHERE binding_id=$1', [bindingId, forged]);
+  await expect(store.load(selected())).rejects.toThrow();
+});
 });

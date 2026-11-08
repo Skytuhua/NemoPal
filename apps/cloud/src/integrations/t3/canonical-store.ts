@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { ProjectSchema, SourceBindingSchema } from '@living-playbooks/contracts';
 import { reauthorize, type Principal } from '../../auth/credentials';
-import { transaction } from '../../db/transaction';
+import { t3Transaction } from './transaction';
 import { appendEvent, saveProject, withdrawEvidence } from '../../domain/store';
 import { contextSchema, id, itemSchema, parse, statusSchema, T3Error, type T3Context } from './model';
 import { bindingKey, type T3Observation } from './observer';
@@ -19,6 +19,14 @@ const checkpointSchema = z.object({ bindingKey: z.string().regex(/^[a-f0-9]{64}$
   runOrdinal: z.number().int().positive().safe().nullable(), status: z.union([statusSchema, z.literal('unknown')]),
   runStatus: z.union([statusSchema, z.literal('unknown')]), items: z.array(itemSchema).max(100), hasMore: z.boolean() });
 
+function checkpointFor(context: T3Context, input: unknown) {
+  const metadata = parse(checkpointSchema, input);
+  if (metadata.bindingKey !== bindingKey(context) || metadata.cursor < context.grant.startPosition ||
+    metadata.items.some(item => item.visibility !== 'local' || item.sourceThreadId !== context.grant.threadId || item.runId !== metadata.runId || item.runId === null || item.position <= context.grant.startPosition) ||
+    (metadata.mode === 'current' && (metadata.runId !== context.mapping.runId || metadata.runOrdinal !== context.mapping.runOrdinal))) throw new T3Error('invalid_contract');
+  return metadata;
+}
+
 /** Bind this object to a principal obtained from authentication, never to user-supplied identity. */
 export class CanonicalT3Store implements T3ServiceStore {
   constructor(private readonly pool: Pool, private readonly principal: Principal, private readonly now: () => Date = () => new Date()) {}
@@ -33,6 +41,7 @@ export class CanonicalT3Store implements T3ServiceStore {
     if (!sourceRow) throw new T3Error('revoked');
     const source = SourceBindingSchema.parse(sourceRow.data);
     if (source.deviceId !== this.principal.deviceId) throw new T3Error('wrong_owner');
+    if (source.adapterId !== 't3') throw new T3Error('revoked');
     const enrollment = (await db.query('SELECT * FROM t3_enrollments WHERE binding_id=$1 FOR UPDATE', [selection.bindingId])).rows[0];
     return { project, source, enrollment };
   }
@@ -53,7 +62,7 @@ export class CanonicalT3Store implements T3ServiceStore {
 
   /** For a fresh consent flow after expiry or pause; this does not authorize observation. */
   async revisions(selection: T3Selection) {
-    return transaction(this.pool, async db => {
+    return t3Transaction(this.pool, selection.projectId, async db => {
       const { enrollment } = await this.lock(db, selection);
       return { t3GrantRevision: Number(enrollment?.grant_revision ?? 0), mappingRevision: Number(enrollment?.mapping_revision ?? 0) };
     });
@@ -61,7 +70,7 @@ export class CanonicalT3Store implements T3ServiceStore {
 
   async enroll(selection: T3Selection, input: T3Enrollment): Promise<T3Context> {
     const value = parse(enrollmentSchema, input);
-    return transaction(this.pool, async db => {
+    return t3Transaction(this.pool, selection.projectId, async db => {
       const locked = await this.lock(db, selection);
       const { project, source, enrollment: old } = locked;
       const now = this.now().getTime();
@@ -85,27 +94,29 @@ export class CanonicalT3Store implements T3ServiceStore {
   }
 
   async load(selection: T3Selection) {
-    return transaction(this.pool, async db => {
+    return t3Transaction(this.pool, selection.projectId, async db => {
       const locked = await this.lock(db, selection);
       const context = this.current(selection, locked);
-      const checkpoint = locked.enrollment.checkpoint as T3Observation | null;
+      const value = locked.enrollment.checkpoint;
+      const metadata = value === null ? undefined : checkpointFor(context, value);
+      const checkpoint = metadata && { ...metadata, label: metadata.mode === 'current' ? 'T3 activity observed' : 'T3 run changed; task mapping needs review' };
       return { context, ...(checkpoint ? { checkpoint } : {}) };
     });
   }
 
-  async commitIfCurrent(expected: T3Context, observation: T3Observation): Promise<boolean> {
+  async commitIfCurrent(expected: T3Context, observation: T3Observation, previous?: T3Observation): Promise<boolean> {
     const context = parse(contextSchema, expected);
     const selection = { ownerId: context.grant.ownerId, deviceId: context.grant.deviceId, projectId: context.grant.projectId, bindingId: context.grant.bindingId };
-    const metadata = parse(checkpointSchema, observation);
-    if (metadata.bindingKey !== bindingKey(context) || metadata.cursor < context.grant.startPosition ||
-      metadata.items.some(item => item.visibility !== 'local' || item.sourceThreadId !== context.grant.threadId || item.runId !== context.mapping.runId || item.position <= context.grant.startPosition) ||
-      (metadata.mode === 'current' && (metadata.runId !== context.mapping.runId || metadata.runOrdinal !== context.mapping.runOrdinal))) throw new T3Error('invalid_contract');
+    const metadata = checkpointFor(context, observation);
     const checkpoint = { ...metadata, label: metadata.mode === 'current' ? 'T3 activity observed' : 'T3 run changed; task mapping needs review' };
-    return transaction(this.pool, async db => {
+    return t3Transaction(this.pool, selection.projectId, async db => {
       const locked = await this.lock(db, selection);
       let current: T3Context;
       try { current = this.current(selection, locked); } catch (error) { if (error instanceof T3Error && error.code === 'revoked') return false; throw error; }
       if (JSON.stringify(current) !== JSON.stringify(context)) return false;
+      const prior = previous === undefined ? null : checkpointFor(context, previous);
+      const saved = locked.enrollment.checkpoint === null ? null : checkpointFor(context, locked.enrollment.checkpoint);
+      if (JSON.stringify(prior) !== JSON.stringify(saved) || (saved && metadata.cursor < saved.cursor)) return false;
       await db.query('UPDATE t3_enrollments SET checkpoint=$2 WHERE binding_id=$1', [selection.bindingId, checkpoint]);
       return true;
     });
@@ -113,7 +124,7 @@ export class CanonicalT3Store implements T3ServiceStore {
 
   async revoke(selection: T3Selection, expected: T3Context): Promise<void> {
     const context = parse(contextSchema, expected);
-    await transaction(this.pool, async db => {
+    await t3Transaction(this.pool, selection.projectId, async db => {
       const locked = await this.lock(db, selection);
       const { project, source, enrollment: e } = locked;
       if (!e || e.revoked || JSON.stringify(parse(contextSchema, e.context)) !== JSON.stringify(context) || Number(e.source_grant_revision) !== source.grantRevision || source.state === 'revoked') throw new T3Error('revoked');
