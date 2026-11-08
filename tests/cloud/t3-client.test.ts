@@ -569,3 +569,67 @@ it('network boundary fences an expired session before initiating cleanup', async
     expect(fetchSpy).not.toHaveBeenCalled();
   } finally { boundary.dispose(); fetchSpy.mockRestore(); }
 });
+
+
+it('stops initialization sends when session expires before tools discovery', async () => {
+  const f = await fixture('session');
+  let clock: ReturnType<typeof vi.spyOn> | undefined;
+  const later = Date.now() + 60000;
+  f.setOnInitialized(() => { clock = vi.spyOn(Date, 'now').mockReturnValue(later); });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread',
+      sessionTimeoutMs: 5000, onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(f.requests.filter(r => r.body.includes('tools/list'))).toHaveLength(0);
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { clock?.mockRestore(); fetchSpy.mockRestore(); }
+});
+
+it('checks session deadline again immediately before fetch after preparing headers', async () => {
+  const f = await fixture('session');
+  const controller = new AbortController();
+  const now = Date.now();
+  const onExpiry = vi.fn(() => controller.abort('deadline'));
+  const boundary = networkBoundary(new URL(f.endpoint), controller.signal, 1000, () => 'cleanup', () => {});
+  boundary.setBearer('fixture-secret-access-token');
+  boundary.enableScopedCalls({ environmentId: 'env', threadId: 'thread', expiresAt: now + 5000, onExpiry });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+  let clock: ReturnType<typeof vi.spyOn> | undefined;
+  const headers = { get 'x-fixture'() { clock = vi.spyOn(Date, 'now').mockReturnValue(now + 6000); return 'value'; } };
+  try {
+    await expect(boundary.fetch(f.endpoint, { method: 'DELETE', headers })).rejects.toMatchObject({ code: 'deadline' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onExpiry).toHaveBeenCalledOnce();
+  } finally { boundary.dispose(); clock?.mockRestore(); fetchSpy.mockRestore(); }
+});
+
+
+it('enforces session lifetime while initialization is still waiting', async () => {
+  const f = await fixture('slow-init-notification');
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread',
+      sessionTimeoutMs: 50, onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(f.requests.filter(r => r.body.includes('tools/list'))).toHaveLength(0);
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { fetchSpy.mockRestore(); }
+});
+
+
+it('checks session deadline after all request options are prepared', async () => {
+  const f = await fixture('session');
+  const controller = new AbortController();
+  const now = Date.now();
+  const onExpiry = vi.fn(() => controller.abort('deadline'));
+  const boundary = networkBoundary(new URL(f.endpoint), controller.signal, 1000, () => 'cleanup', () => {});
+  boundary.setBearer('fixture-secret-access-token');
+  boundary.enableScopedCalls({ environmentId: 'env', threadId: 'thread', expiresAt: now + 5000, onExpiry });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+  let clock: ReturnType<typeof vi.spyOn> | undefined;
+  const init = { method: 'DELETE', get cache() { clock = vi.spyOn(Date, 'now').mockReturnValue(now + 6000); return 'no-store' as const; } };
+  try {
+    await expect(boundary.fetch(f.endpoint, init)).rejects.toMatchObject({ code: 'deadline' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onExpiry).toHaveBeenCalledOnce();
+  } finally { boundary.dispose(); clock?.mockRestore(); fetchSpy.mockRestore(); }
+});
