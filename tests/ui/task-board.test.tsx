@@ -8,7 +8,12 @@ import { TaskBoard } from '../../apps/web/src/features/board/TaskBoard';
 import type { BoardColumnView } from '../../apps/web/src/features/board/board-view';
 import { snapshot } from './helpers';
 
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  // dnd-kit removes its document click suppressor 50ms after a mouse drag.
+  // Let that listener retire before the next test sends a click.
+  await new Promise(resolve => setTimeout(resolve, 80));
+});
 function project(count: number): ProjectSnapshot {
   const value = snapshot();
   value.project.tasks = Array.from({ length: count }, (_, index) => ({
@@ -363,10 +368,11 @@ test('dragging from the title uses the card mouse sensor and suppresses opening 
   await waitFor(() => expect(document.querySelector('[data-board-drag-preview]')).toBeInTheDocument());
   fireEvent.mouseMove(document, { buttons: 1, clientX: 430, clientY: 140 });
   await waitFor(() => expect(document.querySelector('[data-task-column="owner:later"]')).toContainElement(screen.getByRole('button', { name: 'Open task: Project task 1' })));
+  const movedTitle = screen.getByRole('button', { name: 'Open task: Project task 1' });
   fireEvent.mouseUp(document, { button: 0, clientX: 430, clientY: 140 });
-  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
-  fireEvent.click(screen.getByRole('button', { name: 'Open task: Project task 1' }));
+  fireEvent.click(movedTitle);
   expect(calls.openTask).not.toHaveBeenCalled();
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
 });
 
 test('the actual mouse column handle changes column order and keeps task membership', async () => {
