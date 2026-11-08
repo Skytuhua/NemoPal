@@ -17,6 +17,7 @@ import { QuestionPresentation } from './presentation';
 import { createNativeWindows } from './native-windows';
 import { createCompanionTray } from './tray';
 import { CompanionLifetime } from './windows';
+type SourceEnrollment = { operationId: string; deviceId: string; cloud: boolean; bindingId?: string; withdrawal?: 'pause' | 'revoke'; completion: Promise<void>; failed: boolean };
 
 app.setName('Living Playbooks');
 app.setPath('userData', join(app.getPath('appData'), 'LivingPlaybooks'));
@@ -37,11 +38,22 @@ async function start() {
   let credentialBlocker = '';
   await vault.load().catch(() => { credentialBlocker = 'Protected credential cannot be loaded. Explicit re-pairing required.'; });
   const origin = process.env.LP_API_ORIGIN ?? null;
-  const fetchBounded: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.headers && new Headers(init.headers).get('Accept') === 'text/event-stream' ? init.signal : AbortSignal.any([AbortSignal.timeout(15000), ...(init?.signal ? [init.signal] : [])]) });
+  const fetchBounded: typeof fetch = (input, init) => {
+    const path = new URL(input instanceof Request ? input.url : input).pathname;
+    if (init?.method === 'POST' && /^\/v1\/projects\/[^/]+\/sources$/.test(path)) {
+      const command = c.revisionedCommandSchema(c.EnrollSourceInputSchema).parse(JSON.parse(String(init.body)));
+      const enrollment = [...enrollments].find(entry => entry.operationId === command.operationId);
+      // Hashing and authorization lookup in the client can await; fence at the actual transport boundary.
+      if (quitting || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
+        return Promise.reject(Error('Source enrollment authority changed'));
+    }
+    return fetch(input, { ...init, signal: init?.headers && new Headers(init.headers).get('Accept') === 'text/event-stream' ? init.signal : AbortSignal.any([AbortSignal.timeout(15000), ...(init?.signal ? [init.signal] : [])]) });
+  };
   const client = createHttpClient({ origin: origin ?? 'http://127.0.0.1:4310', allowInsecureLoopback: !app.isPackaged, getAuthorization: () => vault.authorization(), fetch: fetchBounded });
   // Explicit owner configuration must name BOTH the actual receiving endpoint and a disclosure.
   const currentReceiving = () => receivingIdentity(origin, process.env.LP_RECEIVING_MODEL_ENDPOINT, process.env.LP_EXPORT_DISCLOSURE);
-  const consent = new ConsentSelections(origin, currentReceiving());
+  let consent = new ConsentSelections(origin, currentReceiving());
+  const enrollments = new Set<SourceEnrollment>();
   const authority: Authority = { projects: new Set(), checkIns: new Map(), documents: new Map(), jobs: new Map() };
   let selectedProject: string | undefined;
   let pinnedProject = store.preference().pinnedProjectId;
@@ -88,7 +100,52 @@ async function start() {
     quitting = true; clearInterval(timer); eventsAbort?.abort();
     await sources.stop(); await sync.stop(); vault.clearMemory();
   }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), quit: () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); }, error: () => sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' }) });
+  const reportWithdrawalFailure = () => dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
+  async function withdrawSources(action: 'pause' | 'revoke') {
+    if (quitting) return;
+    const deviceId = vault.localDeviceId();
+    if (!deviceId) { dialog.showErrorBox('Local source custody unavailable', 'Protected device custody could not be verified. No source access was changed. Restore protected storage or explicitly re-pair this device.'); return; }
+    let local = store.bindings().filter(entry => entry.binding.deviceId === deviceId && (action === 'revoke' || entry.binding.state !== 'revoked'));
+    if (!local.length && ![...enrollments].some(entry => entry.deviceId === deviceId)) { await dialog.showMessageBox(windows.workspace, { type: 'info', message: 'No local source access on this device', detail: 'No matching sources were changed. Access belonging to other devices is unaffected.' }); return; }
+    const revoke = action === 'revoke';
+    const choice = await dialog.showMessageBox(windows.workspace, {
+      type: 'question', buttons: [revoke ? 'Revoke local access' : 'Pause local sources', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      message: revoke ? 'Revoke all local source access on this device?' : 'Pause all local sources on this device?',
+      detail: revoke
+        ? 'Stops local monitoring and removes queued exports. Cloud revocation and removal of retained excerpts remain pending until acknowledged by the cloud. Following again requires new consent.'
+        : 'Stops local monitoring. Queued exports are retained but held. Cloud pause remains pending until acknowledged by the cloud. Previously sent data is retained.',
+    });
+    if (choice.response !== 0 || quitting) return;
+    // Pairing can change while the native confirmation is open.
+    if (vault.localDeviceId() !== deviceId) throw Error('Local device custody changed');
+    consent = new ConsentSelections(origin, currentReceiving());
+    const pendingEnrollments = [...enrollments].filter(entry => entry.deviceId === deviceId);
+    for (const entry of pendingEnrollments) {
+      entry.withdrawal = revoke || entry.withdrawal === 'revoke' ? 'revoke' : 'pause';
+      if (entry.bindingId) store.fence(entry.bindingId);
+    }
+    // Include enrollments that finished while the confirmation dialog was open.
+    local = store.bindings().filter(entry => entry.binding.deviceId === deviceId && (revoke || entry.binding.state !== 'revoked'));
+    const outcomes = await Promise.allSettled(local.map(async entry => {
+      if (revoke) await sources.revoke(entry.binding.id); else await sources.pause(entry.binding.id);
+      sourceState(entry.binding.id);
+    }));
+    const committing = pendingEnrollments.filter(entry => entry.bindingId);
+    await Promise.all(committing.map(entry => entry.completion));
+    await store.flush();
+    if (outcomes.some(result => result.status === 'rejected') || committing.some(entry => entry.failed)) throw Error('Local source withdrawal incomplete');
+    const currentIds = new Set(store.bindings().filter(entry => entry.binding.deviceId === deviceId).map(entry => entry.binding.id));
+    const pending = store.pendingSourceCommands().some(command => currentIds.has(command.bindingId)) || [...enrollments].some(entry => entry.deviceId === deviceId && entry.cloud && entry.withdrawal);
+    await dialog.showMessageBox(windows.workspace, {
+      type: 'info', message: revoke ? 'Local source access revoked on this device' : 'Local sources paused on this device',
+      detail: `${revoke ? 'Local monitoring stopped; queued exports removed.' : 'Local monitoring stopped; queued exports retained but held.'} ${pending ? `Cloud ${revoke ? 'revocation and excerpt removal' : 'pause'} pending; it has not been acknowledged. Reconnect with valid pairing to retry.` : 'No cloud command is pending for these sources.'}`,
+    });
+    void cycle();
+  }
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit: () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); }, error: action => {
+    if (action) reportWithdrawalFailure();
+    else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
+  } });
   const requirePaired = () => { if (!origin || !vault.authorization()) throw Error('Configure an API origin and explicitly pair this device.'); };
   const remember = (snapshot: c.ProjectSnapshot) => {
     eventSequence = Math.max(eventSequence, snapshot.eventSequence);
@@ -136,7 +193,12 @@ async function start() {
       case 'pair': {
         if (!origin || (!await safeStorage.isAsyncEncryptionAvailable() && process.env.LP_TEMPORARY_PAIRING !== '1')) throw Error('Configured origin and protected storage or explicit temporary session required.');
         const response = await fetchBounded(new URL('/v1/auth/redeem', origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c.PairingInputSchema.parse(raw)), redirect: 'error', credentials: 'omit' });
-        const result = await vault.save(await readPairingResponse(response)); credentialBlocker = ''; sync = new SyncEngine(store, client, currentReceiving); void cycle(); return result;
+        const result = await vault.save(await readPairingResponse(response));
+        consent = new ConsentSelections(origin, currentReceiving());
+        for (const entry of enrollments) if (entry.deviceId !== vault.localDeviceId()) {
+          entry.withdrawal = 'revoke'; if (entry.bindingId) store.fence(entry.bindingId);
+        }
+        credentialBlocker = ''; sync = new SyncEngine(store, client, currentReceiving); void cycle(); return result;
       }
       case 'selectSource': {
         const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE;
@@ -146,11 +208,25 @@ async function start() {
       }
       case 'confirmSource': {
         const input = c.ConfirmSourceInputSchema.parse(raw); const choice = consent.confirm(input); requirePaired();
-        const snapshot = await client.getSnapshot(input.projectId);
-        const deviceId = vault.deviceId()!;
-        const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await client.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
-        await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, input.exportPolicy !== 'off', choice.receiving);
-        await sources.poll(binding.id); sourceState(binding.id); return store.binding(binding.id)!.binding;
+        const enrollment: SourceEnrollment = { operationId: input.selectionId, deviceId: vault.deviceId()!, cloud: input.exportPolicy !== 'off', completion: Promise.resolve(), failed: false };
+        enrollments.add(enrollment);
+        const operation = (async () => { try {
+          const snapshot = await client.getSnapshot(input.projectId);
+          if (quitting || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId) throw Error('Source consent no longer current');
+          const deviceId = enrollment.deviceId;
+          const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await client.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
+          enrollment.bindingId = binding.id;
+          if (binding.deviceId !== deviceId || binding.projectId !== input.projectId) throw Error('Source enrollment identity mismatch');
+          if (quitting || vault.localDeviceId() !== deviceId) enrollment.withdrawal = 'revoke';
+          if (enrollment.withdrawal) store.fence(binding.id);
+          await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, enrollment.cloud, choice.receiving, enrollment.withdrawal);
+          if (enrollment.withdrawal) await sources[enrollment.withdrawal](binding.id);
+          else await sources.poll(binding.id);
+          sourceState(binding.id); return store.binding(binding.id)!.binding;
+        } catch (error) { if (enrollment.withdrawal && enrollment.bindingId) reportWithdrawalFailure(); throw error; }
+        finally { enrollments.delete(enrollment); } })();
+        enrollment.completion = operation.then(() => {}, () => { enrollment.failed = true; });
+        return operation;
       }
       case 'pauseSource': case 'revokeSource': {
         const id = raw as string; const local = store.binding(id);
