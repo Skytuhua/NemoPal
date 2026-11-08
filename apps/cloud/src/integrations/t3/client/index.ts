@@ -106,9 +106,9 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
   } finally {
     phase = 'cleanup';
     if (callback) await callback.close();
-    // On cancellation/deadline no further HTTP is sent; remote session closure then remains unconfirmed.
+    // On cancellation or any deadline no further HTTP is sent; remote closure remains unconfirmed.
     const sessionId = transport?.sessionId || network.sessionId;
-    if (sessionId && !signal.aborted) {
+    if (sessionId && !signal.aborted && error?.code !== 'deadline' && error?.code !== 'cancelled') {
       try {
         const headers = new Headers({ 'mcp-session-id': sessionId });
         if (transport?.protocolVersion) headers.set('mcp-protocol-version', transport.protocolVersion);

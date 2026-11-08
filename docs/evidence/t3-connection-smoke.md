@@ -51,6 +51,8 @@ These are synthetic fixture and static checks, not a live connection or independ
 
 Independent review found two session-cleanup defects. A refused HTTP 405 termination no longer produces a confirmed-closed receipt, and an established session is terminated even if the SDK closes its transport after a failed initialization notification. Cleanup uses one bounded authenticated DELETE, preserves the original failure, and sends nothing after cancellation. Two regression cases failed before the correction; the focused suite passed with those cases and a cancellation control. No live T3 connection is claimed.
 
+A subsequent recheck found that a per-request deadline could still trigger cleanup. A regression reproduced the extra DELETE; cleanup now sends nothing after either a request or overall deadline. Ordinary initialization failures still receive the single bounded cleanup attempt.
+
 1. Install the locked dependencies in the selected checkout without lifecycle scripts: `pnpm install --frozen-lockfile --ignore-scripts`.
 2. In a private local terminal, run `pnpm exec tsx scripts/t3-connect.ts --endpoint '<YOUR_LOCAL_MCP_URL>'`. Supply the copied same-machine URL at runtime; do not put it into tracked scripts or docs. There is no default address or port.
 3. Open the printed local authorization link yourself. Verify `NemoPal local connection check` and the local return destination, explicitly choose **Read only**, then approve in T3. If requested, enter the pairing code only in T3. No agent should enter it or approve for you. If `iss` is missing, stop and update/review compatibility rather than weakening the callback check.

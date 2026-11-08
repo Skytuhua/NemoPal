@@ -82,7 +82,7 @@ async function fixture(mode: Mode = 'ok') {
       const message = JSON.parse(body);
       if (message.method === 'initialize') {
         if (mode === 'init-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
-        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
+        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
         return send(res, { jsonrpc: '2.0', id: message.id,
           result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'private-server-name', version: '0.1.7' } } });
       }
@@ -252,6 +252,15 @@ describe('dedicated local T3 OAuth and MCP connection', () => {
     const f = await fixture('mcp-hang');
     await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 50,
       onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline', delivery: 'uncertain' });
+  });
+
+  it('does not send session cleanup after a request deadline', async () => {
+    const f = await fixture('mcp-hang');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 100, signInTimeoutMs: 3000,
+      onAuthorization: async url => { await f.authorize(url); } }))
+      .rejects.toMatchObject({ code: 'deadline', phase: 'tools_list', delivery: 'uncertain' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+    await f.checkCallbackClosed();
   });
 
   it('CLI requires an endpoint and never echoes invalid private arguments or raw errors', async () => {
