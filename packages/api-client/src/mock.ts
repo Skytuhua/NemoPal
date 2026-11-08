@@ -175,11 +175,13 @@ export function createFixtureClient(options: FixtureClientOptions = {}): c.Playb
       checkIn.state = 'answered';
       checkIn.answer = command.input;
       delete checkIn.snoozedUntil;
-      const task = snapshot.project.tasks.find(item => item.id === checkIn.taskId)!;
-      task.status = command.input.kind === 'recorded' ? 'done' : 'todo';
-      task.ownerOverride = true;
-      task.evidenceLevel = 'user_reported';
-      task.revision++;
+      if (command.input.kind === 'recorded') {
+        const task = snapshot.project.tasks.find(item => item.id === checkIn.taskId)!;
+        task.status = 'done';
+        task.ownerOverride = true;
+        task.evidenceLevel = 'user_reported';
+        task.revision++;
+      }
       snapshot.project.decisions.push({ id: crypto.randomUUID(), text: `Owner answered question: ${command.input.kind}.`, origin: 'owner', createdAt: new Date().toISOString(), observationIds: [] });
     }),
     snoozeCheckIn: (checkInId, raw) => question(checkInId, raw, c.revisionedCommandSchema(c.SnoozeInputSchema), 'snooze', (checkIn, _snapshot, command) => {
