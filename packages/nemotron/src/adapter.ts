@@ -39,7 +39,11 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
             throw new Error('model_configuration');
         this.endpoint = `${base.href.replace(/\/$/, '')}/chat/completions`;
     }
-    private async turn(input: c.ModelTurnInput, signal: AbortSignal): Promise<c.ModelTurnResult> {
+    withAuthority(assertCurrent: () => Promise<unknown>): c.NemotronAdapter {
+        // Keep one account budget; the guard belongs to this job, not the shared adapter.
+        return { probe: signal => this.probe(signal), next: (input, signal) => this.turn(input, signal, assertCurrent) };
+    }
+    private async turn(input: c.ModelTurnInput, signal: AbortSignal, assertCurrent?: () => Promise<unknown>): Promise<c.ModelTurnResult> {
         c.ModelTurnInputSchema.parse(input);
         signal.throwIfAborted();
         if (c.utf8Bytes(JSON.stringify(input.messages)) > c.LIMITS.contextBytes)
@@ -52,6 +56,8 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
         await this.reserve?.(tokenReservation);
         this.calls++;
         this.tokens += tokenReservation;
+        await assertCurrent?.();
+        signal.throwIfAborted();
         let response: Response;
         try {
             response = await this.fetcher(this.endpoint, { method: 'POST', headers: { Authorization: `Bearer ${this.settings.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal, redirect: 'error' });
