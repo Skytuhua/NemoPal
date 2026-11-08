@@ -20,7 +20,7 @@ test('first use explains the product and creates a real project from two labeled
   expect((await client.listProjects())[0]?.goal).toBe('Plan a small herb garden');
   expect(screen.getByText('Progress unknown')).toBeVisible();
   expect(screen.getByText('No tasks yet. Planning has not produced an accepted task list.')).toBeVisible();
-  expect(screen.getByText('Plan pending')).toBeVisible();
+  expect(within(screen.getByRole('region', { name: 'Project progress' })).getByText('Plan pending')).toBeVisible();
   expect(screen.queryByText(/You can still update tasks/)).not.toBeInTheDocument();
 });
 

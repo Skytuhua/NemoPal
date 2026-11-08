@@ -8,6 +8,20 @@ import { memoryDrafts, snapshot } from './helpers';
 
 afterEach(cleanup);
 
+test('a newly created project without tasks shows a pending plan in Projects', async () => {
+  render(<App client={createFixtureClient({ snapshots: [] })} drafts={memoryDrafts()} fixture />);
+  await screen.findByRole('heading', { name: 'Start your first project' });
+  await userEvent.type(screen.getByLabelText('Project title'), 'Garden workshop');
+  await userEvent.type(screen.getByLabelText('Project brief'), 'Prepare a short gardening workshop.');
+  await userEvent.click(screen.getByRole('button', { name: 'Create project' }));
+  await screen.findByRole('heading', { name: 'Garden workshop', level: 1 });
+  await userEvent.click(screen.getByRole('button', { name: 'All projects' }));
+  const overview = screen.getByRole('region', { name: 'Project overview' });
+  expect(within(overview).getByText('1 project')).toBeVisible();
+  expect(within(overview).getByText('Plan pending')).toBeVisible();
+  expect(within(overview).queryByText('Plan needs your review')).not.toBeInTheDocument();
+});
+
 test('the desk shows recorded progress and connected task steps, with usable task actions', async () => {
   const seed = snapshot();
   seed.project.planState = 'accepted';

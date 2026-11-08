@@ -24,7 +24,7 @@ export function ManagerOverview({ project, disabled, openTask, updateTask, openW
 
   return <>
     <section className="manager-summary" aria-label="Project task summary">
-      <h3>{project.title}</h3>
+      <h3 title={project.title}>{project.title}</h3>
       {project.tasks.length ? <>
         <p className="manager-task-total"><span className="manager-done-mark"><ManagerIcon name="check" /></span><strong>{counts.done} of {project.tasks.length} done</strong></p>
         {remaining.some(item => item.count > 0) && <ul className="manager-task-counts">{remaining.filter(item => item.count > 0).map(item => <li key={item.status} data-task-state={item.status}><span aria-hidden="true" />{item.count} {item.text}</li>)}</ul>}
@@ -33,7 +33,7 @@ export function ManagerOverview({ project, disabled, openTask, updateTask, openW
 
     {next ? <section className="manager-next" aria-label="Next task">
       <div className="manager-next-heading"><h3>Next task</h3><span>{statusLabels[next.status]}</span></div>
-      <p className="manager-next-title">{next.title}</p>
+      <p className="manager-next-title" title={next.title}>{next.title}</p>
       {(openTask || openWorkspace || updateTask) && <div className="manager-quick-actions">
         {openTask ? <button type="button" className="manager-open-task" onClick={() => openTask(next.id)}>Open next task<ManagerIcon name="arrow" /></button>
           : openWorkspace && <button type="button" className="manager-open-task" onClick={openWorkspace}>Go to tasks &amp; notes<ManagerIcon name="arrow" /></button>}

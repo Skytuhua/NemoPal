@@ -38,10 +38,11 @@ export function ManagerMouse() {
 }
 
 export function ProjectOverview({ projects, open }: { projects: ProjectSummary[]; open(id: string): void }) {
+  const questions = projects.reduce((count, project) => count + project.unreadCheckIns, 0);
   return <section className="project-overview" aria-label="Project overview">
-    <header><div><h1>Your projects</h1><p>Choose a project to keep moving.</p></div><div className="overview-totals"><span><AppIcon name="projects" /><strong>{projects.length} projects</strong></span><span><i className="status-dot" /><strong>{projects.filter(project => project.status === 'active').length} active</strong></span><span><AppIcon name="task" /><strong>{projects.reduce((count, project) => count + project.unreadCheckIns, 0)} check-ins</strong></span></div></header>
+    <header><div><h1>Your projects</h1><p>Choose a project to keep moving.</p></div><div className="overview-totals"><span><AppIcon name="projects" /><strong>{projects.length} {projects.length === 1 ? 'project' : 'projects'}</strong></span><span><i className="status-dot" /><strong>{projects.filter(project => project.status === 'active').length} active</strong></span><span><AppIcon name="task" /><strong>{questions} {questions === 1 ? 'check-in' : 'check-ins'}</strong></span></div></header>
     <ul className="overview-list">{projects.map(project => <li key={project.id}>
-      <span className="project-monogram"><AppIcon name="projects" /></span><div><h2 id={`overview-project-${project.id}`}>{project.title}</h2><p>{project.goal}</p><div className="overview-project-meta"><span className="status-chip" data-status={project.status}>{project.status === 'active' ? 'Active' : project.status === 'paused' ? 'Paused' : 'Archived'}</span><small>{project.planState === 'accepted' ? 'Plan accepted' : 'Plan needs your review'}{project.unreadCheckIns > 0 ? ` · ${project.unreadCheckIns} unanswered question${project.unreadCheckIns === 1 ? '' : 's'}` : ''}</small></div></div>
+      <span className="project-monogram"><AppIcon name="projects" /></span><div><h2 id={`overview-project-${project.id}`}>{project.title}</h2><p>{project.goal}</p><div className="overview-project-meta"><span className="status-chip" data-status={project.status}>{project.status === 'active' ? 'Active' : project.status === 'paused' ? 'Paused' : 'Archived'}</span><small>{project.planState === 'accepted' ? 'Plan accepted' : 'Plan pending'}{project.unreadCheckIns > 0 ? ` · ${project.unreadCheckIns} unanswered question${project.unreadCheckIns === 1 ? '' : 's'}` : ''}</small></div></div>
       <button onClick={() => open(project.id)} aria-describedby={`overview-project-${project.id}`}>Continue<AppIcon name="arrow" /></button>
     </li>)}</ul>
   </section>;

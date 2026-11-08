@@ -42,6 +42,24 @@ summary { min-height: 44px; padding: 12px 0; font-weight: 600; line-height: 1.5;
 .notice.error { background: var(--error-surface); }
 /* The separate pet window retains its incumbent light bubble and transparent ground. */
 .pet-window { background: transparent; color-scheme: light; --surface: #fff; --chrome: #f4f5f3; --raised: #e7ebe6; --selected: #d9e1d8; --ink: #252826; --muted: #5d655f; --line: #d2d7d1; --control-line: #a5ada6; --focus: #295b42; --error: #8c3029; color: var(--ink); }
+html.pet-window, body.pet-window { font-size: 14px; }
+.pet-window button, .pet-window input, .pet-window select, .pet-window textarea { border-radius: 5px; padding: 9px 12px; }
+.pet-window button { transition: background-color 150ms ease-out; }
+.pet-window button:hover:not(:disabled) { border-color: var(--control-line); }
+.pet-window button:disabled, .pet-window select:disabled { color: #6a716b; border-color: #d2d7d1; background: #f2f3f1; }
+.pet-window input[type=checkbox] { accent-color: var(--focus); }
+.pet-window label { gap: 6px; }
+.pet-window fieldset { margin: 16px 0 0; padding: 16px; border-radius: 0; }
+.pet-window h1 { font-size: 1.85rem; line-height: 1.25; }
+.pet-window h2 { font-size: 1.15rem; }
+.pet-window small { font-size: .86rem; }
+.pet-window .actions { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.pet-window .question { display: grid; gap: 8px; }
+.pet-window .question .actions { margin: 0; }
+.pet-window .question label { font-size: .86rem; max-width: 290px; }
+.pet-window .question > button { justify-self: start; }
+.pet-window ::selection { color: #fff; background: #295b42; }
+@media (max-width: 900px) { .pet-window h1 { font-size: 1.6rem; } }
 .pet-surface { display: flex; flex-direction: column-reverse; align-items: flex-end; padding: 12px; gap: 8px; }
 .pet-art { object-fit: contain; transform-origin: 50% 90%; animation: breathe 3s ease-in-out infinite; }
 .pet-art.state-reviewing { animation: tilt 2s ease-in-out infinite; }

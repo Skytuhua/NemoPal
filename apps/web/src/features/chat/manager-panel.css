@@ -104,7 +104,7 @@
   background: var(--surface);
 }
 
-.app-shell .manager-desk .manager-summary h3 { font-size: .875rem; line-height: 1.45; overflow-wrap: anywhere; }
+.app-shell .manager-desk .manager-summary h3 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .875rem; line-height: 1.45; overflow-wrap: anywhere; }
 .app-shell .manager-desk .manager-task-total { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: .875rem; line-height: 1.4; font-variant-numeric: tabular-nums; }
 .app-shell .manager-desk .manager-task-total strong { font-weight: 600; }
 .app-shell .manager-desk .manager-done-mark { display: grid; place-items: center; width: 19px; height: 19px; flex: 0 0 auto; border: 1px solid var(--success); border-radius: 50%; color: var(--success); }
@@ -119,7 +119,7 @@
 .app-shell .manager-desk .manager-next-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .app-shell .manager-desk .manager-next-heading h3 { font-size: .875rem; line-height: 1.4; color: var(--muted); }
 .app-shell .manager-desk .manager-next-heading > span { color: var(--muted); font-size: .75rem; }
-.app-shell .manager-desk .manager-next-title { margin: 6px 0 10px; font-size: 1rem; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+.app-shell .manager-desk .manager-next-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 6px 0 10px; font-size: 1rem; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
 .app-shell .manager-desk .manager-quick-actions { display: grid; gap: 6px; }
 
 .app-shell .manager-desk button {
