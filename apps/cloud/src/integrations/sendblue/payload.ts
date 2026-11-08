@@ -5,6 +5,7 @@ import { reject } from '../../domain/errors';
 import { phoneNumber, type SendblueConfig } from './config';
 
 const statuses = ['RECEIVED', 'REGISTERED', 'PENDING', 'QUEUED', 'ACCEPTED', 'SENT', 'DELIVERED', 'ERROR', 'DECLINED'] as const;
+const replyReference = z.object({ message_handle: z.string().min(1).max(256), part: z.string().max(256).optional() }).strict();
 const schema = z.object({ accountEmail: z.string().min(1).max(254), message_handle: z.string().min(1).max(256),
   from_number: z.string().regex(phoneNumber), to_number: z.string().regex(phoneNumber),
   sendblue_number: z.string().nullable().optional(), number: z.string().optional(),
@@ -12,10 +13,11 @@ const schema = z.object({ accountEmail: z.string().min(1).max(254), message_hand
   group_id: z.union([z.literal(''), z.null()]).optional(), media_url: z.union([z.literal(''), z.null()]).optional(),
   participants: z.array(z.string().max(32)).max(2).optional(), is_reaction: z.literal(false).optional(),
   opted_out: z.boolean().optional(), service: z.enum(['iMessage', 'SMS', 'RCS']).nullable().optional(),
+  reply_to: replyReference.optional(), thread_originator: replyReference.optional(),
 });
 export type SendblueMessage = z.infer<typeof schema>;
 export function parseMessage(body: unknown, config: SendblueConfig) {
-  if (body && typeof body === 'object' && Object.entries(body).some(([key, value]) => value !== null && typeof value === 'object' && key !== 'participants'))
+  if (body && typeof body === 'object' && Object.entries(body).some(([key, value]) => value !== null && typeof value === 'object' && !['participants', 'reply_to', 'thread_originator'].includes(key)))
     reject(422, 'sendblue_payload', 'Unsupported message.');
   const message = schema.parse(body);
   const line = message.is_outbound ? message.from_number : message.to_number;

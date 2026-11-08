@@ -17,7 +17,7 @@ let deviceId: string;
 describe.skipIf(!process.env.QUEUE_RELEASE_TEST_DATABASE_URL)('isolated PostgreSQL claim release', () => {
 beforeEach(async () => {
   const url = new URL(process.env.QUEUE_RELEASE_TEST_DATABASE_URL ?? '');
-  if (url.hostname !== '127.0.0.1' || url.username !== 'queue_test' || !/^\/queue_release_[a-z0-9_]+$/.test(url.pathname)) throw Error('Expected the isolated queue release database');
+  if (url.protocol !== 'postgresql:' || url.hostname !== '127.0.0.1' || url.username !== 'queue_test' || !url.port || url.search || url.hash || !/^\/queue_release_[a-z0-9_]+$/.test(url.pathname)) throw Error('Expected the isolated queue release database');
   pool = new Pool({ connectionString: url.href });
   await migrate(pool);
   await pool.query('TRUNCATE owners CASCADE');

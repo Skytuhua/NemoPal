@@ -15,7 +15,7 @@ const payload = { accountEmail: config.account, message_handle: 'synthetic-inbou
 describe.skipIf(!process.env.SENDBLUE_TEST_DATABASE_URL)('isolated PostgreSQL Sendblue path', () => {
   test('persists inbound, reply and opted-in notice using a fake transport', async () => {
     const url = new URL(process.env.SENDBLUE_TEST_DATABASE_URL!);
-    if (url.hostname !== '127.0.0.1' || url.username !== 'sendblue_test' || url.pathname !== '/sendblue_owned') throw Error('Expected owned isolated Sendblue database');
+    if (url.protocol !== 'postgresql:' || url.hostname !== '127.0.0.1' || url.username !== 'sendblue_test' || !url.port || url.search || url.hash || url.pathname !== '/sendblue_owned') throw Error('Expected owned isolated Sendblue database');
     const pool = new Pool({ connectionString: url.href });
     const app = buildServer(pool, { sendblue: config });
     try {

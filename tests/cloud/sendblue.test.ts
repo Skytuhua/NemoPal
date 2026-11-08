@@ -134,6 +134,21 @@ test('STOP atomically revokes queued/running phone work; START never restores it
   } finally { await h.app.close(); }
 });
 
+test('authenticated inline STOP still revokes after the webhook rate limit', async () => {
+  const h = await harness();
+  try {
+    await h.link();
+    expect((await h.webhook()).statusCode).toBe(200);
+    for (let i = 0; i < 120; i++) await h.webhook();
+    const stop = payload({ message_handle: 'inline-stop', content: 'STOP', reply_to: { message_handle: 'parent' }, thread_originator: { message_handle: 'root', part: 'opaque' } });
+    expect((await h.webhook(stop, 'wrong')).statusCode).toBe(401);
+    expect(h.db.links[0].active).toBe(true);
+    expect((await h.webhook(stop)).statusCode).toBe(200);
+    expect(h.db.links[0].active).toBe(false);
+    expect(h.db.jobs[0].state).toBe('cancelled');
+  } finally { await h.app.close(); }
+});
+
 test('expired grants and disabled feature cannot admit or claim a phone manager job', async () => {
   const h = await harness();
   try {
