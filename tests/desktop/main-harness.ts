@@ -17,10 +17,10 @@ export function projectSnapshot(which: 'A' | 'B') {
   for (const question of snapshot.checkIns) question.state = 'cancelled';
   return snapshot;
 }
-export function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
+export function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 
 // Real main, IPC, vault, journal, controller, sync and presentation. Only OS/network ports are synthetic.
-export async function startSyntheticMain(options: { seed?(store: JournalStore): Promise<void>; client?: Partial<PlaybooksClient>; credentialDevice?: string; credentialExpiry?: string; withoutCredential?: boolean; apiOrigin?: string; receivingEndpoint?: string; disclosure?: string } = {}) {
+export async function startSyntheticMain(options: { seed?(store: JournalStore): Promise<void>; client?: Partial<PlaybooksClient>; credentialDevice?: string; credentialExpiry?: string; withoutCredential?: boolean; apiOrigin?: string; receivingEndpoint?: string; disclosure?: string; windowLoad?: Promise<void> } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'lp-main-boundary-'));
   const profile = join(directory, 'LivingPlaybooks'); const path = join(profile, 'journal.json');
   const store = await JournalStore.open(path); await options.seed?.(store);
@@ -44,11 +44,13 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   const handlers = new Map<string, (event: unknown, operation: string, input?: unknown) => Promise<unknown>>();
   const desktopEvents: SafeDesktopEvent[] = []; const petEvents: SafePetEvent[] = [];
   const windowPort = (id: number, url: string) => {
+    let destroyed = false;
+    const show = () => { if (destroyed) throw Error('Destroyed window'); };
     const contents = Object.assign(new EventEmitter(), { id, mainFrame: { routingId: id + 10, url }, send: (_channel: string, value: SafeDesktopEvent | SafePetEvent) => { if (value.type === 'pet_state') petEvents.push(structuredClone(value)); else desktopEvents.push(structuredClone(value)); } });
-    return { webContents: contents, show: vi.fn(), focus: vi.fn(), hide: vi.fn(), showInactive: vi.fn(), setIgnoreMouseEvents: vi.fn(), isDestroyed: () => false };
+    return { webContents: contents, show: vi.fn(show), focus: vi.fn(show), hide: vi.fn(), showInactive: vi.fn(show), setIgnoreMouseEvents: vi.fn(), isDestroyed: () => destroyed, destroy: () => { destroyed = true; } };
   };
   const workspace = windowPort(1, 'http://127.0.0.1:4321/'); const pet = windowPort(2, 'http://127.0.0.1:4321/?surface=pet');
-  const windows = { workspace, pet, targets: { workspace: workspace.webContents.mainFrame.url, pet: pet.webContents.mainFrame.url }, load: vi.fn(async () => {}), destroy: vi.fn() };
+  const windows = { workspace, pet, targets: { workspace: workspace.webContents.mainFrame.url, pet: pet.webContents.mainFrame.url }, load: vi.fn(async () => { await options.windowLoad; }), destroy: vi.fn(() => { workspace.destroy(); pet.destroy(); }) };
   const app = Object.assign(new EventEmitter(), { setName: vi.fn(), setPath: vi.fn(), getPath: () => directory, requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(), whenReady: async () => {}, isPackaged: false });
   // getPath must honor the profile set by the actual entry point, not a test-only main hook.
   const paths: Record<string, string> = { appData: directory };
@@ -65,14 +67,17 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   vi.doMock('@living-playbooks/api-client', async () => ({ ...await vi.importActual('@living-playbooks/api-client'), createHttpClient: (configuration: HttpClientOptions) => { transport = configuration.fetch; return client; } }));
   vi.doMock('@living-playbooks/codex-observer', () => ({ ADAPTER: 'codex-app-server', VERSION: '0.166.0', createInstalledObserver: () => observer }));
   await import('../../apps/desktop/src/main/index');
-  await vi.waitFor(() => { expect(dialog.showErrorBox).not.toHaveBeenCalled(); expect(windows.load).toHaveBeenCalled(); expect((vi.isMockFunction(client.subscribe) && client.subscribe.mock.calls.length > 0) || desktopEvents.some(e => e.type === 'connection' && !e.connected)).toBe(true); });
+  await vi.waitFor(() => { expect(dialog.showErrorBox).not.toHaveBeenCalled(); expect(windows.load).toHaveBeenCalled(); if (!options.windowLoad) expect((vi.isMockFunction(client.subscribe) && client.subscribe.mock.calls.length > 0) || desktopEvents.some(e => e.type === 'connection' && !e.connected)).toBe(true); });
   const invoke = (operation: string, input?: unknown) => handlers.get('lp:workspace')!({ sender: workspace.webContents, senderFrame: workspace.webContents.mainFrame }, operation, input);
   const petInvoke = (input: unknown) => handlers.get('lp:pet')!({ sender: pet.webContents, senderFrame: pet.webContents.mainFrame }, 'petInvoke', input);
   const trayItem = (id: string) => { const item = trayItems.find(item => item.id === id); expect(item, `Native tray item ${id} must be reachable`).toBeDefined(); return item!; };
   const clickTray = (id: string) => { Reflect.apply(trayItem(id).click!, undefined, []); };
-  return { path, client, observer, desktopEvents, petEvents, invoke, petInvoke, dialog, windows, trayItem, clickTray, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
-    clickTray('quit'); await vi.waitFor(() => { if (quitBlocked) expect(dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)); else expect(app.exit).toHaveBeenCalledWith(0); });
+  const dispose = async () => {
     vi.doUnmock('electron'); vi.doUnmock('../../apps/desktop/src/main/native-windows'); vi.doUnmock('@living-playbooks/api-client'); vi.doUnmock('@living-playbooks/codex-observer');
     vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(directory, { recursive: true, force: true });
+  };
+  return { path, app, client, observer, desktopEvents, petEvents, invoke, petInvoke, dialog, windows, trayItem, clickTray, dispose, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
+    try { clickTray('quit'); await vi.waitFor(() => { if (quitBlocked) expect(dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)); else expect(app.exit).toHaveBeenCalledWith(0); }); }
+    finally { await dispose(); }
   } };
 }
