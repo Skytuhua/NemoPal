@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { PetBridge, SafePetEvent } from '@living-playbooks/contracts';
+import { Question } from '../../apps/web/src/features/checkins/Question';
 import { Pet } from '../../apps/web/src/pet/Pet';
 import { snapshot, deferred } from './helpers';
 
@@ -26,11 +27,12 @@ test('speech has no visible manager heading and keeps the approved accessible mo
   expect(screen.getByRole('img', { name: /Nemo .* waiting for you/ })).toHaveClass('pet-mouse');
   expect(screen.getByRole('button', { name: 'Close message' })).toHaveAttribute('aria-expanded', 'true');
 });
-test('Escape closes with an inert exit, returns focus, and reopening preserves the question draft', () => {
+test('mouse closes with an inert exit, returns focus, and reopening preserves the question draft', () => {
   const h = harness(); settle();
+  fireEvent.click(screen.getByRole('button', { name: 'Snooze options' }));
   const input = screen.getByLabelText('Snooze until');
   fireEvent.change(input, { target: { value: '2026-11-08T15:00' } }); input.focus();
-  fireEvent.keyDown(input, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: 'Close message' }));
   const toggle = screen.getByRole('button', { name: 'Open message' });
   expect(toggle).toHaveFocus();
   const bubble = document.getElementById(toggle.getAttribute('aria-controls')!)!;
@@ -69,7 +71,7 @@ test('canonical events still update while closed and stale revisions cannot revi
   fireEvent.click(screen.getByRole('button', { name: 'Close message' }));
   h.emit({ ...h.event, state: 'idle', checkIn: { ...h.event.checkIn!, state: 'answered', revision: 1 } });
   h.emit();
-  expect(screen.getByRole('button', { name: 'No new messages' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Open message' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
   expect(screen.getByRole('img')).toHaveAttribute('data-pet-state', 'idle');
 });
@@ -107,7 +109,7 @@ test('idle is quiet and persistent utilities live outside contextual speech', ()
   h.emit({ ...h.event, state: 'idle', checkIn: null });
   const bubble = document.querySelector('.pet-bubble')!;
   expect(bubble).toHaveAttribute('hidden');
-  for (const name of ['Hide pet', 'Focus mode', 'Open project']) {
+  for (const name of ['Hide pet', 'Focus mode']) {
     const action = screen.getByRole('button', { name });
     expect(action.closest('.pet-bubble')).toBeNull();
     expect(action).toHaveAttribute('title', name);
@@ -171,4 +173,75 @@ test('question and canonical offline snooze focus or hidden states suppress the 
   h.emit({ ...working, checkIn: h.event.checkIn });
   expect(screen.getByRole('button', { name: 'Recorded' })).toBeVisible();
   expect(document.querySelectorAll('.pet-bubble:not([hidden])')).toHaveLength(1);
+});
+
+test('compact pet removes the normal caption, overlays no chat glyph, and has only two mouse utilities', () => {
+  harness(true);
+  expect(screen.queryByText('Question available')).not.toBeInTheDocument();
+  expect(document.querySelector('.pet-speech-mark')).toBeNull();
+  expect(document.querySelectorAll('.pet-utilities button')).toHaveLength(2);
+  const expand = screen.getByRole('button', { name: 'Expand to project chat' });
+  expect(expand.closest('.pet-bubble')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'Recorded' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Not yet' })).toBeVisible();
+  expect(screen.queryByLabelText('Snooze until')).not.toBeInTheDocument();
+});
+test('idle mouse opens a compact popup and Expand uses the supported project command', async () => {
+  const h = harness(true); h.emit({ ...h.event, state: 'idle', checkIn: null });
+  const mouse = screen.getByRole('button', { name: 'Open message' });
+  expect(mouse).toBeEnabled(); fireEvent.click(mouse);
+  expect(screen.getByRole('region', { name: 'Pet message' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Pet message' })).toHaveAttribute('tabindex', '-1');
+  expect(screen.queryByText('Nemo')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Expand to project chat' }));
+  await act(async () => {});
+  expect(h.invoke).toHaveBeenCalledExactlyOnceWith({ type: 'openProject', projectId: h.event.projectId });
+});
+test('compact snooze Back and Escape restore answers, focus and date draft without invoking commands', () => {
+  const h = harness(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Snooze options' }));
+  const input = screen.getByLabelText('Snooze until');
+  expect(input).toHaveFocus();
+  fireEvent.change(input, { target: { value: '2026-11-08T15:00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Back to answers' }));
+  expect(screen.getByRole('button', { name: 'Snooze options' })).toHaveFocus();
+  fireEvent.click(screen.getByRole('button', { name: 'Snooze options' }));
+  expect(screen.getByLabelText('Snooze until')).toHaveValue('2026-11-08T15:00');
+  fireEvent.keyDown(screen.getByLabelText('Snooze until'), { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Recorded' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Close message' })).toHaveAttribute('aria-expanded', 'true');
+  expect(h.invoke).not.toHaveBeenCalled();
+});
+test('default Question keeps its normal caption and immediate snooze form; compact expired feedback remains', () => {
+  const question = snapshot().checkIns[0]!, answer = vi.fn(), snooze = vi.fn();
+  const { rerender } = render(<Question question={question} answer={answer} snooze={snooze} />);
+  expect(screen.getByText('Question available')).toBeVisible();
+  expect(screen.getByLabelText('Snooze until')).toBeVisible();
+  rerender(<Question compact question={{ ...question, expiresAt: '2026-11-06T00:00:00Z' }} answer={answer} snooze={snooze} />);
+  expect(screen.getByText(/expired/)).toBeVisible();
+});
+
+test('offline has an accessible sleeping emoji and hidden leaves only canonical restore', () => {
+  const h = harness(true); h.emit({ ...h.event, state: 'offline', checkIn: null });
+  expect(screen.getByRole('img', { name: 'Cloud offline' })).toHaveTextContent(String.fromCodePoint(0x1f634));
+  expect(screen.queryByText(/check-in timing unavailable/)).not.toBeInTheDocument();
+  h.emit({ ...h.event, preference: { ...h.event.preference, hidden: true } });
+  expect(screen.queryByText('Pet hidden')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Focus mode' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button')).toHaveLength(1);
+  expect(screen.getByRole('button', { name: 'Show pet' })).toBeVisible();
+});
+
+test('text that overflows the compact preview becomes an explicit full-question disclosure', () => {
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(64);
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(84);
+  harness(true);
+  const read = screen.getByRole('button', { name: 'Read full question' });
+  expect(read).toHaveTextContent('Read full question');
+  fireEvent.click(read);
+  expect(screen.getByLabelText('Full question')).toHaveTextContent('Have you recorded the demo?');
+  expect(screen.getByLabelText('Full question')).toHaveFocus();
+  fireEvent.keyDown(screen.getByLabelText('Full question'), { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Read full question' })).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'Recorded' })).toBeVisible();
 });
