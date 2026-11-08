@@ -88,7 +88,7 @@ it('synthetic preparation preserves a zero-backfill metadata batch through journ
     let sync = new SyncEngine(store, client, () => receiving, binding.binding.deviceId); syncs.push(sync);
     let items: unknown[] = [oldReport];
     const observer = new AppServerObserver({
-      mode: 'fixture', version: async () => '0.166.0',
+      mode: 'fixture', version: async () => '0.167.0',
       request: async method => method === 'thread/read' ? structuredClone(metadata) : { data: [turn('synthetic-tail', items)], nextCursor: null },
     });
     const controller = new SourceController(store, observer); controllers.push(controller);
@@ -182,7 +182,7 @@ it('synthetic preparation fences a withheld fixture read and durably replays onl
       }
       return { data: [turn('synthetic-tail', items)], nextCursor: null };
     };
-    let controller = new SourceController(store, new AppServerObserver({ mode: 'fixture', version: async () => '0.166.0', request }));
+    let controller = new SourceController(store, new AppServerObserver({ mode: 'fixture', version: async () => '0.167.0', request }));
     controllers.push(controller);
     await controller.poll(binding.binding.id);
     expect(store.cursor(binding.binding.id)).toMatchObject({ offset: 1 });
@@ -215,7 +215,7 @@ it('synthetic preparation fences a withheld fixture read and durably replays onl
     expect(store.cursor(binding.binding.id)).toEqual(cursor);
     expect(await store.pendingUploads(20, binding.binding.deviceId)).toEqual([]);
     expect(store.pendingSourceCommands(binding.binding.deviceId)).toEqual(pendingRevoke);
-    controller = new SourceController(store, new AppServerObserver({ mode: 'fixture', version: async () => '0.166.0', request }));
+    controller = new SourceController(store, new AppServerObserver({ mode: 'fixture', version: async () => '0.167.0', request }));
     controllers.push(controller);
     const readsAfterRevoke = methods.length;
     await controller.poll(binding.binding.id);
@@ -258,7 +258,7 @@ it('synthetic preparation fences a withheld fixture read and durably replays onl
     await store.flush();
     const afterAck = JSON.parse(await readFile(journal, 'utf8')) as { data: Record<string, unknown> };
     expect(afterAck.data).toEqual({ ...beforeAck.data, sourceCommands: [] });
-    controller = new SourceController(store, new AppServerObserver({ mode: 'fixture', version: async () => '0.166.0', request }));
+    controller = new SourceController(store, new AppServerObserver({ mode: 'fixture', version: async () => '0.167.0', request }));
     controllers.push(controller);
     await controller.poll(binding.binding.id);
     expect((await sync.run()).connected).toBe(true);
