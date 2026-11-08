@@ -148,7 +148,7 @@ progress::-moz-progress-bar { background: var(--success); }
 [data-surface=Projects] .chat-surface, [data-creating=true] .chat-surface { display: none; }
 [data-surface=Projects] .workspace-surface, [data-creating=true] .workspace-surface { grid-column: 2 / -1; }
 /* The separate pet window retains its incumbent light bubble and transparent ground. */
-.pet-window { background: transparent; color-scheme: light; --surface: #fff; --chrome: #f4f5f3; --ink: #252826; --muted: #5d655f; --line: #d2d7d1; --control-line: #a5ada6; --focus: #295b42; --error: #8c3029; color: var(--ink); }
+.pet-window { background: transparent; color-scheme: light; --surface: #fff; --chrome: #f4f5f3; --raised: #e7ebe6; --selected: #d9e1d8; --ink: #252826; --muted: #5d655f; --line: #d2d7d1; --control-line: #a5ada6; --focus: #295b42; --error: #8c3029; color: var(--ink); }
 .pet-surface { display: flex; flex-direction: column-reverse; align-items: flex-end; padding: 12px; gap: 8px; }
 .pet-art { object-fit: contain; transform-origin: 50% 90%; animation: breathe 3s ease-in-out infinite; }
 .pet-art.state-reviewing { animation: tilt 2s ease-in-out infinite; }
