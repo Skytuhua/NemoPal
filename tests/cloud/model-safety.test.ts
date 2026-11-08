@@ -13,14 +13,14 @@ afterEach(async () => { await h?.close(); });
 const make = (j: c.ManagerJob, s: c.ProjectSnapshot): c.ManagerProposal => ({ schemaVersion: 1, jobId: j.id, baseProjectRevision: j.baseProjectRevision, projectEpoch: j.projectEpoch, grantVersions: j.grantVersions, taskChanges: [], decisionSuggestions: [], workspace: s.project.workspace, reply: { text: 'Synthetic proposal.', observationIds: [] } });
 test('raw schema failure on the fourth job call leaves the last valid view and cannot schedule a repair call',async()=>{
     await h.create();const job=(await queue.claim())!;const context=await queue.context(job);let calls=0;
-    const adapter=new HttpNemotronAdapter({baseUrl:'https://synthetic.example/v1',model:'synthetic-nemotron',apiKey:'fixture',callBudget:8,tokenBudget:1000000},async()=>{calls++;return Response.json({choices:[{message:{content:'```json\n{}\n```'}}]});});
+    const adapter=new HttpNemotronAdapter({baseUrl:'https://synthetic.example/v1',model:'synthetic-nemotron',apiKey:'fixture',callBudget:8,tokenBudget:1000000},async()=>{calls++;return Response.json({model:'synthetic-nemotron',choices:[{finish_reason:'stop',message:{role:'assistant',content:'```json\n{}\n```'}}]});});
     await expect(new BoundedRunner(adapter).run({...job,modelCalls:3},context,new AbortController().signal)).rejects.toThrow('model_contract');
     expect(calls).toBe(1);expect((await h.pool.query('SELECT 1 FROM messages')).rowCount).toBe(0);
 });
 test('a network retry cannot replenish a job\'s one durable model correction allowance',async()=>{
     await h.create();const job=(await queue.claim())!;let calls=0;
     const adapter=new HttpNemotronAdapter({baseUrl:'https://synthetic.example/v1',model:'synthetic-nemotron',apiKey:'fixture',callBudget:8,tokenBudget:1000000},async()=>{
-        calls++;if(calls===2)throw new Error('Synthetic network interruption.');return Response.json({choices:[{message:{content:'```json\n{}\n```'}}]});
+        calls++;if(calls===2)throw new Error('Synthetic network interruption.');return Response.json({model:'synthetic-nemotron',choices:[{finish_reason:'stop',message:{role:'assistant',content:'```json\n{}\n```'}}]});
     });
     await runJob(queue,adapter,job,new AbortController().signal);
     const first=(await h.pool.query('SELECT * FROM jobs WHERE id=$1',[job.id])).rows[0];expect(first.state).toBe('queued');expect(first.data.modelCalls).toBe(2);
