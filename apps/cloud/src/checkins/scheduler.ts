@@ -4,7 +4,8 @@ import * as c from '@living-playbooks/contracts';
 import type { Principal } from '../auth/credentials';
 import { transaction } from '../db/transaction';
 import { appendEvent, lockProject, purgeExpiredEvidence } from '../domain/store';
-import { eligibility, openStates } from './policy';
+import { openStates } from './policy';
+import { reconcileCheckIns } from './reconcile';
 export async function scheduleSuggestion(db: PoolClient, project: c.Project, proposal: c.ManagerProposal, authority: Principal, now: Date, dependencies: string[] = []) {
     const suggestion = proposal.questionSuggestion;
     if (!suggestion)
@@ -32,33 +33,13 @@ export class CheckInScheduler {
         const expired = (await this.pool.query("SELECT DISTINCT p.id,p.owner_id FROM observations o JOIN projects p ON p.id=o.project_id WHERE NOT p.deleted AND o.data ? 'excerpt' AND o.received_at<=$1 LIMIT 100", [new Date(this.now().getTime() - 7 * 86400000)])).rows;
         for (const row of expired)
             await transaction(this.pool, async (db) => { await db.query('SELECT id FROM owners WHERE id=$1 FOR UPDATE', [row.owner_id]); const project = await lockProject(db, row.id, row.owner_id); await purgeExpiredEvidence(db, project, this.now()); });
-        const candidates = (await this.pool.query("SELECT c.id,c.project_id,p.owner_id FROM checkins c JOIN projects p ON p.id=c.project_id WHERE NOT p.deleted AND c.data->>'state'=ANY($1::text[]) ORDER BY c.data->>'dueAt' LIMIT 100", [openStates])).rows;
+        const candidates = (await this.pool.query("SELECT c.id,c.project_id,p.owner_id FROM checkins c JOIN projects p ON p.id=c.project_id WHERE NOT p.deleted AND c.data->>'state'=ANY($1::text[]) ORDER BY c.data->>'dueAt',c.id LIMIT 100", [openStates])).rows;
         for (const candidate of candidates)
             await transaction(this.pool, async (db) => {
                 await db.query('SELECT id FROM owners WHERE id=$1 FOR UPDATE', [candidate.owner_id]);
                 const project = await lockProject(db, candidate.project_id, candidate.owner_id);
-                const row = (await db.query('SELECT * FROM checkins WHERE id=$1 FOR UPDATE SKIP LOCKED', [candidate.id])).rows[0];
-                if (!row)
-                    return;
-                const q = c.CheckInSchema.parse(row.data);
-                if (!openStates.includes(q.state))
-                    return;
-                let permitted = await eligibility(db, project, q, row.dependencies, this.now());
-                const auth = row.authority as Principal | null;
-                if (!auth || !(await db.query('SELECT 1 FROM credentials WHERE id=$1 AND revoked_at IS NULL AND expires_at>$2', [auth.credentialId, this.now()])).rowCount)
-                    permitted = 'cancelled';
-                const old = q.state;
-                if (permitted === 'cancelled' || permitted === 'expired')
-                    q.state = permitted;
-                else if (permitted === 'eligible' && ['scheduled', 'snoozed'].includes(q.state) && new Date(q.snoozedUntil ?? q.dueAt) <= this.now()) {
-                    q.state = 'available';
-                    await db.query('INSERT INTO checkin_presentations(presentation_id,checkin_id,owner_id,authorized_at) VALUES($1,$2,$3,$4) ON CONFLICT(presentation_id) DO NOTHING', [q.presentationId, q.id, project.ownerId, this.now()]);
-                }
-                if (q.state !== old) {
-                    q.revision++;
-                    await db.query('UPDATE checkins SET data=$2,available_at=CASE WHEN $3 THEN $4 ELSE available_at END WHERE id=$1', [q.id, q, q.state === 'available', this.now()]);
-                    await appendEvent(db, project, 'checkin_updated', q.id);
-                }
+                for(const q of await reconcileCheckIns(db,project,this.now(),true))
+                    await appendEvent(db,project,'checkin_updated',q.id);
             });
     }
 }

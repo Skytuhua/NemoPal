@@ -10,7 +10,7 @@ export function executeReadTool(raw: unknown, context: c.AuthorizedProjectContex
         return binding && binding.state === 'following' && binding.exportPolicy !== 'off' && binding.grantRevision === o.grantRevision && context.grantVersions.some(g => g.bindingId === binding.id && g.grantRevision === binding.grantRevision);
     });
     switch (tool.name) {
-        case 'read_project_state': return { project: s.project, sourceHealth: s.sourceBindings.map(b => ({ id: b.id, state: b.state, capability: b.capability, lastObservedAt: b.lastObservedAt })) };
+        case 'read_project_state': return { project: s.project, checkIns: s.checkIns, sourceHealth: s.sourceBindings.map(b => ({ id: b.id, state: b.state, capability: b.capability, lastObservedAt: b.lastObservedAt })) };
         case 'list_recent_evidence': return permitted.map(({ id, kind, observedAt, provenance }) => ({ id, kind, observedAt, provenance }));
         case 'read_evidence': {
             const evidence = permitted.find(o => o.id === tool.arguments.observationId);

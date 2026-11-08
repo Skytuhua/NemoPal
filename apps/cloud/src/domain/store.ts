@@ -4,6 +4,7 @@ import * as c from '@living-playbooks/contracts';
 import { transaction } from '../db/transaction';
 import { authorize, reauthorize, type Principal } from '../auth/credentials';
 import { reject, revision } from './errors';
+import { reconcileCheckIns } from '../checkins/reconcile';
 export async function lockProject(db: PoolClient, id: string, ownerId: string): Promise<c.Project> {
     const row = (await db.query('SELECT * FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, ownerId])).rows[0];
     if (!row || row.deleted)
@@ -231,8 +232,13 @@ export class Store {
             }
             else {
                 const health = input as c.SourceHealthInput;
-                if (health.state === 'revoked' || health.state === 'following' && source.state === 'paused')
+                if (health.state === 'revoked' || health.state === 'following' && (source.state === 'paused' || source.exportPolicy === 'off' || !['following','stale','blocked'].includes(source.state)))
                     reject(409, 'health_authority', 'Health cannot change source permission.');
+                if(health.state==='following'){
+                    if(health.errorClass!==null||health.capability==='unavailable')
+                        reject(422,'health_inconsistent','Healthy recovery requires an available source with no error.');
+                    source.state='following';
+                }
                 source.capability = health.capability;
                 source.lastObservedAt = health.lastObservedAt;
                 if (source.state !== 'paused' && ['blocked', 'stale'].includes(health.state))
@@ -292,6 +298,8 @@ export class Store {
     }
 }
 export async function snapshotData(db: PoolClient, project: c.Project, now: Date): Promise<c.ProjectSnapshot> {
+    for(const q of await reconcileCheckIns(db,project,now,false))
+        await appendEvent(db,project,'checkin_updated',q.id);
     const id = project.id;
     const load = async (table: string, max: number) => (await db.query(`SELECT data FROM ${table} WHERE project_id=$1 ${table === 'observations' ? 'AND data IS NOT NULL' : ''} ORDER BY ${table === 'messages' ? "data->>'createdAt' DESC" : 'id'} LIMIT $2`, [id, max])).rows.map(r => r.data);
     const sourceBindings = await load('source_bindings', 10) as c.SourceBinding[];

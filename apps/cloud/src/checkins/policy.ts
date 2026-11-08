@@ -44,8 +44,10 @@ export async function eligibility(db: PoolClient, project: c.Project, q: c.Check
     }
     if (inQuietHours(now, prefs))
         return 'deferred';
-    const count = Number((await db.query('SELECT count(*) FROM checkin_presentations WHERE owner_id=$1 AND authorized_at>$2 AND presentation_id<>$3', [project.ownerId, new Date(now.getTime() - 86400000), q.presentationId])).rows[0].count);
-    if (count >= prefs.attention_limit)
+    const attention = (await db.query('SELECT count(*) AS count,max(authorized_at) AS latest FROM checkin_presentations WHERE owner_id=$1 AND authorized_at>$2 AND presentation_id<>$3', [project.ownerId, new Date(now.getTime() - 86400000), q.presentationId])).rows[0];
+    if (Number(attention.count) >= prefs.attention_limit)
+        return 'deferred';
+    if (attention.latest && new Date(attention.latest).getTime() + 3600000 > now.getTime())
         return 'deferred';
     return 'eligible';
 }
