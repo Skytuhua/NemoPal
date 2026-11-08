@@ -1,8 +1,18 @@
 # T3 backend composition: bounded handoff
 
-Status: **incomplete; disabled and not registered in the application**. The service composes the existing local read-only session, adapter and observer, but the only store exercised here is synthetic. There is no production grant store, enrollment command, application lifecycle wiring, live authorization, or verified provider session in this change. Do not enable this service on the strength of these tests.
+## Canonical persistence seam
 
-## Required authority and persistence patch
+The follow-up adds `CanonicalT3Store` in `apps/cloud/src/integrations/t3/canonical-store.ts`. Construct it with the application pool and a `Principal` obtained from trusted authentication, then call `enroll(selection, input)` only from an authenticated, owner-controlled local consent/selection flow. Pass that same store to `new T3Service({ store })`; its default remains disabled. The input includes the canonical source grant and task revisions, expected T3 grant and mapping revisions (zero for initial enrollment), explicit local-read consent, T3 selection, run mapping, start position and an expiry at most 24 hours ahead. Identity in the selection is checked against the bound principal, not treated as authentication. Re-enrollment compares and increments separate T3 grant and mapping revisions and clears the old checkpoint.
+
+Each store operation reauthorizes the credential and locks the owner, project, source and enrollment in canonical order. The selected task is part of the locked project. Checkpoints contain bounded activity metadata, with labels reconstructed and extra fields stripped; no transcript or credentials are stored. Source pause and canonical source revocation clear retained checkpoints under the project lock, and revocation also invalidates the enrollment. Project epoch, source revision and task revision changes fence late writes; resuming after an epoch change requires fresh enrollment. Service revocation invokes canonical evidence withdrawal and source revocation in the same transaction.
+
+For a fresh consent flow after expiry or pause, `store.revisions(selection)` returns the current T3 grant and mapping counters after device reauthorization; it does not authorize observation. The host must obtain the current canonical source and task revisions separately and handle conflicts by presenting fresh selection and consent.
+
+This seam is not registered or started by the host. Host work remains: authenticated owner/device selection and explicit consent UX, lifecycle and single-instance ownership, startup/shutdown recovery, and the separately authorized real T3 authorization flow. Do not enable the service before these are integrated and independently reviewed and the required live authorization is expressly approved and verified. No live session, deployment, OAuth, source export, or user acceptance is established by these tests.
+
+Status: **incomplete; disabled and not registered in the application**. The original service composition and its synthetic evidence are described below; the canonical persistence follow-up above supplies the store and enrollment seam, but not application lifecycle wiring, live authorization, or a verified provider session. Do not enable this service on the strength of these tests.
+
+## Original authority and persistence handoff
 
 The existing `SourceBinding` stores the owning device, source state, export policy and a grant revision. It does not store the selected T3 environment, T3 project, thread, start position, task/run mapping, explicit local-read consent, or a T3 grant expiration. `Store.enroll` initializes the canonical source grant revision to zero; `T3Context` requires a positive T3 grant revision. Do not equate these counters or derive consent from a source's `following` state or export policy.
 
@@ -14,7 +24,7 @@ The owner of the authenticated command and application lifecycle seams must impl
 4. Implement `revoke` through the existing canonical revocation semantics, including source grant revision/epoch changes and evidence withdrawal where applicable, together with T3 enrollment revocation and checkpoint removal under the same locking discipline. Reauthorize the device; do not treat the process-local cancellation as durable revocation. Report a failure as pending/unconfirmed rather than claiming cloud withdrawal.
 5. In the authorized host lifecycle, construct one service with the durable store, explicitly start it only after owner selection and real consent, and await `stop()` at shutdown. A host-owned, authenticated local control seam must carry selection and authorization handling; do not add a wider-network listener, expose credentials, or start a browser. Coordinate single-instance ownership and verify recovery after process crash.
 
-A real transaction test requires a fresh disposable test-owned database with verified cleanup, followed by a separately authorized live session verification. Neither was run here. This handoff does not change public contracts or implement those seams.
+The original service change did not run a real transaction test or implement those seams. The follow-up test `tests/cloud/t3-canonical-store.test.ts` targets a separately supplied disposable local PostgreSQL database; a live session remains separately authorized work.
 
 ## Offline evidence
 
