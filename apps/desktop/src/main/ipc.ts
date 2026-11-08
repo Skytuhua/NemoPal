@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AllowedClientCommandSchema, ConfirmSourceInputSchema, IdSchema, PairingInputSchema, PetCommandSchema, PetPreferenceSchema, utf8Bytes } from '@living-playbooks/contracts';
+import { AllowedClientCommandSchema, ConfirmSourceInputSchema, IdSchema, PairingInputSchema, PetChatCommandSchema, PetCommandSchema, PetPreferenceSchema, utf8Bytes } from '@living-playbooks/contracts';
 
 export type SenderContext = { role: string; senderId: number; frameId: number; topFrameId: number; url: string };
 export type WindowIdentity = { senderId: number; frameId: number; url: string };
@@ -14,7 +14,7 @@ export class NativeBoundary {
       capabilities: z.undefined(), pair: PairingInputSchema, selectSource: IdSchema, confirmSource: ConfirmSourceInputSchema,
       pauseSource: IdSchema, revokeSource: IdSchema, invoke: AllowedClientCommandSchema, setPetPreference: PetPreferenceSchema,
       startCodexDemo: IdSchema, stopCodexDemo: IdSchema, sendCodexDemo: z.strictObject({ projectId: IdSchema, text: z.string().refine(text => !!text.trim() && utf8Bytes(text) <= 65536) }),
-    } : { petInvoke: PetCommandSchema };
+    } : sender.role === 'pet' ? { petInvoke: PetCommandSchema, petDrag: z.enum(['start', 'move', 'end']) } : sender.role === 'petChat' ? { petChatRead: z.undefined(), petChatInvoke: PetChatCommandSchema } : {};
     const schema = schemas[operation];
     if (!schema) throw Error('Native operation denied');
     const parsed = schema.parse(input);

@@ -16,7 +16,7 @@ export const SourceSelectionPreviewSchema = z.discriminatedUnion('available', [
 export const ConfirmSourceInputSchema = z.strictObject({ selectionId: id, projectId: id, allowLocalRead: z.literal(true), exportPolicy: ExportPolicySchema, acknowledgedBestEffortFiltering: z.literal(true) });
 export const PetPreferenceSchema = z.strictObject({ hidden: z.boolean(), focus: z.boolean(), reducedMotion: z.boolean(), pinnedProjectId: id.nullable() });
 export const DesktopCapabilitiesSchema = z.strictObject({ nativePet: CapabilitySchema, sourceObservation: ObserverCapabilityReportSchema, paired: z.boolean(), cloudOrigin: boundedText(512).nullable() });
-export const SafePetEventSchema = z.strictObject({ type: z.literal('pet_state'), projectId: id.nullable(), managerName: boundedText(120), petPackId: boundedText(80), state: PetStateSchema, checkIn: CheckInSchema.nullable(), demoTiming: z.boolean(), preference: PetPreferenceSchema });
+export const SafePetEventSchema = z.strictObject({ type: z.literal('pet_state'), projectId: id.nullable(), managerName: boundedText(120), petPackId: boundedText(80), state: PetStateSchema, checkIn: CheckInSchema.nullable(), demoTiming: z.boolean(), preference: PetPreferenceSchema, chatContextId: id.optional(), chatOpen: z.boolean().optional() });
 export const SafeDesktopEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('open_project'), projectId: id }),
   z.strictObject({ type: z.literal('project_event'), event: ProjectEventSchema }),
@@ -38,6 +38,7 @@ export const AllowedClientCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('cancelJob'), jobId: id, command: revisionedCommandSchema(EmptyInputSchema) }),
 ]);
 export const PetCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('openChat'), contextId: id }),
   z.strictObject({ type: z.literal('openProject'), projectId: id }),
   z.strictObject({ type: z.literal('answer'), checkInId: id, command: revisionedCommandSchema(CheckInAnswerSchema) }),
   z.strictObject({ type: z.literal('snooze'), checkInId: id, command: revisionedCommandSchema(SnoozeInputSchema) }),
@@ -72,7 +73,9 @@ export interface DesktopBridge {
 }
 export interface PetBridge {
   invoke(input: PetCommand): Promise<void>;
+  drag?(phase: 'start' | 'move' | 'end'): Promise<void>;
   onEvent(listener: (event: SafePetEvent) => void): () => void;
+  onFocusControls?(listener: () => void): () => void;
 }
 export interface CodexObserver {
   probe(): Promise<ObserverCapabilityReport>;

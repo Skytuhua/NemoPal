@@ -67,6 +67,7 @@ export class QuestionPresentation {
   async command(raw: PetCommand): Promise<void> {
     const owner = this.ownerGeneration;
     const input = PetCommandSchema.parse(raw);
+    if (input.type === 'openChat') throw Error('Conversation activation belongs to native chat');
     if (input.type === 'setPreference') { await this.store.setPreference(input.preference); if (owner !== this.ownerGeneration) throw Error('Pet pairing changed'); if (this.snapshot) await this.refresh(this.snapshot, this.connected); return; }
     if (input.type === 'openProject') { if (this.snapshot?.project.id !== input.projectId || (this.selectedProject !== undefined && this.selectedProject !== input.projectId)) throw Error('Pet project changed'); this.openProject(input.projectId); return; }
     const question = this.displayed;

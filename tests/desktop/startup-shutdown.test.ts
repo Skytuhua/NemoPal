@@ -70,8 +70,8 @@ it.each(['tray', 'before-quit'] as const)('%s journal failure remains Quit block
     quit(main, via);
     await vi.waitFor(() => expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)));
     load.reject(Error('ERR_ABORTED synthetic navigation')); await nextTurn();
-    expect(main.dialog.showErrorBox.mock.calls.map(([title]) => title)).toEqual(['Quit blocked']);
-    expect(main.app.exit).not.toHaveBeenCalled();
+    expect(main.dialog.showErrorBox.mock.calls.map(([title]) => title)).toEqual(['Quit blocked', 'NemoPal blocked']);
+    expect(main.app.exit).toHaveBeenCalledWith(1);
     expect(main.windows.destroy).not.toHaveBeenCalled();
     expect(main.windows.workspace.show).not.toHaveBeenCalled();
     expect(main.windows.pet.showInactive).not.toHaveBeenCalled();
@@ -92,4 +92,59 @@ it.each(['unexpected load failure', 'ERR_ABORTED synthetic navigation'])('a wind
     expect(main.windows.workspace.show).not.toHaveBeenCalled();
     expect(main.windows.pet.showInactive).not.toHaveBeenCalled();
   } finally { load.resolve(); await nextTurn(); await main.dispose(); }
+});
+
+
+it('startup can finish after a failed quit while window loading is pending', async () => {
+  const load = deferred<void>(); const main = await startSyntheticMain({ windowLoad: load.promise });
+  const { JournalStore } = await import('../../apps/desktop/src/main/local-store');
+  vi.spyOn(JournalStore.prototype, 'flush').mockRejectedValueOnce(Error('Synthetic journal failure'));
+  try {
+    quit(main, 'tray'); await vi.waitFor(() => expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)));
+    load.resolve(); await vi.waitFor(() => expect(main.windows.workspace.show).toHaveBeenCalled());
+    quit(main, 'tray'); await vi.waitFor(() => expect(main.app.exit).toHaveBeenCalledWith(0));
+  } finally { load.resolve(); await main.dispose(); }
+});
+
+
+it('a failed quit does not hide a later startup failure', async () => {
+  const load = deferred<void>(); const main = await startSyntheticMain({ windowLoad: load.promise });
+  const { JournalStore } = await import('../../apps/desktop/src/main/local-store');
+  vi.spyOn(JournalStore.prototype, 'flush').mockRejectedValueOnce(Error('Synthetic journal failure'));
+  try {
+    quit(main, 'tray'); await vi.waitFor(() => expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)));
+    load.reject(Error('later startup failure'));
+    await vi.waitFor(() => expect(main.app.exit).toHaveBeenCalledWith(1));
+    expect(main.dialog.showErrorBox).toHaveBeenCalledWith('NemoPal blocked', expect.any(String));
+  } finally { load.resolve(); await nextTurn(); await main.dispose(); }
+});
+
+
+it('a startup failure during a quit is reported if that quit later fails', async () => {
+  const load = deferred<void>(), started = deferred<void>(), release = deferred<void>();
+  const main = await startSyntheticMain({ windowLoad: load.promise });
+  const { JournalStore } = await import('../../apps/desktop/src/main/local-store');
+  vi.spyOn(JournalStore.prototype, 'flush').mockImplementationOnce(async () => { started.resolve(); await release.promise; throw Error('Synthetic journal failure'); });
+  try {
+    quit(main, 'tray'); await started.promise; load.reject(Error('startup failure during quit')); await nextTurn();
+    expect(main.dialog.showErrorBox).not.toHaveBeenCalled();
+    release.resolve(); await vi.waitFor(() => expect(main.app.exit).toHaveBeenCalledWith(1));
+    expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String));
+    expect(main.dialog.showErrorBox).toHaveBeenCalledWith('NemoPal blocked', expect.any(String));
+  } finally { load.resolve(); release.resolve(); await nextTurn(); await main.dispose(); }
+});
+
+
+it('startup completes if window load finishes while a pending quit later fails', async () => {
+  const load = deferred<void>(), started = deferred<void>(), release = deferred<void>();
+  const main = await startSyntheticMain({ windowLoad: load.promise });
+  const { JournalStore } = await import('../../apps/desktop/src/main/local-store');
+  vi.spyOn(JournalStore.prototype, 'flush').mockImplementationOnce(async () => { started.resolve(); await release.promise; throw Error('Synthetic journal failure'); });
+  try {
+    quit(main, 'tray'); await started.promise; load.resolve(); await nextTurn();
+    expect(main.windows.workspace.show).not.toHaveBeenCalled();
+    release.resolve(); await vi.waitFor(() => expect(main.windows.workspace.show).toHaveBeenCalled());
+    expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String));
+    quit(main, 'tray'); await vi.waitFor(() => expect(main.app.exit).toHaveBeenCalledWith(0));
+  } finally { load.resolve(); release.resolve(); await nextTurn(); await main.dispose(); }
 });

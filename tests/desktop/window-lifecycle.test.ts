@@ -16,7 +16,15 @@ it('a second instance cannot start observers; Hide keeps companion running and Q
 });
 it('uses role-specific sandbox preloads, frozen pet route and clamps removed monitors', () => {
   expect(securePreferences('/preload/pet.cjs')).toMatchObject({ nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, preload: '/preload/pet.cjs' });
-  expect(rendererTargets('file:///build/index.html')).toEqual({ workspace: 'file:///build/index.html', pet: 'file:///build/index.html?surface=pet' });
+  expect(rendererTargets('file:///build/index.html')).toEqual({ workspace: 'file:///build/index.html', pet: 'file:///build/index.html?surface=pet', petChat: 'file:///build/index.html?surface=pet-chat' });
   expect(() => rendererTargets('https://remote.test')).toThrow();
   expect(clampPosition({ x: 9000, y: -500 }, { width: 240, height: 240 }, [{ x: 0, y: 0, width: 1920, height: 1080 }])).toEqual({ x: 1680, y: 0 });
+});
+
+it('failed quit can be retried and workspace can be hidden again', async () => {
+  let attempts = 0; let hidden = 0; let exited = 0;
+  const lifetime = new CompanionLifetime(() => { hidden++; }, async () => { if (++attempts === 1) throw Error('flush failed'); }, async () => {}, () => { exited++; });
+  await expect(lifetime.quit()).rejects.toThrow('flush failed');
+  lifetime.closeWorkspace(); expect(hidden).toBe(1);
+  await lifetime.quit(); expect(attempts).toBe(2); expect(exited).toBe(1);
 });

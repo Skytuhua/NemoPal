@@ -19,6 +19,7 @@ import { createCompanionTray } from './tray';
 import { CompanionLifetime } from './windows';
 import { desktopOrigin, unavailableDesktopClient } from './desktop-origin';
 import { CodexDesktopSession } from './codex-desktop-session';
+import { PetChatController } from './pet-chat';
 type SourceEnrollment = { operationId: string; deviceId: string; cloud: boolean; bindingId?: string; withdrawal?: 'pause' | 'revoke'; completion: Promise<void>; failed: boolean };
 
 app.setName('Living Playbooks');
@@ -53,7 +54,7 @@ async function start() {
       const command = c.revisionedCommandSchema(c.EnrollSourceInputSchema).parse(JSON.parse(String(init.body)));
       const enrollment = [...enrollments].find(entry => entry.operationId === command.operationId);
       // Hashing and authorization lookup in the client can await; fence at the actual transport boundary.
-      if (quitting || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
+      if (quitting || sourceStopFailed || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
         return Promise.reject(Error('Source enrollment authority changed'));
     }
     const observations = /^\/v1\/sources\/([^/]+)\/observations$/.exec(path);
@@ -61,7 +62,7 @@ async function start() {
       const command = c.commandEnvelopeSchema(c.IngestObservationsInputSchema).parse(JSON.parse(String(init.body)));
       const upload = store.pendingUpload(command.operationId);
       const binding = upload && store.binding(upload.bindingId)?.binding;
-      if (quitting || !upload || !binding || upload.bindingId !== observations[1] || binding.deviceId !== vault.deviceId() ||
+      if (quitting || sourceStopFailed || !upload || !binding || upload.bindingId !== observations[1] || binding.deviceId !== vault.deviceId() ||
           !store.isFollowing(binding.id) || binding.grantRevision !== upload.grantRevision || binding.exportPolicy === 'off' ||
           !store.canExport(binding.id, upload.grantRevision, currentReceiving()) || JSON.stringify(upload.input) !== JSON.stringify(command.input) ||
           new Headers(init.headers).get('Authorization') !== vault.authorization())
@@ -95,6 +96,9 @@ async function start() {
   let connected = false;
   let suspended = false;
   let quitting = false;
+  let sourceStopFailed = false;
+  let sourceGeneration = 0;
+  let quitAttempt: Promise<void> | undefined;
   let syncing: Promise<void> | undefined;
   let eventsAbort: AbortController | undefined;
   let eventSequence = 0;
@@ -108,17 +112,24 @@ async function start() {
   const makeController = () => { const generation = ownerGeneration; return new SourceController(store, observer, (id, reason) => { if (generation !== ownerGeneration || quitting) return; const local = store.binding(id); if (local && local.binding.deviceId === vault.localDeviceId()) sendDesktop({ type: 'source_state', binding: { ...local.binding, state: 'blocked' }, cloudRevocationPending: false }); sendDesktop({ type: 'connection', connected, reason }); }); };
   let sources = makeController();
   let sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId());
-  const windows = createNativeWindows({ renderer, preloadDirectory: resolve(base, '../preload'), position: store.position(), closeWorkspace: () => lifetime.closeWorkspace(), moved: point => { void store.setPosition(point).catch(() => { sendDesktop({ type: 'connection', connected: false, reason: 'Local position could not be saved.' }); }); } });
+  const windows = createNativeWindows({ renderer, preloadDirectory: resolve(base, '../preload'), position: store.position(), closeWorkspace: () => lifetime.closeWorkspace(), closePet: () => { void preference({ ...store.preference(), hidden: true }).catch(() => sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' })); }, closeChat: () => chat.close(), moved: point => { void store.setPosition(point).catch(() => { sendDesktop({ type: 'connection', connected: false, reason: 'Local position could not be saved.' }); }); } });
   const open = () => { windows.workspace.show(); windows.workspace.focus(); };
-  const makePresentation = () => { const generation = ownerGeneration; return new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { if (generation === ownerGeneration && !quitting) void refresh(projectId).catch(() => { if (generation === ownerGeneration) disconnect(); }); }, Date.now, projectId => { assertOwner(generation); sendDesktop({ type: 'open_project', projectId }); open(); }); };
+  let chatOpen = false;
+  const sendPet = (event: c.SafePetEvent) => { if (!quitting && !windows.pet.isDestroyed()) windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse({ ...event, chatContextId: chat.launchId, chatOpen })); };
+  const chat = new PetChatController({ client: () => { requirePaired(); return client; }, project: petProject, owner: () => ownerGeneration, authorized: id => authority.projects.has(id), preference: () => store.preference(), recordPresentation: (id, presentationId) => store.recordPresentation(id, presentationId), port: {
+    show: current => windows.showChat(current), hide: restore => windows.hideChat(restore), resize: expanded => windows.resizeChat(expanded), destroy: () => windows.destroyChat(), emit: state => windows.sendChat(state),
+    visible: value => { chatOpen = value; const event = presentation.current(); if (event) sendPet(event); },
+  } });
+  const makePresentation = () => { const generation = ownerGeneration; return new QuestionPresentation(store, client, sendPet, projectId => { if (generation === ownerGeneration && !quitting) void refresh(projectId).catch(() => { if (generation === ownerGeneration) disconnect(); }); }, Date.now, projectId => { assertOwner(generation); sendDesktop({ type: 'open_project', projectId }); open(); }); };
   let presentation = makePresentation();
-  const fenceSelection = () => { const generation = ++selectionGeneration; presentation.selectProject(petProject()); return generation; };
+  const fenceSelection = () => { const generation = ++selectionGeneration; chat.contextChanged(); presentation.selectProject(petProject()); return generation; };
   const preference = async (input: c.PetPreference) => {
     const owner = ownerGeneration;
     const previousPin = pinnedProject;
     const pinChanged = previousPin !== input.pinnedProjectId;
     pinnedProject = input.pinnedProjectId;
     const generation = fenceSelection();
+    if (input.hidden) { chat.close(false); windows.pet.hide(); }
     try {
       if (pinChanged) await store.setPreference(input);
       else await presentation.command({ type: 'setPreference', preference: input });
@@ -133,9 +144,27 @@ async function start() {
     tray.rebuild();
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
-    quitting = true; stopDemo(); ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
-    await sources.stop(); await sync.stop(); await pairingCompletion; vault.clearMemory();
-  }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
+    quitting = true; ++sourceGeneration;
+    let stopped = false, sourcesStopped = false;
+    try {
+      // Keep the live session recoverable until the renderer has safely flushed.
+      await chat.flush(); await store.flush();
+      stopped = true; stopDemo(); ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
+      await sources.stop(); sourcesStopped = true; sourceStopFailed = false; await sync.stop(); await pairingCompletion; await store.flush();
+      chat.stop(); vault.clearMemory();
+    } catch (error) {
+      if (stopped && !sourcesStopped) { sourceStopFailed = true; void sync.stop().catch(() => {}); }
+      if (stopped && sourcesStopped) {
+        ++ownerGeneration; chat.contextChanged(true); ownerAbort = new AbortController(); eventsAbort = undefined; syncing = undefined;
+        client = makeClient(); observer = makeObserver(); sources = makeController();
+        sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId()); presentation = makePresentation();
+        timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
+      }
+      if (stopped && !sourcesStopped) { ownerAbort = new AbortController(); client = makeClient(); }
+      quitting = false; chat.resumeAfterFlush(); if (stopped && sourcesStopped) void cycle();
+      throw error;
+    }
+  }, async () => {}, () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
   const reportWithdrawalFailure = () => dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
   async function withdrawSources(action: 'pause' | 'revoke') {
     if (quitting) return;
@@ -178,9 +207,10 @@ async function start() {
     });
     void cycle();
   }
-  const quit = () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); };
+  const quit = () => { const attempt = lifetime.quit(); quitAttempt = attempt; void attempt.catch(() => { dialog.showErrorBox('Quit blocked', 'Local draft, source stop or journal flush failed. Keep the application open and preserve your work before exiting.'); }); };
   // Tray toggles may arrive from a menu built before pairing.
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
+  let petClickThrough = false;
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => { petClickThrough = value; if (value) windows.cancelPetDrag(); windows.pet.setIgnoreMouseEvents(value, { forward: true }); }, withdrawSources, quit, error: action => {
     if (action) reportWithdrawalFailure();
     else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
   } });
@@ -199,10 +229,11 @@ async function start() {
     requirePaired(); const raw = await client.getSnapshot(projectId); assertOwner(owner);
     const snapshot = remember(raw);
     if (generation === selectionGeneration && petProject() === projectId) await presentation.refresh(snapshot, connected && !suspended);
+    if (generation === selectionGeneration && petProject() === projectId) void chat.refresh();
     assertOwner(owner);
     return snapshot;
   }
-  function disconnect() { connected = false; presentation.offline(); sendDesktop({ type: 'connection', connected: false, reason: 'Cloud unavailable; local monitoring and pending cloud revocation are reported separately.' }); }
+  function disconnect() { connected = false; chat.offline(); presentation.offline(); sendDesktop({ type: 'connection', connected: false, reason: 'Cloud unavailable; local monitoring and pending cloud revocation are reported separately.' }); }
   async function execute(input: c.AllowedClientCommand): Promise<unknown> {
     const owner = ownerGeneration;
     requirePaired();
@@ -213,7 +244,7 @@ async function start() {
         if (selectedProject !== input.projectId) stopDemo();
         selectedProject = input.projectId;
         const generation = fenceSelection();
-        const result = await sync.run(); assertOwner(owner); connected = result.connected;
+        const result = sourceStopFailed ? { connected: false } : await sync.run(); assertOwner(owner); connected = result.connected;
         return refresh(input.projectId, generation);
       }
       case 'sendMessage': { const job = await client.sendMessage(input.projectId, input.command); assertOwner(owner); authority.jobs.set(job.jobId, input.projectId); return job; }
@@ -222,7 +253,7 @@ async function start() {
       case 'answerCheckIn': return client.answerCheckIn(input.checkInId, input.command);
       case 'snoozeCheckIn': return client.snoozeCheckIn(input.checkInId, input.command);
       case 'cancelCheckIn': return client.cancelCheckIn(input.checkInId, input.command);
-      case 'deleteProject': { const result = await client.deleteProject(input.projectId, input.command); assertOwner(owner); authority.projects.delete(input.projectId); if (selectedProject === input.projectId) stopDemo(); const controller = sources; for (const entry of store.bindings().filter(e => e.binding.deviceId === vault.localDeviceId() && e.binding.projectId === input.projectId)) await controller.revoke(entry.binding.id); return result; }
+      case 'deleteProject': { const result = await client.deleteProject(input.projectId, input.command); assertOwner(owner); authority.projects.delete(input.projectId); if (selectedProject === input.projectId) stopDemo(); chat.contextChanged(); const controller = sources; for (const entry of store.bindings().filter(e => e.binding.deviceId === vault.localDeviceId() && e.binding.projectId === input.projectId)) await controller.revoke(entry.binding.id); return result; }
       case 'cancelJob': return client.cancelJob(input.jobId, input.command);
     }
   }
@@ -234,7 +265,7 @@ async function start() {
         return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: ownerReady && Boolean(origin && vault.authorization()), cloudOrigin: origin });
       }
       case 'pair': {
-        if (pairing) throw Error('Pairing already in progress');
+        if (pairing || sourceStopFailed) throw Error('Pairing unavailable while source stop requires retry');
         const previousOwner = ownerGeneration;
         const redemption = new AbortController(); pairingAbort = redemption;
         let finish!: () => void;
@@ -247,7 +278,7 @@ async function start() {
           const credential = await readPairingResponse(response);
           assertOwner(previousOwner);
           // Invalidate before protected storage awaits; an old response cannot acquire the new owner.
-          presentation.reset(); ++ownerGeneration; ++selectionGeneration; ownerReady = false;
+          chat.contextChanged(true); presentation.reset(); ++ownerGeneration; ++selectionGeneration; ownerReady = false;
           const owner = ownerGeneration;
           ownerAbort.abort(); eventsAbort?.abort(); eventsAbort = undefined; syncing = undefined;
           stopDemo(); connected = false; eventSequence = 0; selectedProject = undefined; pinnedProject = null;
@@ -269,6 +300,7 @@ async function start() {
         } finally { redemption.abort(); pairingAbort = undefined; pairing = false; finish(); pairingCompletion = undefined; if (ownerReady && !quitting) void cycle(); }
       }
       case 'selectSource': {
+        if (sourceStopFailed) throw Error('Source stop requires retry');
         const owner = ownerGeneration;
         const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE;
         if (!threadId || !process.env.LP_SYNTHETIC_SOURCE_NAME || !c.IdSchema.safeParse(threadId).success) return { available: false, reason: 'No exact named own synthetic test source configured. No archive scan or implicit current-thread read is permitted.' };
@@ -277,18 +309,19 @@ async function start() {
         return choice.response === 0 ? consent.offer(projectId, threadId, process.cwd()) : { available: false, reason: 'Source selection cancelled.' };
       }
       case 'confirmSource': {
+        if (sourceStopFailed) throw Error('Source stop requires retry');
         const controller = sources, ownerClient = client;
         const input = c.ConfirmSourceInputSchema.parse(raw); const choice = consent.confirm(input); requirePaired();
         const enrollment: SourceEnrollment = { operationId: input.selectionId, deviceId: vault.deviceId()!, cloud: input.exportPolicy !== 'off', completion: Promise.resolve(), failed: false };
         enrollments.add(enrollment);
         const operation = (async () => { try {
           const snapshot = await ownerClient.getSnapshot(input.projectId);
-          if (quitting || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId) throw Error('Source consent no longer current');
+          if (quitting || sourceStopFailed || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId) throw Error('Source consent no longer current');
           const deviceId = enrollment.deviceId;
           const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await ownerClient.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
           enrollment.bindingId = binding.id;
           if (binding.deviceId !== deviceId || binding.projectId !== input.projectId) throw Error('Source enrollment identity mismatch');
-          if (quitting || vault.localDeviceId() !== deviceId) enrollment.withdrawal = 'revoke';
+          if (quitting || sourceStopFailed || vault.localDeviceId() !== deviceId) enrollment.withdrawal = 'revoke';
           if (enrollment.withdrawal) store.fence(binding.id);
           await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, enrollment.cloud, choice.receiving, enrollment.withdrawal);
           if (enrollment.withdrawal) await controller[enrollment.withdrawal](binding.id);
@@ -326,24 +359,30 @@ async function start() {
       case 'stopCodexDemo': if (raw === selectedProject) stopDemo(); return;
       case 'invoke': return execute(c.AllowedClientCommandSchema.parse(raw));
       case 'setPetPreference': return preference(c.PetPreferenceSchema.parse(raw));
-      case 'petInvoke': { const input = c.PetCommandSchema.parse(raw); if (input.type === 'setPreference') return preference(input.preference); return presentation.command(input); }
+      case 'petInvoke': { const input = c.PetCommandSchema.parse(raw); if (input.type === 'setPreference') return preference(input.preference); if (input.type === 'openChat') { if (input.contextId !== chat.launchId) throw Error('Pet context changed'); return chat.open(); } return presentation.command(input); }
+      case 'petDrag': if (!petClickThrough) windows.dragPet(raw as 'start' | 'move' | 'end'); return;
+      case 'petChatRead': return chat.read();
+      case 'petChatInvoke': return chat.command(c.PetChatCommandSchema.parse(raw));
       default: throw Error('Native operation denied');
     }
   }
-  for (const role of ['workspace', 'pet'] as const) ipcMain.handle(`lp:${role}`, async (event, operation: unknown, input: unknown) => {
+  for (const role of ['workspace', 'pet', 'petChat'] as const) ipcMain.handle(`lp:${role}`, async (event, operation: unknown, input: unknown) => {
     const window = windows[role]; const frame = event.senderFrame;
     try {
-      if (typeof operation !== 'string' || !frame || quitting || event.sender !== window.webContents || frame !== window.webContents.mainFrame) throw Error('Untrusted sender');
+      const flushing = role === 'petChat' && operation === 'petChatInvoke' && c.PetChatCommandSchema.safeParse(input).data?.type === 'flushed';
+      if (typeof operation !== 'string' || !frame || !window || (quitting && !flushing) || event.sender !== window.webContents || frame !== window.webContents.mainFrame) throw Error('Untrusted sender');
       const boundary = new NativeBoundary({ [role]: { senderId: window.webContents.id, frameId: window.webContents.mainFrame.routingId, url: windows.targets[role] } }, authority, dispatch);
       const owner = ownerGeneration;
       const result = await boundary.call({ role, senderId: event.sender.id, frameId: frame.routingId, topFrameId: window.webContents.mainFrame.routingId, url: frame.url }, operation, input);
       // A successful pair advances its own generation once; a later pair invalidates its reply too.
-      assertOwner(operation === 'pair' ? owner + 1 : owner);
+      if (flushing) { if (owner !== ownerGeneration) throw Error('Draft owner changed'); }
+      else assertOwner(operation === 'pair' ? owner + 1 : owner);
+      if (windows[role] !== window || window.isDestroyed()) throw Error('Native window changed');
       return result;
     } catch { throw Error('Native request rejected. Check source consent, current project and pairing state.'); }
   });
   async function cycle(): Promise<void> {
-    if (pairing || !ownerReady || syncing || quitting || suspended) return syncing;
+    if (pairing || !ownerReady || syncing || quitting || suspended || sourceStopFailed) return syncing;
     const owner = ownerGeneration, ownerSync = sync, controller = sources, ownerClient = client, deviceId = vault.deviceId();
     const run = (async () => {
       try {
@@ -355,30 +394,31 @@ async function start() {
         const projects = await ownerClient.listProjects(); assertOwner(owner); const authorized = new Set(projects.map(project => project.id));
         for (const id of authority.projects) if (!authorized.has(id)) authority.projects.delete(id);
         for (const id of authorized) authority.projects.add(id);
+        chat.contextChanged();
         if (pinnedProject && !authorized.has(pinnedProject)) { pinnedProject = null; fenceSelection(); await store.setPreference({ ...store.preference(), pinnedProjectId: null }); assertOwner(owner); }
         const uploaded = await ownerSync.run(); assertOwner(owner); connected = uploaded.connected; if (!connected) { disconnect(); return; }
         const project = petProject(); if (project && authority.projects.has(project)) { await refresh(project); assertOwner(owner); }
         else if (!eventSequence && projects[0]) { const snapshot = await ownerClient.getSnapshot(projects[0].id); assertOwner(owner); eventSequence = snapshot.eventSequence; }
         if (!eventsAbort || eventsAbort.signal.aborted) {
           const subscription = new AbortController(); eventsAbort = subscription; const signal = subscription.signal;
-          void ownerClient.subscribe(eventSequence, event => { if (owner !== ownerGeneration || signal.aborted || quitting) return; eventSequence = Math.max(eventSequence, event.seq); if (authority.projects.has(event.projectId)) { sendDesktop({ type: 'project_event', event }); if (event.kind === 'job_updated') authority.jobs.set(event.resourceId, event.projectId); void cycle(); } }, signal).catch(() => { if (owner === ownerGeneration && !signal.aborted && !quitting) { eventSequence = 0; disconnect(); subscription.abort(); } });
+          void ownerClient.subscribe(eventSequence, event => { if (owner !== ownerGeneration || signal.aborted || quitting) return; eventSequence = Math.max(eventSequence, event.seq); if (authority.projects.has(event.projectId)) { sendDesktop({ type: 'project_event', event }); if (event.kind === 'job_updated') authority.jobs.set(event.resourceId, event.projectId); if (event.projectId === petProject()) { if (event.kind === 'project_deleted') { authority.projects.delete(event.projectId); chat.contextChanged(); } else void chat.refresh(); } void cycle(); } }, signal).catch(() => { if (owner === ownerGeneration && !signal.aborted && !quitting) { eventSequence = 0; disconnect(); subscription.abort(); } });
         }
       } catch { if (owner === ownerGeneration && !quitting) disconnect(); }
     })().finally(() => { if (syncing === run) syncing = undefined; });
     syncing = run; return run;
   }
-  const timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
+  let timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
   app.on('second-instance', open);
   app.on('window-all-closed', () => {});
   app.on('activate', open);
   app.on('before-quit', event => { event.preventDefault(); quit(); });
-  powerMonitor.on('suspend', () => { suspended = true; stopDemo(); eventsAbort?.abort(); void sources.stop(); disconnect(); });
-  powerMonitor.on('resume', () => { const owner = ownerGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
-  windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); if (event) windows.pet.webContents.send('lp:pet-event', event); else windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse({ type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() })); });
+  powerMonitor.on('suspend', () => { suspended = true; stopDemo(); eventsAbort?.abort(); if (!sourceStopFailed) void sources.stop().catch(() => {}); disconnect(); });
+  powerMonitor.on('resume', () => { if (sourceStopFailed) return; const owner = ownerGeneration, generation = sourceGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); if (generation !== sourceGeneration || sourceStopFailed) return; observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
+  windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); sendPet(event ?? { type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() }); });
   windows.workspace.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) stopDemo(); });
   try { await windows.load(); }
-  catch (error) { if (quitting) return; throw error; }
-  if (quitting) return;
+  catch (error) { if (quitting && quitAttempt) { try { await quitAttempt; return; } catch { /* Failed quit does not suppress startup failure. */ } } throw error; }
+  if (quitting && quitAttempt) { try { await quitAttempt; return; } catch { /* Resume startup after failed quit. */ } }
   windows.workspace.show(); if (!store.preference().hidden) windows.pet.showInactive();
   await cycle();
 }

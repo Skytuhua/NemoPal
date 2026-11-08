@@ -1,48 +1,79 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { PetCommandSchema, SafePetEventSchema, type PetBridge, type PetCommand, type PetState, type SafePetEvent } from '@living-playbooks/contracts';
-import { Question } from '../features/checkins/Question';
 import './pet-mouse.css';
+import './pet-speech.css';
+
 export function Pet({ bridge }: { bridge?: PetBridge }) {
-  const [event, setEvent] = useState<SafePetEvent>(), [error, setError] = useState(''), [submitted, setSubmitted] = useState('');
-  const signature = useRef(''), pending = useRef(false), current = useRef<SafePetEvent | undefined>(undefined);
+  const [event, setEvent] = useState<SafePetEvent>(), [error, setError] = useState('');
+  const mouse = useRef<HTMLButtonElement>(null), current = useRef<SafePetEvent | undefined>(undefined);
+  const gesture = useRef<{ id: number; x: number; y: number; dragged: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const drag = (phase: 'start' | 'move' | 'end') => { void bridge?.drag?.(phase).catch(() => {}); };
+  const cancelGesture = () => {
+    if (!gesture.current) return;
+    gesture.current = null; suppressClick.current = true; drag('end');
+  };
+  useEffect(() => () => cancelGesture(), [bridge]);
+  useEffect(() => { if (event?.preference.hidden) cancelGesture(); }, [event?.preference.hidden]);
+  function down(e: PointerEvent<HTMLButtonElement>) {
+    if (!bridge?.drag || !e.isPrimary || e.button !== 0 || gesture.current) return;
+    suppressClick.current = false;
+    gesture.current = { id: e.pointerId, x: e.screenX, y: e.screenY, dragged: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag('start');
+  }
+  function move(e: PointerEvent<HTMLButtonElement>) {
+    const active = gesture.current;
+    if (!active || active.id !== e.pointerId) return;
+    if (!active.dragged && Math.hypot(e.screenX - active.x, e.screenY - active.y) >= 5) active.dragged = true;
+    if (active.dragged) { suppressClick.current = true; drag('move'); }
+  }
+  function up(e: PointerEvent<HTMLButtonElement>) {
+    if (!gesture.current || gesture.current.id !== e.pointerId) return;
+    move(e); gesture.current = null; drag('end');
+  }
+  function cancelPointer(e: PointerEvent<HTMLButtonElement>) {
+    if (gesture.current?.id === e.pointerId) cancelGesture();
+  }
   useEffect(() => bridge?.onEvent(raw => {
     const parsed = SafePetEventSchema.safeParse(raw);
     if (!parsed.success) { setError('Pet state unavailable: invalid desktop event.'); return; }
-    const next = parsed.data, key = JSON.stringify(next);
-    if (key === signature.current) return;
-    const previous = current.current;
+    const previous = current.current, next = parsed.data;
     if (previous?.projectId === next.projectId && previous.checkIn?.id === next.checkIn?.id && previous.checkIn && next.checkIn && next.checkIn.revision < previous.checkIn.revision) return;
-    signature.current = key; current.current = next; setEvent(next); setError('');
-    if (previous?.projectId !== next.projectId || previous?.checkIn?.presentationId !== next.checkIn?.presentationId) setSubmitted('');
+    current.current = next; setEvent(next); setError('');
   }), [bridge]);
+  useEffect(() => bridge?.onFocusControls?.(() => mouse.current?.focus()), [bridge]);
   async function invoke(command: PetCommand) {
-    if (!bridge || pending.current) throw new Error('Pet command unavailable');
-    pending.current = true;
-    try { await bridge.invoke(PetCommandSchema.parse(command)); }
-    finally { pending.current = false; }
+    const context = current.current;
+    try { await bridge?.invoke(PetCommandSchema.parse(command)); }
+    catch { if (context === current.current) setError(command.type === 'openChat' ? 'Conversation unavailable. Try again after reconnecting.' : 'Pet preference not saved.'); }
   }
   if (!bridge) return <main className="pet-unavailable"><h1>Pet unavailable</h1><p>Restricted desktop pet bridge required.</p></main>;
   if (!event) return <main className="pet-unavailable" role="status">{error || 'Waiting for desktop pet state…'}</main>;
-  const { preference, checkIn } = event;
-  const validQuestion = checkIn && checkIn.projectId === event.projectId && ['available', 'presented'].includes(checkIn.state) && Date.parse(checkIn.expiresAt) > Date.now();
-  const state: PetState = event.state === 'offline' ? 'offline' : preference.focus || event.state === 'snoozed' ? 'snoozed' : validQuestion ? 'waiting_for_you' : event.state === 'milestone' || event.state === 'reviewing' ? event.state : 'idle';
-  const presentation = checkIn ? `${event.projectId}:${checkIn.id}:${checkIn.presentationId}` : '';
-  return <main className="pet-surface" data-reduced-motion={preference.reducedMotion}>
-    {!preference.hidden && <div className={`pet-art pet-mouse state-${state}`} role="img" aria-label={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} />}
-    <div className="pet-bubble"><strong>{event.managerName || 'No project selected'}</strong>
-      {event.demoTiming && <small>Demo reminder timing</small>}
-      {state === 'offline' && <p>Cloud offline · check-in timing unavailable</p>}
-      {preference.hidden && <p>Pet hidden</p>}{preference.focus && <p>Focus mode · proactive question hidden</p>}
-      {validQuestion && state === 'waiting_for_you' && !preference.hidden && !preference.focus && submitted !== presentation && <Question key={presentation} question={checkIn} answer={async input => {
-        await invoke({ type: 'answer', checkInId: checkIn.id, command: { operationId: crypto.randomUUID(), expectedRevision: checkIn.revision, input } });
-        if (current.current?.projectId === event.projectId && current.current?.checkIn?.presentationId === checkIn.presentationId) setSubmitted(presentation);
-      }} snooze={async input => {
-        await invoke({ type: 'snooze', checkInId: checkIn.id, command: { operationId: crypto.randomUUID(), expectedRevision: checkIn.revision, input } });
-        if (current.current?.projectId === event.projectId && current.current?.checkIn?.presentationId === checkIn.presentationId) setSubmitted(presentation);
-      }} />}
-      {validQuestion && submitted === presentation && presentation && <p role="status">Submitted · waiting for canonical desktop state</p>}
-      {error && <p role="alert">{error}</p>}
-      <div className="actions">{event.projectId && <button onClick={() => void invoke({ type: 'openProject', projectId: event.projectId! }).catch(() => setError('Project could not be opened.'))}>Open project</button>}<button onClick={() => void invoke({ type: 'setPreference', preference: { ...preference, hidden: !preference.hidden } }).catch(() => setError('Pet preference not saved.'))}>{preference.hidden ? 'Show pet' : 'Hide pet'}</button><button aria-pressed={preference.focus} onClick={() => void invoke({ type: 'setPreference', preference: { ...preference, focus: !preference.focus } }).catch(() => setError('Pet preference not saved.'))}>Focus mode</button></div>
+  const { preference } = event;
+  if (preference.hidden) return <main className="pet-surface pet-speech" aria-label="Pet hidden; restore from tray" />;
+  const question = event.checkIn;
+  const validQuestion = question && question.projectId === event.projectId && ['available', 'presented'].includes(question.state) && Date.parse(question.expiresAt) > Date.now();
+  const state: PetState = event.state === 'offline' ? 'offline' : preference.focus || event.state === 'snoozed' ? 'snoozed' : validQuestion ? 'waiting_for_you' : event.state;
+  const thinking = event.state === 'reviewing' && !validQuestion;
+  const speech = error || (validQuestion && state === 'waiting_for_you' ? question.question : state === 'milestone' ? 'Milestone reached.' : '');
+  const passive = !preference.focus && !event.chatOpen && (thinking || !!speech);
+  return <main className="pet-surface pet-speech" data-reduced-motion={preference.reducedMotion}>
+    <div className="pet-mouse-controls">
+      <button ref={mouse} className="pet-speech-toggle" aria-label="Open conversation" title="Open conversation" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer} onBlur={cancelGesture} onClick={e => { if (e.detail !== 0 && suppressClick.current) { suppressClick.current = false; return; } if (event.chatContextId) void invoke({ type: 'openChat', contextId: event.chatContextId }); else setError('Conversation unavailable. Waiting for desktop context.'); }}>
+        <span className={`pet-art pet-mouse state-${state}`} role="img" aria-label={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} />
+      </button>
+      <div className="pet-utilities" role="group" aria-label="Pet actions">
+        <button aria-label="Hide pet" title="Hide pet" onClick={() => void invoke({ type: 'setPreference', preference: { ...preference, hidden: true } })}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" /></svg></button>
+        <button aria-label="Focus mode" title="Focus mode" aria-pressed={preference.focus} onClick={() => void invoke({ type: 'setPreference', preference: { ...preference, focus: !preference.focus } })}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 15A8 8 0 0 1 9 5a8 8 0 1 0 10 10Z" /></svg></button>
+      </div>
     </div>
+    {passive && <div className="pet-bubble" data-kind={thinking && !error ? 'thought' : 'speech'}>
+      {thinking && !error && <svg className="pet-thought-cloud" aria-hidden="true" viewBox="0 0 228 64" preserveAspectRatio="none"><path d="M30 55C6 55 2 33 20 25C16 10 42 3 58 14C70-2 101-1 115 10C136-2 165 2 172 16C194 7 216 18 211 31C235 43 219 60 198 55C179 66 153 60 143 57C118 66 90 61 79 56C58 66 40 61 30 55Z" /></svg>}
+      <div className="pet-speech-body" role="region" aria-label="Pet message" tabIndex={0}>
+        {event.demoTiming && <small>Demo reminder timing</small>}
+        <p role={error ? 'alert' : 'status'}>{thinking && !error ? 'thinking.....' : speech}</p>
+      </div>
+    </div>}
   </main>;
 }

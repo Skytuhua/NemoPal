@@ -1,0 +1,19 @@
+/* Fixed sprite host; the focusable editor lives in its own native window. */
+.pet-surface.pet-speech { --pet-paper:#fffdf5; --pet-ink:#302d24; --pet-line:#8b826d; position:relative; box-sizing:border-box; width:240px; height:280px; padding:4px; font-size:14px; line-height:1.5; }
+.pet-surface.pet-speech .pet-mouse-controls { position:absolute; right:4px; bottom:4px; width:180px; height:128px; }
+.pet-surface.pet-speech button.pet-speech-toggle { position:absolute; left:0; top:0; width:128px; height:128px; padding:0; border:0; background:transparent; touch-action:none; cursor:grab; }
+.pet-surface.pet-speech button.pet-speech-toggle:active { cursor:grabbing; }
+.pet-surface.pet-speech button.pet-speech-toggle:hover { background:transparent; }
+.pet-surface.pet-speech .pet-utilities { position:absolute; right:0; top:16px; display:grid; gap:8px; }
+.pet-surface.pet-speech .pet-utilities button { display:grid; place-items:center; width:44px; height:44px; min-height:44px; padding:0; border:1px solid var(--pet-line); border-radius:50%; background:var(--pet-paper); color:var(--pet-ink); }
+.pet-surface.pet-speech .pet-utilities button:hover { background:#eee9dc; }
+.pet-surface.pet-speech .pet-utilities button[aria-pressed='true'] { background:#dce8d9; border-color:#295b42; }
+.pet-surface.pet-speech svg:not(.pet-thought-cloud) { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.pet-surface.pet-speech .pet-bubble { position:absolute; left:4px; right:4px; bottom:144px; width:auto; max-height:132px; padding:12px; color:var(--pet-ink); background:var(--pet-paper); border:1px solid var(--pet-line); border-radius:12px; }
+.pet-surface.pet-speech .pet-bubble::after { content:''; position:absolute; right:96px; bottom:-6px; width:10px; height:10px; background:var(--pet-paper); border-right:1px solid var(--pet-line); border-bottom:1px solid var(--pet-line); transform:rotate(45deg); }
+.pet-speech-body { position:relative; max-height:106px; overflow:auto; overflow-wrap:anywhere; scrollbar-width:thin; scrollbar-color:var(--pet-line) var(--pet-paper); }
+.pet-speech-body p { margin:0; }
+.pet-surface.pet-speech .pet-bubble[data-kind='thought'] { border:0; background:transparent; min-height:70px; display:grid; place-items:center; }
+.pet-thought-cloud { position:absolute; inset:0; width:100%; height:100%; fill:var(--pet-paper); stroke:var(--pet-line); stroke-width:1; }
+.pet-surface.pet-speech .pet-bubble[data-kind='thought']::after { width:7px; height:7px; bottom:-6px; border:1px solid var(--pet-line); border-radius:50%; transform:none; }
+.pet-surface.pet-speech :focus-visible { outline:3px solid #295b42; outline-offset:-3px; }

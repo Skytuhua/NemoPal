@@ -1,11 +1,41 @@
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
 import { App } from '../../apps/web/src/app/App';
 import { deferred, memoryDrafts, snapshot } from './helpers';
+import { useDraft } from '../../apps/web/src/features/documents/useDraft';
 afterEach(cleanup);
+test('a successful current draft write clears an earlier persistence error', async () => {
+  const store = memoryDrafts(), write = store.write;
+  let fail = true;
+  store.write = async (key, value) => { if (fail) throw Error('disk full'); await write(key, value); };
+  const { result } = renderHook(() => useDraft(store, 'synthetic-draft', '', 0));
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  act(() => result.current.change({ text: 'keep', baseRevision: 0 }));
+  await waitFor(() => expect(result.current.error).not.toBe(''));
+  fail = false;
+  await act(async () => result.current.retry());
+  await waitFor(() => expect(result.current.error).toBe(''));
+  expect(await store.read('synthetic-draft')).toEqual({ text: 'keep', baseRevision: 0 });
+});
+test('an older successful retry cannot clear a newer draft failure', async () => {
+  const store = memoryDrafts(), old = deferred<void>();
+  let rejectNew!: (error: Error) => void;
+  const newer = new Promise<void>((_resolve, reject) => { rejectNew = reject; });
+  store.write = async (_key, value) => value.text === 'old' ? old.promise : newer;
+  const { result } = renderHook(() => useDraft(store, 'synthetic-draft', '', 0));
+  await waitFor(() => expect(result.current.ready).toBe(true));
+  act(() => result.current.change({ text: 'old', baseRevision: 0 }));
+  const retry = result.current.retry();
+  act(() => result.current.change({ text: 'new', baseRevision: 0 }));
+  await act(async () => rejectNew(Error('disk full')));
+  expect(result.current.error).not.toBe('');
+  await act(async () => { old.resolve(); await retry; });
+  expect(result.current.error).not.toBe('');
+  expect(result.current.draft.text).toBe('new');
+});
 test('document and chat drafts persist before switching project and after remount', async () => {
   const client = createFixtureClient({ snapshots: [snapshot(), snapshot(100)] }), drafts = memoryDrafts();
   const view = render(<App client={client} drafts={drafts} fixture />);
