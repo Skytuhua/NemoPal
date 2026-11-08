@@ -1,8 +1,8 @@
 # T03 / J2 model gate - 2026-11-07
 
-Live acceptance: **BLOCKED / HOSTED ATTEMPTS DENIED**. The entry point and response correction were reviewed before Lead attempted the hosted probe. Two HTTP submissions were consumed without qualifying native tool or proposal behavior; the diagnostic attempt returned HTTP 403. No full-app J2 acceptance is claimed.
+Model capability gate: **LIVE PASS**, with the newly supplied Build key on Nemotron 3.5 Lightning. Three HTTP 200 submissions completed automatic tool selection, scoped tool-result interpretation, strict proposal and authority validation in about 14 seconds. **Full-app J2 remains unverified.** Earlier denied attempts are retained below.
 
-Operator reports both the Brev VM and hosted NVIDIA API ready. Lead reused the previously supplied private key; NVIDIA's model metadata endpoint returned 200, while the hosted inference diagnostic returned 403. Lead requested a key with inference access privately. The implementation worker received no credential and made no real requests. No VM operation has been performed for this hosted attempt.
+Operator reports both the Brev VM and hosted NVIDIA API ready. Lead first reused the previous private key and recorded denied hosted submissions, then used the new key supplied through a private card. The implementation worker received no credential and made no real requests. No VM operation was needed for the successful hosted probe.
 
 ## Entry point and guards
 
@@ -63,3 +63,13 @@ Reviewed/tested source: 3a5f09dd8789a37ed39355b3882c255432ff99ff. Official HTTPS
 Lead used the existing private key without printing or copying it into the repository. The first guarded production probe submitted one request and blocked before native tool selection. A diagnostic retry retained the same model/production gate and captured only HTTP status; it returned 403. The retry used only the remaining three-call / 114279-reservation allowance, not a fresh four-call budget.
 
 Cumulative receipt: 2 HTTP submissions of the declared maximum 4; 33586 conservative reserved units of 131072. Both probes stayed BLOCKED with all native-tool/result/schema/authority capability flags false and fullAppVerified false. No transcript/source data, API key, provider body or model content was retained in public evidence. No model generation success or dollar charge is inferred from HTTP submission counts. No further inference requests may consume the remaining two slots until usable access/configuration is available. Private detailed safe receipts remain with Lead; the key itself remains outside the repository.
+
+## Live capability PASS with new Build key
+
+Lead executed the independently reviewed production entry/adapter using the new privately supplied key and exact model nvidia/nemotron-3.5-lightning-30b-a3b at https://integrate.api.nvidia.com/v1. This is a different served model from the earlier Brev9B and retired Nano3 attempts. NVIDIA's current model page marks Lightning's free endpoint available; the older Nano3 page marks its free endpoint deprecated, so that first 403 alone did not establish an invalid key.
+
+Source tested: be586bcfe96ae78529cd0dd61ff2c123f48fa164 (production code identical to reviewed3a5f09d). Start2026-11-08T01:03:55.643Z; finish01:04:09.230Z. New-credential attempt: HTTP[200,200,200], 3submissions of maximum4, 52632 conservative reserved units of131072, 120000ms deadline. Automatic tool selection, tool-result interpretation, strict full proposal schema and proposal-authority validation all true. The third call is the one permitted model correction; no client output rewriting or grammar guarantee was used. fullAppVerified remains false.
+
+Previous credential attempts consumed3 denied submissions, including an HTTP403 on the currently available Lightning endpoint. New attempt had a separately declared4-call bound; cumulative submitted requests across both credentials are6. The old pending key requests were cancelled before the final successful private submission. Neither key, a key hash, provider content nor source data was printed or committed. No source export, database mutation, app inference enablement, VM operation or deployment was performed by this standalone capability test.
+
+Safe identity hashes: endpoint SHA256 adce5cab6ed01787cddac55a52227d516d0b749d95e2cf056e16df698049b4dc; model SHA256 57b7e204b183bff6d5ebf22bb3cce561705ec6d10fbf1b7248f2325c58dc5f85. Served identity was required to match the configured model on every response. Lead retains the safe timed JSON receipt privately. Complete J2 still requires actual app generation, owner edit and reload; this PASS does not establish that journey or J3-J5.
