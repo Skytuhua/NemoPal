@@ -142,7 +142,8 @@ async function start() {
     });
     void cycle();
   }
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit: () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); }, error: action => {
+  const quit = () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); };
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
     if (action) reportWithdrawalFailure();
     else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
   } });
@@ -273,11 +274,13 @@ async function start() {
   app.on('second-instance', open);
   app.on('window-all-closed', () => {});
   app.on('activate', open);
-  app.on('before-quit', event => { if (!quitting) { event.preventDefault(); void lifetime.quit(); } });
+  app.on('before-quit', event => { event.preventDefault(); quit(); });
   powerMonitor.on('suspend', () => { suspended = true; eventsAbort?.abort(); void sources.stop(); disconnect(); });
   powerMonitor.on('resume', () => { void (async () => { await sources.stop(); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })(); });
   windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); if (event) windows.pet.webContents.send('lp:pet-event', event); else windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse({ type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() })); });
-  await windows.load();
+  try { await windows.load(); }
+  catch (error) { if (quitting) return; throw error; }
+  if (quitting) return;
   windows.workspace.show(); if (!store.preference().hidden) windows.pet.showInactive();
   await cycle();
 }
