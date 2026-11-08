@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -42,12 +44,16 @@ jobs:
       LP_REMINDERS_CONSENT: 'false'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24.14.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsx --test tests/build-output-audit.test.ts
       - run: pnpm exec vitest run --maxWorkers=1 --no-file-parallelism
       - run: pnpm build
+      - run: pnpm exec tsx scripts/audit-build-output.ts
       - run: pnpm evidence:check

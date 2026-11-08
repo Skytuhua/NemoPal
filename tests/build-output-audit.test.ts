@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { auditBuildOutput } from '../scripts/audit-build-output';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 
 const outputs = [
   'apps/cloud/dist/main.js', 'apps/cloud/dist/main.js.map',
@@ -192,4 +194,54 @@ test('CLI rejects path options before inspecting an arbitrary target', () => {
 test('credential-shaped asset names are blocked without disclosing the name', () => fixture(root => {
   write(root, `apps/web/dist/assets/nvapi-${'SYNTHETIC'.repeat(8)}.js`);
   assert.throws(() => auditBuildOutput(root), { message: 'Build audit blocked: credential-like file name.' });
+}));
+
+test('directory enumeration stops at the first over-limit entry', () => fixture(root => {
+  for (let i = 0; i < 2048; i++) write(root, `apps/web/dist/assets/extra-${i}.js`);
+  let enumerated = 0;
+  const readDirectory = fs.readdirSync, openDirectory = fs.opendirSync;
+  fs.readdirSync = ((...args: Parameters<typeof readDirectory>) => {
+    const names = readDirectory(...args); enumerated += names.length; return names;
+  }) as typeof readDirectory;
+  fs.opendirSync = ((...args: Parameters<typeof openDirectory>) => {
+    const directory = openDirectory(...args), read = directory.readSync.bind(directory);
+    directory.readSync = () => { const entry = read(); if (entry) enumerated++; return entry; };
+    return directory;
+  }) as typeof openDirectory;
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => auditBuildOutput(root), /inventory limit/);
+    assert.ok(enumerated <= 1025, `enumerated ${enumerated} entries`);
+  } finally { fs.readdirSync = readDirectory; fs.opendirSync = openDirectory; syncBuiltinESMExports(); }
+}));
+
+for (const layers of [0, 1, 2]) test(`recognizes Unicode credential text with ${layers} JSON escape layers`, () => fixture(root => {
+  const synthetic = 'nvapi-' + 'SYNTHETIC'.repeat(5);
+  let encoded = [...synthetic].map(c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).join('');
+  for (let i = 0; i < layers; i++) encoded = JSON.stringify({ sourcesContent: [encoded] });
+  write(root, outputs[1]!, encoded);
+  assert.throws(() => auditBuildOutput(root), { message: 'Build audit blocked: credential-like text.' });
+}));
+
+const spritePath = 'apps/web/dist/assets/pixel-mouse-idle-v1-test.png';
+function approvedSprite() {
+  // Public reviewed fixture from PR29; full Git history avoids duplicating the binary.
+  const result = spawnSync('git', ['show', '811cd5a63b985b74cbdd0897895fa823d3aeda5d:assets/pet/pixel-mouse-idle-v1.png'],
+    { cwd: fileURLToPath(new URL('../', import.meta.url)), maxBuffer: 2 * 1024 * 1024 });
+  assert.equal(result.status, 0, 'The pinned approved asset must be available in Git history');
+  return result.stdout;
+}
+test('the digest-pinned approved mouse PNG is included as opaque bytes', () => fixture(root => {
+  writeFileSync(join(root, spritePath), approvedSprite());
+  const result = auditBuildOutput(root);
+  assert.equal(result.fileCount, 11);
+  assert.deepEqual(result.files.find(file => file.path === spritePath), { path: spritePath, bytes: 960766,
+    sha256: '215aabdb08587e857d675451f6631afbb4c1d5133cae77c310574eea05778e7e' });
+}));
+for (const change of ['changed', 'appended', 'other-name'] as const) test(`a ${change} PNG is rejected`, () => fixture(root => {
+  const bytes = Buffer.from(approvedSprite());
+  if (change === 'changed') bytes[100] = bytes[100]! ^ 1;
+  writeFileSync(join(root, change === 'other-name' ? 'apps/web/dist/assets/other-image.png' : spritePath),
+    change === 'appended' ? Buffer.concat([bytes, Buffer.from('extra')]) : bytes);
+  assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
 }));

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, type Stats } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, opendirSync, readSync, realpathSync, type Stats } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +12,8 @@ const required = [
 ];
 const directories = new Set([...roots, 'apps/web/dist/assets', 'apps/desktop/dist/main', 'apps/desktop/dist/preload']);
 const maxFiles = 512, maxEntries = 1024, maxFileBytes = 16 * 1024 * 1024, maxTotalBytes = 64 * 1024 * 1024;
+const mouseAsset = /^apps\/web\/dist\/assets\/pixel-mouse-idle-v1-[A-Za-z0-9_-]+\.png$/;
+const mouseSha256 = '215aabdb08587e857d675451f6631afbb4c1d5133cae77c310574eea05778e7e';
 const forbiddenName = /(?:^|[._-])(?:env|credentials?|secrets?|tokens?|pairing|journal|history|sessions?|logs?|device|id_rsa|id_ed25519)(?:[._-]|$)|^\.(?:git|codex|ssh)$|\.(?:jsonl|pem|key|pfx|p12|protected|sqlite3?|db|log)$/i;
 const credentialPatterns = [
   /\b(?:nvapi-|sk-(?:proj-)?|ghp_|github_pat_)[A-Za-z0-9_-]{20,}/,
@@ -70,9 +72,15 @@ function inspect(root: string) {
     const { absolute, stat } = checked(path);
     if (stat.isDirectory()) {
       if (!directories.has(path)) block('unexpected output directory');
-      const names = readdirSync(absolute).sort(compare);
-      entries += names.length;
-      if (entries > maxEntries) block('inventory limit');
+      const names: string[] = [], directory = opendirSync(absolute);
+      try {
+        let entry;
+        while ((entry = directory.readSync()) !== null) {
+          if (++entries > maxEntries) block('inventory limit');
+          names.push(entry.name);
+        }
+      } finally { directory.closeSync(); }
+      names.sort(compare);
       for (const name of names) {
         if (forbiddenName.test(name)) block('forbidden file name');
         if (credentialPatterns.some(pattern => pattern.test(name))) block('credential-like file name');
@@ -82,7 +90,7 @@ function inspect(root: string) {
     }
     if (!stat.isFile()) block('non-regular output');
     if (stat.nlink !== 1) block('hard link');
-    if (!required.includes(path) && !/^apps\/web\/dist\/assets\/[A-Za-z0-9_-]+\.(?:js|css|svg)$/.test(path)) block('unexpected output file');
+    if (!required.includes(path) && !/^apps\/web\/dist\/assets\/[A-Za-z0-9_-]+\.(?:js|css|svg)$/.test(path) && !mouseAsset.test(path)) block('unexpected output file');
     if (stat.size === 0) block('empty output');
     totalBytes += stat.size;
     if (stat.size > maxFileBytes || totalBytes > maxTotalBytes) block('size limit');
@@ -117,13 +125,24 @@ function inspect(root: string) {
       const after = fstatSync(fd);
       if (after.size !== current.size || after.mtimeMs !== current.mtimeMs) block('output changed during audit');
     } finally { closeSync(fd); }
+    const sha256 = hash(bytes);
+    if (mouseAsset.test(file.path)) {
+      // Only the reviewed immutable sprite may bypass text decoding; no general PNG admission.
+      if (bytes.length !== 960766 || sha256 !== mouseSha256) block('sprite digest mismatch');
+      files.push({ path: file.path, bytes: bytes.length, sha256 });
+      continue;
+    }
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     // Also inspect ordinary JSON/source-map escaped quotes and unicode escapes.
     let decoded = text;
-    for (let pass = 0; pass < 2; pass++) decoded = decoded.replace(/\\u([a-f0-9]{4})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/\\([\\"'/])/g, '$1');
-    if (credentialPatterns.some(pattern => pattern.test(text) || pattern.test(decoded))) block('credential-like text');
+    if (credentialPatterns.some(pattern => pattern.test(text))) block('credential-like text');
+    for (let pass = 0; pass < 2; pass++) {
+      decoded = decoded.replace(/\\([\\"'/])/g, '$1');
+      const unicode = decoded.replace(/\\u([a-f0-9]{4})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+      if (credentialPatterns.some(pattern => pattern.test(decoded) || pattern.test(unicode))) block('credential-like text');
+    }
     if (file.path === 'apps/web/dist/index.html') indexHtml = text;
-    files.push({ path: file.path, bytes: bytes.length, sha256: hash(bytes) });
+    files.push({ path: file.path, bytes: bytes.length, sha256 });
   }
   const references = [...indexHtml.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)].map(match => match[1]!);
   if (!references.some(ref => ref.endsWith('.js')) || !references.some(ref => ref.endsWith('.css'))) block('missing web asset reference');

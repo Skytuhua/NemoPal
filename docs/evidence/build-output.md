@@ -139,3 +139,37 @@ Parent owns receipt acknowledgment, later review/integration and direct-child
 cleanup: confirm `status: completed`, `workState: result_available` and
 `hasPendingChildRuns: false` via `task_status`, then recoverably archive the
 returned child thread. This implementation does not watch, merge or self-archive.
+
+## Parent correction after independent review
+
+The baseline receipt above describes original PR27
+`03cf2c5dcffdbce44cd97d420b0c23e19a6fc586`. Independent review found that
+`readdirSync` materialized all entries before enforcing the advertised bound,
+and common JSON-escaped Unicode credential strings escaped the scan. The parent
+added failing enumeration and Unicode/source-map fixtures before correcting them.
+Directory handles now enforce the aggregate limit as each entry is read and are
+closed on every exit; only the bounded names are sorted. Credential inspection
+checks original text and Unicode views after each of two bounded JSON slash/
+quote unescape passes. Arbitrary encodings remain outside the claimed coverage.
+
+The approved PR29 mouse is an explicit composition exception, not general image
+support. Only `assets/pixel-mouse-idle-v1-<generated>.png` with exactly **960766
+bytes** and SHA-256
+`215aabdb08587e857d675451f6631afbb4c1d5133cae77c310574eea05778e7e`
+can bypass UTF-8 decoding. All inventory/link/size checks still apply; its raw
+bytes and digest enter the manifest. Different names, changed or appended bytes
+fail closed. The positive fixture reads the pinned public Git blob from PR29
+commit `811cd5a63b985b74cbdd0897895fa823d3aeda5d`, avoiding a duplicate binary.
+Full-history CI checkout retains that fixture. No private file is used.
+
+Parent local verification: **55 Node fixtures PASS**, typecheck, production build,
+baseline own-output audit and diff checks PASS. Four new regression assertions
+failed against the old audit: unbounded enumeration, one/two JSON escape layers
+and approved PNG admission. A first pnpm-filter invocation failed in the Windows
+command shim before tests ran; the direct Node runner then supplied the actual
+RED/GREEN evidence. The workflow now explicitly runs the Node fixtures and audits
+the completed build. Existing baseline output hashes above remain historical;
+the parent joined build with the mouse still requires its own new manifest after
+review/integration. No root checkout/J2 resource, DB, native GUI, source, model,
+provider or secret was accessed by these correction checks. Fresh independent
+correction review remains required before merge.
