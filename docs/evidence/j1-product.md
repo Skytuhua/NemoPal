@@ -36,3 +36,14 @@ Tested script SHA-256: `2944c7cf617d83d9c80a22375b0db75ebe82a098f946fbd7c89edbcc
 Parent separately reported its joined-source serial suite: 63 files / 264 tests passed. This lane did not rerun that DB suite.
 
 This acceptance does not prove live inference, generated panels, source observation/export, reminders, hosted deployment, packaging or user visual approval. No artificial RED result is claimed for an existing product acceptance journey.
+
+## Parent review corrections and independent native rerun
+
+Independent review identified unbounded native evaluations and possible foreign-owner scheduler changes. Both profile and safeStorage evaluations now use the existing finite bound, extracted into j1-safety.ts. A read-only preflight runs before grant creation or cloud spawn and blocks on another active project's open check-in or excerpt; all foreign excerpts are conservatively blocked so they cannot expire during the journey. No existing owner is deleted or changed to satisfy the guard. A blocked preflight does not attempt synthetic-owner cleanup writes.
+
+Four dedicated PostgreSQL/safety regressions pass, including unchanged foreign check-in/excerpt fixtures and a stalled evaluation reaching cleanup. Initial test setup reported the missing helper import; that is not claimed as behavioral RED. The independent review's original reproductions establish the two defects. Typecheck and diff checks pass, and a separate code-reviewer found no findings in the correction.
+
+Parent independently reran the actual production Windows J1 command after the correction: PASS, exit 0, about 5.9 seconds. All original boolean receipts, actual safeStorage/pairing/save/reload/full-restart and owned process/owner/profile cleanup passed. Model, source, export and reminders stayed off. No further DB/native instances remain from this run. This native rerun covers the corrected harness; J2-J5 remain outside it.
+
+Parent-tested script SHA-256: 70d177d04599f198cc23a93f9412a4bf549acd167059332800075f3ef60b13e4
+Parent-tested safety helper SHA-256: 087ae98bfaf3be468f1b407c8e73d0dfb7c49aba79214530461caba5a23f99e1
