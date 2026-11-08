@@ -92,24 +92,24 @@
                   {
                       "id":  "A09",
                       "scenario":  "Read-only Codex observation",
-                      "status":  "blocked",
-                      "mode":  "none",
-                      "commit":  null,
+                      "status":  "passed",
+                      "mode":  "live",
+                      "commit":  "870e98eeea70ef33090a5de08a2f4417d270fa30",
                       "evidence":  [
-
+                                       "docs/evidence/live-observer.md"
                                    ],
-                      "reason":  "Needs one named harmless vendor source, explicit local-read consent and actual read-only observation evidence."
+                      "reason":  "Installed read-only adapter observed only the exact owned harmless source; ordinary producer turns were initiated separately by the caller, with export OFF and reader process exit confirmed."
                   },
                   {
                       "id":  "A10",
                       "scenario":  "Two fresh persisted source items",
-                      "status":  "blocked",
-                      "mode":  "none",
-                      "commit":  null,
+                      "status":  "passed",
+                      "mode":  "live",
+                      "commit":  "870e98eeea70ef33090a5de08a2f4417d270fa30",
                       "evidence":  [
-
+                                       "docs/evidence/live-observer.md"
                                    ],
-                      "reason":  "Two fresh persisted items have not been observed from an explicitly selected real source."
+                      "reason":  "Two distinct fresh persisted items were observed through installed Codex 0.166.0 with provenance and 652/935 ms detection latency; journal/ingest/manager J3 is not established."
                   },
                   {
                       "id":  "A11",
