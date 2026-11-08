@@ -1,0 +1,151 @@
+.workspace-window { background: #050505; overflow: hidden; }
+.workspace-window, .workspace-window #root { height: 100%; min-height: 0; min-width: 0; }
+.workspace-root { height: 100%; min-height: 0; }
+.workspace-ui [hidden] { display: none !important; }
+.desktop-shell { height: 100dvh; display: grid; grid-template-rows: 44px minmax(0, 1fr); overflow: hidden; background: #050505; }
+.desktop-shell .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.desktop-shell .skip-link { position: fixed; top: -80px; left: 12px; z-index: 100; padding: 10px 16px; background: #fafafa; color: #111; border-radius: 6px; }
+.desktop-shell .skip-link:focus { top: 6px; }
+.desktop-toolbar { display: flex; gap: 8px; align-items: center; min-width: 0; padding: 0 12px; border-bottom: 1px solid #252525; background: #090909; }
+.desktop-context { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bdbdbd; font-size: 13px; }
+.demo-indicator { padding: 2px 7px; border: 1px solid #383838; border-radius: 4px; color: #c3c3c3; font-size: 11px; }
+.offline-indicator { color: #efb989; font-size: 12px; }
+.desktop-toolbar button { min-height: 30px; font-size: 12px; }
+.pane-container { min-height: 0; min-width: 0; overflow: hidden; }
+.desktop-pane { position: relative; inset: auto; width: 100%; max-width: none; height: 100%; gap: 0; border: 0; box-shadow: none; background: #0a0a0a; }
+.projects-pane { background: #0b0b0b; }
+.manager-pane { background: #0c0c0c; }
+.desktop-shell [data-slot=resizable-handle] { background: #111; border-inline: 1px solid #242424; transition: background 100ms ease; }
+.desktop-shell [data-slot=resizable-handle]:hover, .desktop-shell [data-slot=resizable-handle]:focus-visible, .desktop-shell [data-separator=active] { background: #666; }
+.desktop-shell [data-slot=resizable-handle] > div { width: 4px; height: 32px; border: 0; background: #454545; border-radius: 4px; }
+.desktop-shell [data-slot=resizable-handle] > div svg { display: none; }
+.projects-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 18px 12px 12px; }
+.workspace-brand { display: flex; gap: 10px; align-items: center; padding: 0 6px 20px; flex: none; }
+.workspace-brand strong { font-size: 15px; letter-spacing: -.025em; }
+.workspace-mouse { flex: none; width: 34px; height: 34px; background: url('../../../../assets/pet/pixel-mouse-idle-v1.png') 0 0 / 400% 400% no-repeat; image-rendering: pixelated; }
+.project-filter { flex: none; margin-bottom: 22px; }
+.project-filter input { height: 36px; font-size: 13px; background: #141414; }
+.sidebar-caption { padding: 0 8px 8px; color: #848484; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; }
+.project-list { flex: 1; min-height: 48px; overflow: auto; margin: 0; padding: 0; list-style: none; scrollbar-width: thin; scrollbar-color: #373737 transparent; }
+.project-list li { margin-bottom: 4px; }
+.project-list button { display: flex; gap: 9px; align-items: flex-start; width: 100%; height: auto; min-height: 65px; padding: 11px 10px; border: 1px solid transparent; border-radius: 7px; text-align: left; background: transparent; color: #b9b9b9; }
+.project-list button:hover { background: #181818; }
+.project-list button[aria-current] { border-color: #363636; background: #202020; color: #fafafa; }
+.project-list strong { display: block; font-size: 13px; line-height: 1.45; font-weight: 550; overflow-wrap: anywhere; }
+.project-list small { display: block; margin-top: 5px; font-size: 11px; color: #a0a0a0; }
+.project-list .project-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: #a8c6ad; flex: none; }
+.new-project { flex: none; margin-top: 12px; }
+.new-project summary { padding: 8px 10px; border: 1px solid #363636; border-radius: 6px; cursor: pointer; font-size: 13px; list-style: none; }
+.new-project summary::before { content: '+'; margin-right: 8px; font-size: 17px; }
+.new-project[open] { max-height: 55%; overflow: auto; scrollbar-width: thin; }
+.new-project form { display: grid; gap: 12px; padding: 14px 2px; }
+.new-project label { display: grid; gap: 5px; color: #d0d0d0; font-size: 12px; }
+.sidebar-footer { flex: none; margin-top: 14px; padding-top: 10px; border-top: 1px solid #252525; }
+.sidebar-footer button { width: 100%; justify-content: flex-start; font-size: 12px; color: #b1b1b1; }
+.workspace-surface { height: 100%; min-height: 0; overflow: auto; padding: 26px clamp(18px, 2.2vw, 42px) 32px; background: #080808; scrollbar-width: thin; scrollbar-color: #363636 transparent; }
+.workspace-content, .project-settings { max-width: 1220px; margin-inline: auto; min-width: 0; }
+.project-heading { margin-bottom: 22px; }
+.project-heading h1 { font-size: 27px; line-height: 1.22; font-weight: 600; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.project-heading > p { color: #a1a1a1; font-size: 13px; line-height: 1.6; margin-top: 7px; }
+.project-heading .actions { margin-top: 15px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; color: #b6b6b6; font-size: 12px; }
+.project-progress { width: 120px; height: 4px; border: 0; border-radius: 4px; accent-color: #a9c8af; }
+.project-progress::-webkit-progress-bar { background: #292929; border-radius: 4px; }
+.project-progress::-webkit-progress-value { background: #a9c8af; border-radius: 4px; }
+.desktop-shell .catalog { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; min-width: 0; }
+.desktop-shell .workspace-panel { position: relative; min-width: 0; border: 1px solid #2a2a2a; background: #121212; border-radius: 10px; padding: 14px; }
+.desktop-shell .workspace-panel h2 { margin-bottom: 14px; font-size: 13px; font-weight: 600; color: #f0f0f0; }
+.desktop-shell .panel-next_action, .desktop-shell .panel-milestone_timeline { grid-column: 1 / -1; }
+.desktop-shell .panel-next_action { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px 18px; align-items: center; border-color: #3a443d; background: #161b17; }
+.desktop-shell .panel-next_action h2 { grid-column: 1; margin: 0; font-size: 10px; color: #a9c8af; text-transform: uppercase; letter-spacing: .09em; }
+.desktop-shell .panel-next_action > p { grid-column: 1; font-size: 17px; line-height: 1.4; font-weight: 550; overflow-wrap: anywhere; }
+.desktop-shell .panel-next_action > button { grid-column: 2; grid-row: 1 / 3; }
+.desktop-shell .panel-next_action > small { display: none; }
+.desktop-shell .panel-milestone_timeline { padding: 15px 17px 17px; background: #0e0e0e; }
+.desktop-shell .timeline { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 10px; counter-reset: step; }
+.desktop-shell .timeline li { min-width: 0; position: relative; border-top: 1px solid #383838; padding-top: 10px; }
+.desktop-shell .timeline button { color: #d6d6d6; text-align: left; font-size: 11px; font-weight: 500; border: 0; padding: 0; background: transparent; line-height: 1.5; text-decoration: none; }
+.desktop-shell .timeline small { display: block; color: #8f8f8f; margin-top: 5px; font-size: 10px; }
+.desktop-shell .task-list { display: grid; gap: 0; }
+.desktop-shell .task-list li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-top: 1px solid #282828; }
+.desktop-shell .task-list li > div { min-width: 0; font-size: 12px; line-height: 1.4; }
+.desktop-shell .task-list li:first-child { border-top: 0; padding-top: 0; }
+.desktop-shell .task-list li:last-child { padding-bottom: 0; }
+.desktop-shell .task-list strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.desktop-shell .task-list small { display: block; color: #858585; font-size: 10px; line-height: 1.5; margin-top: 3px; }
+.desktop-shell .task-list select { max-width: 96px; width: 96px; font-size: 11px; }
+.desktop-shell :is(.workspace-panel,.project-settings) :is(button,select,input,textarea) { border: 1px solid #3c3c3c; border-radius: 6px; background: #1d1d1d; color: #ededed; font: inherit; font-size: 12px; padding: 7px 9px; min-height: 34px; max-width: 100%; }
+.desktop-shell :is(.workspace-panel,.project-settings) button:hover:not(:disabled) { background: #2b2b2b; }
+.desktop-shell :is(.workspace-panel,.project-settings) :is(button,select):disabled { opacity: .45; cursor: not-allowed; }
+.desktop-shell :is(.workspace-panel,.project-settings) textarea { width: 100%; line-height: 1.6; min-height: 140px; resize: vertical; }
+.desktop-shell .document-copy { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; background: #1b1b1b; padding: 12px; }
+.desktop-shell .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.desktop-shell .workspace-panel small { color: #9c9c9c; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.desktop-shell .workspace-panel details > summary { cursor: pointer; color: #c9c9c9; font-size: 12px; line-height: 1.5; }
+.desktop-shell .workspace-panel details > p { margin-top: 10px; color: #c5c5c5; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.desktop-shell .workspace-panel details > small { display: block; margin-top: 8px; }
+.desktop-shell .workspace-panel .timeline button { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #d6d6d6; font-size: 11px; line-height: 1.45; }
+.desktop-shell .workspace-panel .timeline small { font-size: 10px; }
+.desktop-shell .panel-checklist { grid-row: span 2; }
+.desktop-shell .question { display: grid; gap: 10px; }
+.desktop-shell .question > p { font-size: 14px; line-height: 1.5; }
+.desktop-shell .question .actions { margin: 0; }
+.desktop-shell .question label { display: grid; gap: 5px; color: #a0a0a0; font-size: 11px; }
+.desktop-shell .project-settings { display: grid; gap: 22px; }
+.settings-heading { display: flex; gap: 16px; justify-content: space-between; align-items: center; }
+.settings-heading h2 { font-size: 20px; font-weight: 600; }
+.desktop-shell .project-controls { display: flex; flex-wrap: wrap; gap: 16px; }
+.desktop-shell .project-controls label { display: grid; gap: 8px; min-width: 160px; color: #a4a4a4; font-size: 12px; }
+.desktop-shell .connection-status { padding: 16px; border: 1px solid #303030; border-radius: 8px; color: #aaa; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.desktop-shell .source-controls { padding: 16px; border: 1px solid #303030; border-radius: 8px; }
+.desktop-shell .source-controls summary { cursor: pointer; font-weight: 550; font-size: 14px; }
+.desktop-shell .source-controls p { font-size: 12px; color: #adadad; line-height: 1.7; margin-block: 12px; }
+.desktop-shell .source-controls small { color: #999; font-size: 11px; }
+.desktop-shell .source-row { padding-block: 15px; border-bottom: 1px solid #303030; }
+.desktop-shell .source-controls :is(form,fieldset) { display: grid; gap: 12px; min-width: 0; margin-block: 14px; }
+.desktop-shell .source-controls label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.desktop-shell .source-controls label:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+.desktop-shell .source-controls input[type=checkbox] { width: 18px; height: 18px; min-height: 18px; }
+.desktop-shell .notice { padding: 13px 15px; margin-bottom: 16px; border: 1px solid #494037; background: #201b16; border-radius: 7px; font-size: 12px; color: #e4cfb6; line-height: 1.6; }
+.desktop-shell .notice button { margin-top: 8px; }
+.desktop-shell .error, .desktop-shell [role=alert] { color: #f4a2a2; }
+.desktop-shell .empty { display: grid; gap: 15px; padding-block: 25px; color: #a4a4a4; font-size: 13px; }
+.desktop-shell .empty button { justify-self: start; }
+.desktop-shell .chat-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.manager-heading { flex: none; display: flex; gap: 12px; align-items: center; padding: 20px; border-bottom: 1px solid #292929; }
+.manager-avatar { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 1px solid #3c3c3c; border-radius: 11px; background: #1c1c1c; color: #c8d2c7; }
+.manager-avatar svg { width: 22px; height: 22px; }
+.manager-heading h2 { font-size: 15px; font-weight: 600; }
+.manager-heading small { display: block; margin-top: 2px; color: #929292; font-size: 11px; overflow-wrap: anywhere; }
+.manager-scroll { flex: 1; min-height: 0; overflow: auto; padding: 18px 20px; scrollbar-width: thin; scrollbar-color: #373737 transparent; }
+.manager-checkin { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 13px; border: 1px solid #3c4037; border-radius: 8px; background: #171a14; margin-bottom: 25px; }
+.manager-checkin > span { font-size: 10px; text-transform: uppercase; letter-spacing: .09em; color: #bec9a8; }
+.manager-checkin > p { margin-block: 8px 10px; font-size: 13px; line-height: 1.6; }
+.manager-checkin button { font-size: 11px; height: 30px; min-height: 30px; }
+.messages > p { color: #919191; font-size: 12px; line-height: 1.7; }
+.messages article { padding-block: 0 22px; }
+.messages article strong { font-size: 11px; color: #9b9b9b; font-weight: 500; }
+.messages article p { color: #d4d4d4; font-size: 13px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 5px; }
+.messages article small { color: #929292; font-size: 10px; }
+.composer { flex: none; display: grid; gap: 8px; padding: 15px; border-top: 1px solid #2a2a2a; background: #0c0c0c; }
+.composer > label { font-size: 11px; color: #aaa; }
+.composer textarea { width: 100%; min-height: 76px; max-height: min(180px,30dvh); resize: none; padding: 10px 12px; font-size: 13px; line-height: 1.6; background: #171717; border-color: #3b3b3b; }
+.composer-bottom { display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+.composer-bottom small { font-size: 10px; color: #939393; line-height: 1.5; }
+.composer-bottom button { flex: none; height: 32px; font-size: 11px; padding-inline: 14px; }
+.composer [role=status], .composer [role=alert] { font-size: 11px; overflow-wrap: anywhere; }
+.drawer-backdrop { position: fixed; inset: 0; z-index: 40; border: 0; background: #0009 !important; cursor: default !important; }
+.desktop-shell[data-narrow=true] .desktop-pane { position: fixed; inset-block: 0; z-index: 50; max-width: calc(100vw - 28px); box-shadow: 0 0 50px #0008; }
+.desktop-shell[data-narrow=true] .projects-pane { left: 0; width: var(--projects-width); border-right: 1px solid #444; }
+.desktop-shell[data-narrow=true] .manager-pane { right: 0; width: var(--manager-width); border-left: 1px solid #444; }
+.desktop-shell[data-narrow=true] .projects-surface { padding-top: 28px; }
+.desktop-shell[data-narrow=true] .manager-heading { padding-top: 32px; }
+.workspace-ui .unavailable { max-width: 600px; padding: 48px 28px; margin-inline: auto; display: grid; gap: 20px; }
+.workspace-ui .unavailable h1 { font-size: 25px; font-weight: 600; }
+.workspace-ui .unavailable p { color: #b0b0b0; font-size: 14px; line-height: 1.7; }
+.workspace-ui .unavailable form { display: grid; gap: 15px; }
+.workspace-ui .unavailable label { display: grid; gap: 6px; }
+.workspace-ui .unavailable input, .workspace-ui .unavailable button { border: 1px solid #424242; border-radius: 6px; padding: 10px 12px; background: #1c1c1c; color: #eee; }
+@container (max-width: 540px) { .desktop-shell .catalog { grid-template-columns: minmax(0,1fr); } .desktop-shell .panel-checklist { grid-row: auto; } .desktop-shell .timeline { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+.workspace-surface { container-type: inline-size; }
+@media (max-width: 680px) { .desktop-toolbar { gap: 4px; padding-inline: 7px; } .desktop-context { display: none; } .desktop-toolbar .demo-indicator { margin-right: auto; } .workspace-surface { padding: 20px 16px 30px; } .desktop-toolbar button { padding-inline: 8px; } .project-heading h1 { font-size: 24px; } }
+@media (max-height: 400px) { .desktop-shell .manager-heading { padding-block: 16px 12px; } .manager-scroll { padding-block: 6px; } .projects-surface { overflow: auto; } .project-list { flex: none; } .workspace-brand { padding-bottom: 10px; } .project-filter { margin-bottom: 12px; } }

@@ -8,7 +8,7 @@ import { PairingBootstrap } from '../features/pairing/PairingBootstrap';
 type WorkspaceProps = { bridge?: DesktopBridge; development: boolean; fixtureEnabled: boolean };
 
 export function WorkspaceRoot(props: WorkspaceProps) {
-  return props.bridge ? <PairingBootstrap bridge={props.bridge}><Workspace {...props} /></PairingBootstrap> : <Workspace {...props} />;
+  return <div className="workspace-ui workspace-root">{props.bridge ? <PairingBootstrap bridge={props.bridge}><Workspace {...props} /></PairingBootstrap> : <Workspace {...props} />}</div>;
 }
 
 function Workspace({ bridge, development, fixtureEnabled }: WorkspaceProps) {

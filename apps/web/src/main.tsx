@@ -9,5 +9,7 @@ if (new URLSearchParams(location.search).get('surface') === 'pet') {
   document.documentElement.classList.add('pet-window');
   root.render(<Pet bridge={window.pet} />);
 } else {
+  document.documentElement.classList.add('workspace-window');
+  document.body.classList.add('workspace-window');
   root.render(<WorkspaceRoot bridge={window.playbooks} development={import.meta.env.DEV} fixtureEnabled={import.meta.env.VITE_DEV_FIXTURES === 'true'} />);
 }

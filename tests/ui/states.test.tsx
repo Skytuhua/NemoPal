@@ -9,8 +9,10 @@ afterEach(cleanup);
 test('stale source alone leaves cloud distinct; offline and paused states preserve the working surface', async () => {
   const seed = snapshot(); seed.sourceBindings[0]!.state = 'stale'; seed.connection.sync = 'offline'; seed.project.status = 'paused';
   render(<App client={createFixtureClient({ snapshots: [seed] })} drafts={memoryDrafts()} fixture />);
-  expect(await screen.findByText(/Cloud offline/)).toBeVisible();
+  expect(await screen.findByText('Cloud offline', { exact: true })).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Project settings' }));
   expect(screen.getByText(/Source freshness: stale/)).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Back to workspace' }));
   expect(screen.getByText(/Project paused/)).toBeVisible();
   expect(screen.getByLabelText('Status: Record the demo')).toBeDisabled();
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
