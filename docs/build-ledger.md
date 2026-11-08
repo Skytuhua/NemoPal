@@ -1,6 +1,6 @@
 # Build ledger — living-playbooks-master-plan.md
 
-Authoritative scope: unchanged owner-supplied master plan. Original baseline `c388cc8`. Feature branch `feat/foundation-contracts`; public PR required before foundation lands. No merge/deploy is authorized by the plan alone.
+Authoritative scope: unchanged owner-supplied master plan. Original baseline `c388cc8`. Current joined source is PR15, `f1718a9f1698a32181b594f83b82360f59645f16`; the parent's 67-file/361-test suite, production build and actual Windows J1/scripted check-in receipts are recorded in [integration evidence](evidence/integration.md). This is a partial checkpoint, not a complete product release. Repository review/fix/merge was separately authorized by the owner; Railway remains under its separate deployment owner and HOLD.
 
 ## Preflight interface scan
 
@@ -25,12 +25,13 @@ T00–T14 self-consistency: all tasks preserve global scope/consent and share th
 
 | Task | State | Evidence / blockers |
 |---|---|---|
-| T00 | established; live gates blocked | Public repo created; toolchain pinned; dedicated local PostgreSQL ready. Empty-process smoke joins lane A/B delivery. Nemotron/cloud/source live gates pending |
+| T00 | established; core live gates partial | Public repo, pinned toolchain and disposable local PostgreSQL ready. Real model capability and installed selected-source gate passed; hosted app deployment and joined workflow remain open |
 | T01 | complete for dispatch | Shared strict schemas/client and golden fixtures verified; independent review findings fixed with regressions. Frozen commit supplied in lane dispatch |
-| T02/T03/T08 | not started | A receives frozen commit and isolated checkout |
-| T04/T05/T07 | not started | B receives frozen commit and isolated checkout; no private archive scan |
-| T06/T09 | not started | C receives frozen commit and isolated checkout; requested design skills apply |
-| T10/T11/T14 | not started | Require lane delivery, joined tests, review, truthful acceptance ledger |
+| T02/T03/T08 | implemented, reviewed and joined | PostgreSQL/HTTP/SSE/restart/resilience checks pass. Real tool/result/proposal capability passed; full generated-app J2 launch was blocked before execution |
+| T04/T05/T07 | implemented and reviewed; installed source gate passed | Actual Windows main, safeStorage and persistence pass. The real installed observer detected two fresh items on one dedicated harmless source with export OFF and verified process cleanup. Physical tray withdrawal and durable journal/ingest/manager J3 remain open. No private archive scan |
+| T06/T09 | implemented, reviewed and joined; native scripted subset passes | Trusted UI owner edits/reload/restart and actual pet Recorded pass with a scripted canonical question. Full model/source-driven J4 and visual/input acceptance remain open |
+| T10/T11 | integrated; partial acceptance | 361 tests, typecheck and cloud/web/desktop build pass. J1 and a scripted question subset passed natively; J2 is blocked by automatic launch approval, J3/full J4/J5 remain open |
+| T14 | in progress | Parent owns this evidence checkpoint. Parallel source-launch/artifact preparation is active; no final demo, recording, portable package or hosted joined artifact is claimed |
 | T12/T13 | deferred | Core gates first |
 
 ## Independent review
@@ -43,4 +44,8 @@ T00–T14 self-consistency: all tasks preserve global scope/consent and share th
 
 ## Live gates
 
-Nemotron API application pending; model/base URL/key/budget missing. Cloud host not selected. Owner permits choosing a harmless build-test source; exact strategy, supported version, two fresh persisted deltas, and noninterference still need proof. Export remains off until endpoint/disclosure is explicit. Docker database is local test infrastructure only, not a hosted deployment.
+The real standalone adapter probe passed on `nvidia/nemotron-3.5-lightning-30b-a3b` at `https://integrate.api.nvidia.com/v1` with three HTTP 200 submissions; its private Build credential is not repository content. Full-app J2 remains NOT RUN: automatic approval rejected the explicitly bounded launch with only `blocked by policy` before execution. No request was sent and the separate J2 database remains unused; do not retry the rejection through another path.
+
+Railway PostgreSQL is provisioned under the separate deployment owner's custody; its application is not deployed, and deployment configuration PR12 is not a verified pinned joined artifact. Local Docker PostgreSQL is disposable test infrastructure. A newly created harmless build-test source was selected by exact vendor identity and cwd, with explicit local-read consent and export OFF. Pinned Codex CLI 0.166.0 read-only App Server history automatically produced two fresh persisted item observations, with actual latency/provenance and reader process cleanup recorded in [live observer evidence](evidence/live-observer.md). Any other source needs its own selection/consent; metadata mode does not itself authorize local message-content reads. Durable journal/ingest/manager J3 and all export paths remain unaccepted.
+
+Only A04, A09 and A10 are currently marked passed in the acceptance matrix, in live capability/observation mode. Passing unit/integration suites and the scripted native question do not silently accept the other scenarios. Original startup incident cause remains unproven; the reviewed lifecycle fix and the successful later native runs are recorded separately. The separate frontend redesign and its later native/usability acceptance are outside these receipts.

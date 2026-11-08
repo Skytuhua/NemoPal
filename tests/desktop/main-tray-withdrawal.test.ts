@@ -281,9 +281,11 @@ it('native confirmation cannot carry old device custody across re-pairing', asyn
     click(main, 'revoke');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ token: 'synthetic-replacement-token', deviceId: fixtureIds.owner, expiresAt: '2099-01-01T00:00:00.000Z' }), { headers: { 'Content-Type': 'application/json' } }));
     await main.invoke('pair', { code: 'synthetic-pairing-code', deviceName: 'Synthetic replacement device' });
+    const stoppedForPairing = main.observer.stop.mock.calls.length;
+    expect(stoppedForPairing).toBeGreaterThan(0);
     confirmation.resolve({ response: 0 }); await idle(main);
     expect(main.dialog.showErrorBox).toHaveBeenCalledTimes(1);
-    expect(main.observer.stop).not.toHaveBeenCalled();
+    expect(main.observer.stop).toHaveBeenCalledTimes(stoppedForPairing);
     const restarted = await JournalStore.open(main.path);
     expect(restarted.binding(localBinding.binding.id)?.binding.state).toBe('following');
     expect(restarted.pendingSourceCommands()).toEqual([]);

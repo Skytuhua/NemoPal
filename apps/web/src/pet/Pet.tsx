@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PetCommandSchema, SafePetEventSchema, type PetBridge, type PetCommand, type PetState, type SafePetEvent } from '@living-playbooks/contracts';
 import { Question } from '../features/checkins/Question';
-const artwork: Record<PetState, string> = {
-  idle: new URL('../../../../assets/pet/idle.svg', import.meta.url).href,
-  reviewing: new URL('../../../../assets/pet/reviewing.svg', import.meta.url).href,
-  waiting_for_you: new URL('../../../../assets/pet/waiting_for_you.svg', import.meta.url).href,
-  milestone: new URL('../../../../assets/pet/milestone.svg', import.meta.url).href,
-  snoozed: new URL('../../../../assets/pet/snoozed.svg', import.meta.url).href,
-  offline: new URL('../../../../assets/pet/offline.svg', import.meta.url).href,
-};
+import './pet-mouse.css';
 export function Pet({ bridge }: { bridge?: PetBridge }) {
   const [event, setEvent] = useState<SafePetEvent>(), [error, setError] = useState(''), [submitted, setSubmitted] = useState('');
   const signature = useRef(''), pending = useRef(false), current = useRef<SafePetEvent | undefined>(undefined);
@@ -35,7 +28,7 @@ export function Pet({ bridge }: { bridge?: PetBridge }) {
   const state: PetState = event.state === 'offline' ? 'offline' : preference.focus || event.state === 'snoozed' ? 'snoozed' : validQuestion ? 'waiting_for_you' : event.state === 'milestone' || event.state === 'reviewing' ? event.state : 'idle';
   const presentation = checkIn ? `${event.projectId}:${checkIn.id}:${checkIn.presentationId}` : '';
   return <main className="pet-surface" data-reduced-motion={preference.reducedMotion}>
-    {!preference.hidden && <img className={`pet-art state-${state}`} src={artwork[state]} alt={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} width={128} height={128} />}
+    {!preference.hidden && <div className={`pet-art pet-mouse state-${state}`} role="img" aria-label={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} />}
     <div className="pet-bubble"><strong>{event.managerName || 'No project selected'}</strong>
       {event.demoTiming && <small>Demo reminder timing</small>}
       {state === 'offline' && <p>Cloud offline · check-in timing unavailable</p>}

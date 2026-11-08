@@ -8,6 +8,7 @@ export class QuestionPresentation {
   private event?: SafePetEvent;
   private tail: Promise<unknown> = Promise.resolve();
   private generation = 0;
+  private ownerGeneration = 0;
   private selectedProject: string | null | undefined;
   constructor(private store: JournalStore, private client: PlaybooksClient, private emit: (event: SafePetEvent) => void, private refreshProject: (projectId: string) => void, private now = Date.now, private openProject: (id: string) => void = () => {}) {}
   refresh(raw: ProjectSnapshot, connected: boolean): Promise<void> {
@@ -44,6 +45,11 @@ export class QuestionPresentation {
     if (JSON.stringify(event) !== JSON.stringify(this.event)) { this.event = event; this.emit(event); }
   }
   current(): SafePetEvent | undefined { return this.event ? structuredClone(this.event) : undefined; }
+  reset(): void {
+    ++this.generation; ++this.ownerGeneration; this.snapshot = undefined; this.connected = false; this.displayed = undefined; this.selectedProject = null;
+    this.event = SafePetEventSchema.parse({ type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: { ...this.store.preference(), pinnedProjectId: null } });
+    this.emit(this.event);
+  }
   selectProject(projectId?: string): void {
     ++this.generation;
     if (this.selectedProject === (projectId ?? null)) return;
@@ -59,18 +65,20 @@ export class QuestionPresentation {
     if (this.event) { this.event = SafePetEventSchema.parse({ ...this.event, state: 'offline', checkIn: null }); this.emit(this.event); }
   }
   async command(raw: PetCommand): Promise<void> {
+    const owner = this.ownerGeneration;
     const input = PetCommandSchema.parse(raw);
-    if (input.type === 'setPreference') { await this.store.setPreference(input.preference); if (this.snapshot) await this.refresh(this.snapshot, this.connected); return; }
+    if (input.type === 'setPreference') { await this.store.setPreference(input.preference); if (owner !== this.ownerGeneration) throw Error('Pet pairing changed'); if (this.snapshot) await this.refresh(this.snapshot, this.connected); return; }
     if (input.type === 'openProject') { if (this.snapshot?.project.id !== input.projectId || (this.selectedProject !== undefined && this.selectedProject !== input.projectId)) throw Error('Pet project changed'); this.openProject(input.projectId); return; }
     const question = this.displayed;
     if (!this.connected || !question || question.id !== input.checkInId || question.revision !== input.command.expectedRevision || Date.parse(question.expiresAt) <= this.now()) throw Error('Only the displayed current question can be answered');
     const receipt = input.type === 'answer' ? await this.client.answerCheckIn(question.id, input.command) : await this.client.snoozeCheckIn(question.id, input.command);
+    if (owner !== this.ownerGeneration) throw Error('Pet pairing changed');
     if (receipt.result.id !== question.id || receipt.result.projectId !== question.projectId) throw Error('Question response identity changed');
     if (this.snapshot?.project.id === question.projectId && this.displayed?.id === question.id) {
       this.displayed = undefined;
       this.snapshot.checkIns = this.snapshot.checkIns.map(q => q.id === question.id ? receipt.result : q);
       await this.refresh(this.snapshot, this.connected);
     }
-    this.refreshProject(question.projectId);
+    if (owner === this.ownerGeneration) this.refreshProject(question.projectId);
   }
 }

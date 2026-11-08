@@ -60,6 +60,30 @@ it('snoozes by question revision, records an owner answer, and fences stale subj
   await expect(stale.answerCheckIn(fixtureIds.checkIn, { operationId: op(8), expectedRevision: 0, input: { kind: 'recorded' } })).rejects.toMatchObject({ code: 'revision_conflict' });
 });
 
+it.each(['todo', 'in_progress', 'blocked'] as const)('preserves the entire %s task when answering not yet, including receipt replay', async status => {
+  const seed = c.ProjectSnapshotSchema.parse(structuredClone(goldenSnapshot));
+  seed.project.tasks[0]!.status = status;
+  seed.project.tasks[0]!.revision = 3;
+  seed.project.tasks[0]!.evidenceLevel = 'agent_reported';
+  seed.project.tasks[0]!.evidenceIds = [fixtureIds.observation];
+  seed.project.tasks[0]!.dueAt = '2026-11-08T12:00:00.000Z';
+  seed.checkIns[0]!.subjectRevision = 3;
+  const originalTask = structuredClone(seed.project.tasks[0]);
+  const client = createFixtureClient({ snapshots: [seed] });
+  const command = { operationId: op(9), expectedRevision: 0, input: { kind: 'not_yet' as const, note: 'Still reviewing.' } };
+
+  const answered = await client.answerCheckIn(fixtureIds.checkIn, command);
+  expect(answered.result).toMatchObject({ revision: 1, state: 'answered', answer: { kind: 'not_yet', note: 'Still reviewing.' } });
+  const snapshot = await client.getSnapshot(fixtureIds.project);
+  expect(snapshot.project.tasks[0]).toEqual(originalTask);
+  expect(snapshot.project.revision).toBe(1);
+  expect(snapshot.eventSequence).toBe(1);
+  expect(snapshot.project.decisions).toHaveLength(1);
+  expect(snapshot.project.decisions[0]?.origin).toBe('owner');
+  expect(await client.answerCheckIn(fixtureIds.checkIn, command)).toEqual(answered);
+  expect(await client.getSnapshot(fixtureIds.project)).toEqual(snapshot);
+});
+
 it('delivers local fixture invalidations once and replays them from a cursor', async () => {
   const client = createFixtureClient();
   const events: c.ProjectEvent[] = [];

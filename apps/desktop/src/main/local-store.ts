@@ -70,7 +70,7 @@ export class JournalStore implements LocalStore {
     const receivingConsent = cloud && local.binding.exportPolicy !== 'off' && receiving ? { grantRevision: local.binding.grantRevision, identity: ReceivingIdentitySchema.parse(receiving) } : undefined;
     await this.mutate(data => {
       if (data.entries.some(entry => entry.local.binding.id === local.binding.id)) throw Error('Source already enrolled');
-      if (local.binding.state !== 'revoked' && data.entries.some(entry => entry.local.binding.state !== 'revoked')) throw Error('Only one selected source is supported');
+      if (local.binding.state !== 'revoked' && data.entries.some(entry => entry.local.binding.deviceId === local.binding.deviceId && entry.local.binding.state !== 'revoked')) throw Error('Only one selected source per device is supported');
       data.entries.push({ local, cursor: null, cloud, ...(receivingConsent ? { receivingConsent } : {}) });
       if (cloud && withdrawal) data.sourceCommands.push({ id: randomUUID(), operationId: randomUUID(), bindingId: local.binding.id, grantRevision, kind: withdrawal });
     });
@@ -98,7 +98,8 @@ export class JournalStore implements LocalStore {
       if (batch.lastObservedAt) entry.local.binding.lastObservedAt = batch.lastObservedAt;
     });
   }
-  async pendingUploads(limit: number): Promise<PendingUpload[]> { await this.tail; return structuredClone(this.data.uploads.filter(u => !this.fenced.has(u.bindingId)).slice(0, Math.max(0, Math.min(limit, 20)))); }
+  async pendingUploads(limit: number, deviceId?: string): Promise<PendingUpload[]> { await this.tail; return structuredClone(this.data.uploads.filter(u => !this.fenced.has(u.bindingId) && (!deviceId || this.binding(u.bindingId)?.binding.deviceId === deviceId)).slice(0, Math.max(0, Math.min(limit, 20)))); }
+  pendingUpload(operationId: string): PendingUpload | undefined { const value = this.data.uploads.find(upload => upload.operationId === operationId); return value ? structuredClone(value) : undefined; }
   async acknowledgeUploads(ids: string[]): Promise<void> { await this.mutate(data => { data.uploads = data.uploads.filter(u => !ids.includes(u.id)); }); }
   fence(id: string): void { this.fenced.add(id); }
   async blockBinding(id: string): Promise<void> {
@@ -126,7 +127,7 @@ export class JournalStore implements LocalStore {
       if (entry.cloud && !data.sourceCommands.some(c => c.bindingId === id && c.kind === 'pause')) data.sourceCommands.push({ id: randomUUID(), operationId: randomUUID(), bindingId: id, grantRevision: entry.local.binding.grantRevision, kind: 'pause' });
     });
   }
-  pendingSourceCommands(): z.infer<typeof SourceCommand>[] { return structuredClone([...this.data.sourceCommands].sort((a, b) => Number(b.kind === 'revoke') - Number(a.kind === 'revoke'))); }
+  pendingSourceCommands(deviceId?: string): z.infer<typeof SourceCommand>[] { return structuredClone(this.data.sourceCommands.filter(command => !deviceId || this.binding(command.bindingId)?.binding.deviceId === deviceId).sort((a, b) => Number(b.kind === 'revoke') - Number(a.kind === 'revoke'))); }
   async acknowledgeSourceCommand(id: string): Promise<void> { await this.mutate(data => { data.sourceCommands = data.sourceCommands.filter(c => c.id !== id); }); }
   async recordPresentation(checkInId: string, presentationId: string): Promise<boolean> {
     IdSchema.parse(checkInId); IdSchema.parse(presentationId); let fresh = false;
