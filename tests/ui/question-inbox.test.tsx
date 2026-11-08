@@ -1,12 +1,13 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
 import { App } from '../../apps/web/src/app/App';
 import { deferred, memoryDrafts, snapshot } from './helpers';
 
 afterEach(cleanup);
+beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-07T13:00:00Z')); });
 
 function withoutQuestionCard(offset = 0) {
   const seed = snapshot(offset);

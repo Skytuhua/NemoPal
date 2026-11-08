@@ -5,7 +5,7 @@ export function securePreferences(preload: string) {
 export function rendererTargets(base: string) {
   const url = new URL(base);
   if (url.username || url.password || url.search || url.hash || (url.protocol !== 'file:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)))) throw Error('Only packaged or exact development loopback renderer allowed');
-  return { workspace: url.href, pet: `${url.href}?surface=pet` };
+  return { workspace: url.href, pet: `${url.href}?surface=pet`, petChat: `${url.href}?surface=pet-chat` };
 }
 export function clampPosition(point: { x: number; y: number }, size: { width: number; height: number }, areas: Rectangle[]) {
   const area = areas.find(a => point.x >= a.x && point.x < a.x + a.width && point.y >= a.y && point.y < a.y + a.height) ?? areas[0];

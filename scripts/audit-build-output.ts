@@ -7,7 +7,7 @@ const roots = ['apps/cloud/dist', 'apps/web/dist', 'apps/desktop/dist'] as const
 const required = [
   'apps/cloud/dist/main.js', 'apps/cloud/dist/main.js.map',
   'apps/desktop/dist/main/index.js', 'apps/desktop/dist/main/index.js.map',
-  'apps/desktop/dist/preload/pet.cjs', 'apps/desktop/dist/preload/workspace.cjs',
+  'apps/desktop/dist/preload/pet.cjs', 'apps/desktop/dist/preload/workspace.cjs', 'apps/desktop/dist/preload/pet-chat.cjs',
   'apps/web/dist/index.html',
 ];
 const directories = new Set([...roots, 'apps/web/dist/assets', 'apps/desktop/dist/main', 'apps/desktop/dist/preload']);
