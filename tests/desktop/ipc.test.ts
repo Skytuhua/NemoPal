@@ -28,4 +28,12 @@ describe('native IPC authority', () => {
     await expect(guard.call({ ...sender('pet', 'file:///app/index.html?surface=pet'), senderId: 10, frameId: 11, topFrameId: 11 }, 'selectSource', ids.project)).rejects.toThrow();
     expect(executed).toEqual([]);
   });
+  it('limits demo operations to authorized projects and bounded text', async () => {
+    const { guard, executed } = boundary();
+    await expect(guard.call(sender(), 'startCodexDemo', ids.owner)).rejects.toThrow();
+    await expect(guard.call(sender(), 'sendCodexDemo', { projectId: ids.project, text: 'x'.repeat(65537) })).rejects.toThrow();
+    await expect(guard.call(sender(), 'sendCodexDemo', { projectId: ids.project, text: 'hi', path: 'other' })).rejects.toThrow();
+    await guard.call(sender(), 'sendCodexDemo', { projectId: ids.project, text: 'hello' });
+    expect(executed).toEqual([{ operation: 'sendCodexDemo', input: { projectId: ids.project, text: 'hello' } }]);
+  });
 });
