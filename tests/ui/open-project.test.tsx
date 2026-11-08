@@ -56,3 +56,22 @@ test('malformed or unknown-project native events do not fetch or switch projects
   expect(read).toHaveBeenCalledTimes(initialReads);
   expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
 });
+
+test('keeps the Codex conversation on same-project selection and blocks switching with a draft', async () => {
+  const a = snapshot(), b = snapshot(100), client = createFixtureClient({ snapshots: [a, b] }), desktop = events();
+  desktop.bridge.startCodexDemo = async () => 'started';
+  desktop.bridge.sendCodexDemo = async () => ({ status: 'unknown', replies: [] });
+  desktop.bridge.stopCodexDemo = async () => {};
+  render(<App client={client} drafts={memoryDrafts()} bridge={desktop.bridge} fixture />);
+  await screen.findByRole('heading', { name: 'Hackathon demo' });
+  await userEvent.click(screen.getByRole('button', { name: 'Codex demo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Start Codex demo' }));
+  const input = screen.getByLabelText('Message to Codex');
+  await userEvent.type(input, 'keep draft');
+  desktop.emit({ type: 'open_project', projectId: a.project.id });
+  expect(screen.getByLabelText('Message to Codex')).toHaveValue('keep draft');
+  desktop.emit({ type: 'open_project', projectId: b.project.id });
+  expect(await screen.findByText(/clear or copy its draft before switching projects/i)).toBeVisible();
+  expect(screen.getByLabelText('Message to Codex')).toHaveValue('keep draft');
+  expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
+});

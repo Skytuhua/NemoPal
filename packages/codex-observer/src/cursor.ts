@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SourceCursorSchema, type SourceCursor } from '@living-playbooks/contracts';
 
 export const ADAPTER = 'codex-app-server';
-export const VERSION = '0.166.0';
+export const VERSION = '0.167.0';
 export const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const Anchor = z.strictObject({ birth: z.string().length(64), turn: z.string().max(80).nullable(), prefix: z.string().length(64), baseline: z.boolean().optional() });
 export function prefixDigest(items: unknown[], baseline = false): string {

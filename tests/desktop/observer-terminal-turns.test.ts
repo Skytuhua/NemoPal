@@ -5,7 +5,7 @@ import { localBinding, metadata, turn, finalMessage, command } from '../../fixtu
 it.each(['failed', 'interrupted'])('enrollment on a %s turn advances to later completed work without repeating it', async status => {
   const terminal = { ...turn('terminal', [], status), completedAt: 1794050001 };
   let page: { data: ReturnType<typeof turn>[] } = { data: [terminal] };
-  const observer = new AppServerObserver({ version: async () => '0.166.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
   const signal = new AbortController().signal; const baseline = await observer.readDelta(localBinding, null, signal);
   page = { data: [turn('later', [finalMessage]), terminal] };
   const batch = await observer.readDelta(localBinding, baseline.nextCursor, signal);
@@ -15,7 +15,7 @@ it.each(['failed', 'interrupted'])('enrollment on a %s turn advances to later co
 
 it.each(['failed', 'interrupted'])('%s turns retain completed items, exclude incomplete final output, and respect the batch bound', async status => {
   const base = turn('base', []); let page = { data: [base] };
-  const observer = new AppServerObserver({ version: async () => '0.166.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
   const signal = new AbortController().signal; const baseline = await observer.readDelta(localBinding, null, signal);
   const complete = Array.from({ length: 22 }, (_, i) => ({ ...finalMessage, id: `terminal-${i}` }));
   page = { data: [turn('later', [{ ...finalMessage, id: 'later' }]), { ...turn('terminal', [...complete, command, { ...finalMessage, id: 'unfinished', text: 'DO NOT EXPORT UNFINISHED', completedAtMs: null }], status), completedAt: 1794050001 }, base] };
@@ -30,7 +30,7 @@ it.each(['failed', 'interrupted'])('%s turns retain completed items, exclude inc
 
 it('waits at in-progress work and fails closed on unknown turn or item statuses', async () => {
   const base = turn('base', []); let page = { data: [base] };
-  const observer = new AppServerObserver({ version: async () => '0.166.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', mode: 'fixture', request: async method => method === 'thread/read' ? metadata : page });
   const signal = new AbortController().signal; const baseline = await observer.readDelta(localBinding, null, signal);
   page = { data: [turn('later', [finalMessage]), turn('active', [], 'inProgress'), base] };
   const waiting = await observer.readDelta(localBinding, baseline.nextCursor, signal);

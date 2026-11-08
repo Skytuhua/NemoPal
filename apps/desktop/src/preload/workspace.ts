@@ -5,6 +5,7 @@ const call = (operation: string, input?: unknown) => ipcRenderer.invoke('lp:work
 const bridge: DesktopBridge = {
   capabilities: () => call('capabilities'), pair: input => call('pair', input), selectSource: id => call('selectSource', id), confirmSource: input => call('confirmSource', input),
   pauseSource: id => call('pauseSource', id), revokeSource: id => call('revokeSource', id), invoke: input => call('invoke', input), setPetPreference: input => call('setPetPreference', input),
+  startCodexDemo: id => call('startCodexDemo', id), sendCodexDemo: input => call('sendCodexDemo', input), stopCodexDemo: id => call('stopCodexDemo', id),
   onEvent(listener) { const receive = (_event: unknown, data: SafeDesktopEvent) => listener(data); ipcRenderer.on('lp:workspace-event', receive); return () => { ipcRenderer.removeListener('lp:workspace-event', receive); }; },
 };
 contextBridge.exposeInMainWorld('playbooks', Object.freeze(bridge));

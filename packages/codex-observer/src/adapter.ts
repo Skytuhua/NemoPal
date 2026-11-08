@@ -29,7 +29,7 @@ export class AppServerObserver implements CodexObserver {
     try { version = await this.options.version(); } catch { /* capability diagnostics contain no source text */ }
     const available = version === VERSION;
     return { available, adapterId: ADAPTER, adapterVersion: VERSION, installedVersion: version, capability: available ? 'incremental_history' as const : 'unavailable' as const,
-      reason: available ? 'Pinned stored-history reads available; exact source enrollment and local permission required.' : 'Installed Codex version is unavailable or incompatible.',
+      reason: available ? 'Installed version matches; exact source enrollment and local permission are required, and reads can still fail.' : 'Installed Codex version is unavailable or incompatible.',
       coverage: 'Completed visible final messages and command exit metadata; bounded latest 20 turns. No subscription or active-runtime guarantee. Gaps block.' };
   }
   async readDelta(input: LocalBinding, cursor: SourceCursor | null, signal: AbortSignal): Promise<ObservationBatch> {
@@ -39,7 +39,7 @@ export class AppServerObserver implements CodexObserver {
     signal.throwIfAborted();
     if (!(await this.probe()).available) throw Error('Unsupported installed version');
     const thread = Thread.parse(await this.rpc.request('thread/read', { threadId: z.uuid().parse(binding.selectedSource), includeTurns: false }, signal)).thread;
-    if (thread.id !== binding.selectedSource || thread.cwd.replaceAll('\\', '/').toLowerCase() !== binding.sourceIdentity.replaceAll('\\', '/').toLowerCase() || thread.cliVersion !== VERSION) throw Error('Source identity mismatch');
+    if (thread.id !== binding.selectedSource || thread.cwd.replaceAll('\\', '/').toLowerCase() !== binding.sourceIdentity.replaceAll('\\', '/').toLowerCase()) throw Error('Source identity mismatch');
     const birth = digest([thread.id, thread.sessionId, thread.createdAt, thread.cwd]);
     const anchor = cursor ? decodeCursor(cursor, thread.id) : null;
     if (anchor && anchor.birth !== birth) throw Error('Source identity replaced');

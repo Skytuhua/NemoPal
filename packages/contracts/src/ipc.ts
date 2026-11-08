@@ -66,6 +66,9 @@ export interface DesktopBridge {
   invoke<C extends AllowedClientCommand>(input: C): Promise<DesktopCommandResult<C>>;
   onEvent(listener: (event: SafeDesktopEvent) => void): () => void;
   setPetPreference(input: PetPreference): Promise<void>;
+  startCodexDemo?(projectId: string): Promise<'started' | 'cancelled'>;
+  sendCodexDemo?(input: { projectId: string; text: string }): Promise<{ status: 'completed' | 'failed' | 'interrupted' | 'unknown'; replies: string[] }>;
+  stopCodexDemo?(projectId: string): Promise<void>;
 }
 export interface PetBridge {
   invoke(input: PetCommand): Promise<void>;

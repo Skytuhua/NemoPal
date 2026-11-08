@@ -5,7 +5,7 @@ import { localBinding, metadata, turn, finalMessage } from '../../fixtures/codex
 it('reads fresh completed updates once and blocks truncation, replacement, changed prefixes and partial history', async () => {
   let page: unknown = { data: [turn('turn-1', [])], nextCursor: null };
   let info = structuredClone(metadata);
-  const observer = new AppServerObserver({ version: async () => '0.166.0', request: async method => method === 'thread/read' ? info : page, mode: 'fixture' });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', request: async method => method === 'thread/read' ? info : page, mode: 'fixture' });
   const signal = new AbortController().signal;
   const baseline = await observer.readDelta(localBinding, null, signal);
   page = { data: [turn('turn-1', [finalMessage, finalMessage])], nextCursor: null };
@@ -21,7 +21,7 @@ it('reads fresh completed updates once and blocks truncation, replacement, chang
 });
 it('bounds a large new turn without advancing beyond observations returned', async () => {
   let items: unknown[] = [];
-  const observer = new AppServerObserver({ version: async () => '0.166.0', request: async method => method === 'thread/read' ? metadata : { data: [turn('t', items)] }, mode: 'fixture' });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', request: async method => method === 'thread/read' ? metadata : { data: [turn('t', items)] }, mode: 'fixture' });
   const signal = new AbortController().signal;
   const baseline = await observer.readDelta(localBinding, null, signal);
   items = Array.from({ length: 23 }, (_, i) => ({ ...finalMessage, id: `message-${i}` }));
@@ -34,7 +34,7 @@ it('bounds a large new turn without advancing beyond observations returned', asy
 it('enrollment during an active turn tolerates completion of skipped baseline items without backfilling them', async () => {
   const baselineItem = { ...finalMessage, id: 'already-present', text: 'Partial progress', phase: 'commentary', completedAtMs: null };
   let page = { data: [turn('t', [baselineItem], 'inProgress')] };
-  const observer = new AppServerObserver({ version: async () => '0.166.0', request: async method => method === 'thread/read' ? metadata : page, mode: 'fixture' });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', request: async method => method === 'thread/read' ? metadata : page, mode: 'fixture' });
   const signal = new AbortController().signal;
   const baseline = await observer.readDelta(localBinding, null, signal);
   page = { data: [turn('t', [{ ...baselineItem, text: 'Completed progress', completedAtMs: 1794050001000 }, finalMessage])] };

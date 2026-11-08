@@ -5,7 +5,7 @@ import { localBinding, metadata, turn, finalMessage, hidden, command, secretMess
 
 it('excludes hidden reasoning, raw tool data, credentials, diffs and commentary; labels fixture and report evidence', async () => {
   let items: unknown[] = [];
-  const observer = new AppServerObserver({ version: async () => '0.166.0', request: async method => method === 'thread/read' ? metadata : { data: [turn('t', items)] }, mode: 'fixture' });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', request: async method => method === 'thread/read' ? metadata : { data: [turn('t', items)] }, mode: 'fixture' });
   const signal = new AbortController().signal;
   const baseline = await observer.readDelta(localBinding, null, signal);
   items = [hidden, command, secretMessage, { ...finalMessage, id: 'commentary', phase: 'commentary' }, { ...finalMessage, id: 'diff', text: 'diff --git a/x b/x\n@@ -1 +1 @@' }];
@@ -26,7 +26,7 @@ it('metadata exports do not fingerprint withheld text or raw command arguments/o
 });
 it('metadata mode never emits excerpts and unknown formats fail closed', async () => {
   let items: unknown[] = [];
-  const observer = new AppServerObserver({ version: async () => '0.166.0', request: async method => method === 'thread/read' ? metadata : { data: [turn('t', items)] }, mode: 'fixture' });
+  const observer = new AppServerObserver({ version: async () => '0.167.0', request: async method => method === 'thread/read' ? metadata : { data: [turn('t', items)] }, mode: 'fixture' });
   const binding = { ...localBinding, binding: { ...localBinding.binding, exportPolicy: 'metadata_only' as const } };
   const signal = new AbortController().signal;
   const baseline = await observer.readDelta(binding, null, signal);
