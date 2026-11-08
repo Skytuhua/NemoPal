@@ -69,7 +69,7 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
         try { await store.write(key, value); if (sequence === operation) failedDraftWrite.current = false; }
         catch (error) { if (sequence === operation) failedDraftWrite.current = true; throw error; }
       },
-      async remove(key) { ++sequence; failedDraftWrite.current = false; await store.remove(key); },
+      async remove(key) { const operation = ++sequence; await store.remove(key); if (sequence === operation) failedDraftWrite.current = false; },
     };
   }, [store]);
   const local = useDraft(draftStore, session.draftKey, '', 0);
@@ -81,7 +81,12 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     retryDraft.current = retry;
     return () => { if (retryDraft.current === retry) retryDraft.current = undefined; };
   }, [draftStore, session, local.ready, retryDraft]);
-  const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setError] = useState(''), [pending, setPending] = useState<PendingPetMessage>();
+  const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setErrorState] = useState(''), [pending, setPending] = useState<PendingPetMessage>();
+  const errorIdentity = useRef<{ source: 'pending' | 'other' } | undefined>(undefined);
+  function setError(message: string, source: 'pending' | 'other' = 'other') {
+    errorIdentity.current = message ? { source } : undefined;
+    setErrorState(message);
+  }
   const [resolving, setResolving] = useState(false);
   const [phase, setPhase] = useState('open'), [closing, setClosing] = useState(false);
   const [systemReducedMotion, setSystemReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
@@ -128,7 +133,7 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
   function send(retry = false) { return operations.track(() => performSend(retry)); }
   async function performSend(retry = false) {
     const context = current();
-    if (sending.current || !active || !context?.conversation || !context.visible || context.contextId !== state.contextId || !context.conversation.connected || !context.conversation.inference.available) return;
+    if (sending.current || !active || !context?.conversation || !context.visible || context.flushRequestId || context.contextId !== state.contextId || context.conversation.draftScope !== conversation?.draftScope || !context.conversation.connected || !context.conversation.inference.available) return;
     sending.current = true; setBusy(true); setError(''); setStatus('');
     let operation: PendingPetMessage | undefined;
     try {
@@ -145,15 +150,16 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     } catch {
       if (lifetime.current) {
         if (operation) setStatus('Message not confirmed. Draft preserved; refresh status before retrying.');
-        else setError('Draft could not be persisted. Copy your work before leaving.');
+        else setError('Draft could not be persisted. Copy your work before leaving.', session.pending ? 'pending' : 'other');
       }
     } finally { sending.current = false; if (lifetime.current) { setBusy(false); setPending(session.pending); } }
   }
   async function resolvePending() {
     if (!pending || sending.current || !active) return;
+    const resolvingError = errorIdentity.current;
     sending.current = true; setBusy(true);
-    try { await operations.track(() => session.complete(pending)); if (lifetime.current) { setPending(session.pending); setResolving(false); setStatus('Unconfirmed request resolved. Your draft is still here.'); } }
-    catch { if (lifetime.current) setError('Draft could not be persisted. Copy your work before leaving.'); }
+    try { await operations.track(() => session.complete(pending)); if (lifetime.current) { if (resolvingError?.source === 'pending' && errorIdentity.current === resolvingError) setError(''); setPending(session.pending); setResolving(false); setStatus('Unconfirmed request resolved. Your draft is still here.'); } }
+    catch { if (lifetime.current) setError('Draft could not be persisted. Copy your work before leaving.', 'pending'); }
     finally { sending.current = false; if (lifetime.current) setBusy(false); }
   }
   const canSend = !!conversation?.connected && conversation.inference.available && ready && local.ready && !busy && !pending && !error && !local.error && !bridgeError && !!local.draft.text.trim() && utf8Bytes(local.draft.text) <= 16384;
@@ -189,7 +195,7 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
       </>}
     </div>
     {conversation && <form className="pet-chat-composer" onSubmit={event => { event.preventDefault(); if (!composing.current && canSend) void send(); }}>
-      <label htmlFor={composerId}>Message</label><div className="pet-chat-input-row"><Textarea ref={composer} id={composerId} rows={2} value={local.draft.text} disabled={!local.ready || !ready} onChange={event => local.change({ text: event.target.value, baseRevision: local.current.current.baseRevision + 1 })} placeholder="Write a message…" /><Button type="submit" disabled={!active || !canSend}>{busy ? 'Sending…' : 'Send'}</Button></div>
+      <label htmlFor={composerId}>Message</label><div className="pet-chat-input-row"><Textarea ref={composer} id={composerId} rows={2} value={local.draft.text} disabled={!active || !local.ready || !ready} onChange={event => { const context = current(); if (active && context?.contextId === state.contextId && context.visible && !context.flushRequestId && context.conversation?.draftScope === conversation.draftScope) local.change({ text: event.target.value, baseRevision: local.current.current.baseRevision + 1 }); }} placeholder="Write a message…" /><Button type="submit" disabled={!active || !canSend}>{busy ? 'Sending…' : 'Send'}</Button></div>
       {(!conversation.connected || !conversation.inference.available) && <p className="pet-chat-caption" role="status">{!conversation.connected ? 'Connection unavailable. Draft kept locally.' : 'Replies unavailable. Draft kept locally.'}</p>}
       {utf8Bytes(local.draft.text) > 16384 && <p role="alert">Message is too long to send. Shorten it; your draft is kept.</p>}
       {status && <p role="status">{status}</p>}
