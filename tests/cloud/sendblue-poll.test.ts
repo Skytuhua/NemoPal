@@ -6,10 +6,10 @@ const config = { enabled: true, account: 'synthetic@example.invalid', line: '+15
 const link = { id: 'link-a', account: config.account, receiving_line: config.line, sender: '+15550000002', linked_at: new Date('2026-11-08T12:00:00Z'), expires_at: new Date('2026-11-08T13:00:00Z') };
 const message = (handle: string, content = 'hello', date = '2026-11-08T12:01:00Z') => ({ accountEmail: config.account, message_handle: handle, from_number: link.sender, to_number: config.line, sendblue_number: config.line, number: link.sender, content, is_outbound: false, status: 'RECEIVED', message_type: 'message', date_sent: date });
 const response = (data: unknown[], offset = 0, hasMore = false, total = data.length) => new Response(JSON.stringify({ status: 'OK', data, pagination: { offset, limit: 50, hasMore, total } }));
-function setup(fetcher: typeof fetch) {
+function setup(fetcher: typeof fetch, timeoutMs = 10000) {
   const accept = vi.fn(async (_body: unknown, _linkId: string) => ({ accepted: true, duplicate: false }));
   const pool = { query: async () => ({ rows: [link] }) } as unknown as Pool;
-  const poll = new SendbluePoll(pool, config, { accept }, fetcher, () => new Date('2026-11-08T12:10:00Z'));
+  const poll = new SendbluePoll(pool, config, { accept }, fetcher, () => new Date('2026-11-08T12:10:00Z'), timeoutMs);
   return { poll, accept };
 }
 
@@ -26,6 +26,32 @@ test('polls only the linked conversation, rejects pre-consent messages, and repl
   await h.poll.tick(new AbortController().signal);
   expect(h.accept).toHaveBeenCalledTimes(1);
   expect(h.accept).toHaveBeenCalledWith(expect.objectContaining({ message_handle: 'new' }), link.id);
+});
+
+test('unsupported attachment does not hide a later STOP', async () => {
+  const h = setup(async () => response([{ ...message('attachment'), media_url: 'https://example.invalid/file' }, message('stop', 'STOP')]));
+  await h.poll.tick(new AbortController().signal);
+  expect(h.accept).toHaveBeenCalledTimes(1);
+  expect(h.accept).toHaveBeenCalledWith(expect.objectContaining({ message_handle: 'stop' }), link.id);
+});
+
+test('accepts equivalent snapshots with different diagnostic fields and key order', async () => {
+  let count = 0;
+  const h = setup(async () => { const body = message('one'); return response([++count === 1 ? { ...body, diagnostic: 'one' } : { diagnostic: 'two', ...body }]); });
+  await h.poll.tick(new AbortController().signal);
+  expect(h.accept).toHaveBeenCalledTimes(1);
+});
+
+test('a hung provider response does not stall the polling loop', async () => {
+  const h = setup(async () => new Promise<Response>(() => {}), 30);
+  await expect(h.poll.tick(new AbortController().signal)).rejects.toThrow();
+  expect(h.accept).not.toHaveBeenCalled();
+});
+
+test('a hung response body does not stall the polling loop', async () => {
+  const h = setup(async () => new Response(new ReadableStream({ pull() { return new Promise(() => {}); } })), 30);
+  await expect(h.poll.tick(new AbortController().signal)).rejects.toThrow();
+  expect(h.accept).not.toHaveBeenCalled();
 });
 
 test('does not accept a partial or changing pagination snapshot', async () => {
