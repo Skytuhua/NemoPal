@@ -67,7 +67,8 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   let transport: typeof fetch | undefined;
   const clientConfigurations: HttpClientOptions[] = [];
   const protectedStorage = { isAsyncEncryptionAvailable: vi.fn(async () => true), encryptStringAsync: async (value: string) => { await options.credentialEncryption?.(); return Buffer.from(value); }, decryptStringAsync: async (value: Buffer) => ({ result: value.toString(), shouldReEncrypt: false }) };
-  vi.doMock('electron', () => ({ app, dialog, Menu, Tray, nativeImage: { createFromBitmap: () => ({}) }, ipcMain: { handle: (channel: string, handler: typeof handlers extends Map<string, infer H> ? H : never) => handlers.set(channel, handler) }, powerMonitor: new EventEmitter(), safeStorage: protectedStorage }));
+  const powerMonitor = new EventEmitter();
+  vi.doMock('electron', () => ({ app, dialog, Menu, Tray, nativeImage: { createFromBitmap: () => ({}) }, ipcMain: { handle: (channel: string, handler: typeof handlers extends Map<string, infer H> ? H : never) => handlers.set(channel, handler) }, powerMonitor, safeStorage: protectedStorage }));
   vi.doMock('../../apps/desktop/src/main/native-windows', () => ({ createNativeWindows: () => windows }));
   vi.doMock('@living-playbooks/api-client', async () => ({ ...await vi.importActual('@living-playbooks/api-client'), createHttpClient: (configuration: HttpClientOptions) => { transport = configuration.fetch; clientConfigurations.push(configuration); return client; } }));
   vi.doMock('@living-playbooks/codex-observer', () => ({ ADAPTER: 'codex-app-server', VERSION: '0.166.0', createInstalledObserver: () => observer }));
@@ -82,7 +83,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
     vi.doUnmock('electron'); vi.doUnmock('../../apps/desktop/src/main/native-windows'); vi.doUnmock('@living-playbooks/api-client'); vi.doUnmock('@living-playbooks/codex-observer');
     vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(directory, { recursive: true, force: true });
   };
-  return { path, app, client, clientConfigurations, protectedStorage, observer, desktopEvents, petEvents, chatEvents, invoke, petInvoke, chatInvoke, dialog, windows, trayItem, clickTray, dispose, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
+  return { path, app, client, clientConfigurations, protectedStorage, observer, powerMonitor, desktopEvents, petEvents, chatEvents, invoke, petInvoke, chatInvoke, dialog, windows, trayItem, clickTray, dispose, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
     try { clickTray('quit'); await vi.waitFor(() => { if (quitBlocked) expect(dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)); else expect(app.exit).toHaveBeenCalledWith(0); }); }
     finally { await dispose(); }
   } };

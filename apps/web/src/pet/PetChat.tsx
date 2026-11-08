@@ -15,6 +15,7 @@ export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBrid
   }, []);
   const [state, setState] = useState<PetChatState>(), [error, setError] = useState('');
   const latest = useRef<PetChatState | undefined>(undefined);
+  const retryDraft = useRef<(() => Promise<void>) | undefined>(undefined);
   useEffect(() => {
     latest.current = undefined; setState(undefined);
     if (!bridge) return;
@@ -36,7 +37,10 @@ export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBrid
     let active = true;
     void (async () => {
       let succeeded = true;
-      try { await operations.settle(); await store.flush(); } catch { succeeded = false; }
+      try {
+        await operations.settle();
+        try { await store.flush(); } catch { await retryDraft.current?.(); await store.flush(); }
+      } catch { succeeded = false; }
       if (active && latest.current?.contextId === contextId) await bridge.invoke({ type: 'flushed', contextId, flushId, succeeded }).catch(() => {});
     })();
     return () => { active = false; };
@@ -48,14 +52,28 @@ export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBrid
   };
   if (!bridge) return <main className="pet-chat-unavailable" role="status">Restricted desktop conversation bridge required.</main>;
   if (!state) return <main className="pet-chat-unavailable" role="status">{error || 'Opening conversation…'}</main>;
-  return <Conversation key={state.conversation?.draftScope ?? 'unavailable'} bridge={bridge} store={store} operations={operations} state={state} current={() => latest.current} refresh={refresh} bridgeError={error} />;
+  return <Conversation key={state.conversation?.draftScope ?? 'unavailable'} bridge={bridge} store={store} operations={operations} retryDraft={retryDraft} state={state} current={() => latest.current} refresh={refresh} bridgeError={error} />;
 }
 
-function Conversation({ bridge, store, operations, state, current, refresh, bridgeError }: { bridge: PetChatBridge; store: DraftStore; operations: { track<T>(run: () => Promise<T>): Promise<T> }; state: PetChatState; current(): PetChatState | undefined; refresh(): Promise<void>; bridgeError: string }) {
+function Conversation({ bridge, store, operations, retryDraft, state, current, refresh, bridgeError }: { bridge: PetChatBridge; store: DraftStore; operations: { track<T>(run: () => Promise<T>): Promise<T> }; retryDraft: React.RefObject<(() => Promise<void>) | undefined>; state: PetChatState; current(): PetChatState | undefined; refresh(): Promise<void>; bridgeError: string }) {
   const composerId = useId();
   const conversation = state.conversation;
   const session = useMemo(() => new PetChatSession(store, conversation?.draftScope ?? 'unavailable'), [store, conversation?.draftScope]);
-  const local = useDraft(store, session.draftKey, '', 0);
+  const failedDraftWrite = useRef(false);
+  const draftStore = useMemo<DraftStore>(() => ({
+    ...store,
+    async write(key, value) { try { await store.write(key, value); failedDraftWrite.current = false; } catch (error) { failedDraftWrite.current = true; throw error; } },
+    async remove(key) { await store.remove(key); failedDraftWrite.current = false; },
+  }), [store]);
+  const local = useDraft(draftStore, session.draftKey, '', 0);
+  useEffect(() => {
+    const retry = async () => {
+      if (!failedDraftWrite.current || !local.ready) return;
+      await draftStore.write(session.draftKey, local.current.current);
+    };
+    retryDraft.current = retry;
+    return () => { if (retryDraft.current === retry) retryDraft.current = undefined; };
+  }, [draftStore, session, local.ready, retryDraft]);
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setError] = useState(''), [pending, setPending] = useState<PendingPetMessage>();
   const [resolving, setResolving] = useState(false);
   const [phase, setPhase] = useState('open'), [closing, setClosing] = useState(false);

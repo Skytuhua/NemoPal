@@ -187,3 +187,29 @@ test('flush acknowledgement waits for an in-flight send and its local draft writ
   await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
   expect(await store.read('pet-chat:synthetic-owner-project:draft:pending')).toBeUndefined();
 });
+
+
+test('retired popup retries the latest failed draft without exposing it to the next context', async () => {
+  const values = new Map<string, { text: string; baseRevision: number }>();
+  let failing = true, failedKey = '';
+  const store = {
+    async read(key: string) { return values.get(key); },
+    async write(key: string, value: { text: string; baseRevision: number }) { if (failing) { failedKey = key; throw Error('disk full'); } values.set(key, structuredClone(value)); if (key === failedKey) failedKey = ''; },
+    async remove(key: string) { values.delete(key); if (key === failedKey) failedKey = ''; },
+    async flush() { if (failedKey) throw Error('sticky disk full'); },
+  };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Latest old owner draft' } });
+  await screen.findByRole('alert');
+  h.emit({ ...h.initial, version: 2, visible: false, flushRequestId: snapshot().project.ownerId });
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: false }));
+  failing = false;
+  const retryId = snapshot(100).project.id;
+  h.emit({ ...h.initial, version: 3, visible: false, flushRequestId: retryId });
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: retryId, succeeded: true }));
+  expect((await store.read('pet-chat:synthetic-owner-project:draft'))?.text).toBe('Latest old owner draft');
+  const b = snapshot(100);
+  h.emit({ ...h.initial, version: 4, contextId: b.project.id, visible: true, conversation: { ...h.initial.conversation!, draftScope: 'synthetic-owner-project-B', projectId: b.project.id, messages: [], checkIn: null } });
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(''));
+});
