@@ -11,7 +11,7 @@ afterEach(async () => { await Promise.all(fixtures.splice(0).map(f => f.close())
 type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 'oversize' |
   'redirect' | 'discovery-error' | 'token-error' | 'broad-token' | 'mcp-error' | 'missing-tool' | 'hang' |
   'session' | 'cleanup-error' | 'chunked-oversize' | 'mcp-oversize' | 'mcp-hang' | 'sse' | 'bad-token-endpoint' | 'bad-registration-endpoint' |
-  'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel';
+  'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty';
 
 async function fixture(mode: Mode = 'ok') {
   const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
@@ -82,12 +82,14 @@ async function fixture(mode: Mode = 'ok') {
       const message = JSON.parse(body);
       if (message.method === 'initialize') {
         if (mode === 'init-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
-        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
+        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
         return send(res, { jsonrpc: '2.0', id: message.id,
           result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'private-server-name', version: '0.1.7' } } });
       }
       if (message.method === 'notifications/initialized') { onInitialized(); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
       if (message.method === 'tools/list') {
+        if (mode === 'mcp-empty') return res.writeHead(202).end();
+        if (mode === 'server-timeout-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } });
         if (mode === 'mcp-hang') return;
         if (mode === 'mcp-oversize') return send(res, { pad: 'x'.repeat(300_000) });
         if (mode === 'mcp-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
@@ -256,6 +258,24 @@ describe('dedicated local T3 OAuth and MCP connection', () => {
 
   it('does not send session cleanup after a request deadline', async () => {
     const f = await fixture('mcp-hang');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 100, signInTimeoutMs: 3000,
+      onAuthorization: async url => { await f.authorize(url); } }))
+      .rejects.toMatchObject({ code: 'deadline', phase: 'tools_list', delivery: 'uncertain' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+    await f.checkCallbackClosed();
+  });
+
+  it('cleans up after a server error that uses the SDK timeout code', async () => {
+    const f = await fixture('server-timeout-error');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 2000, signInTimeoutMs: 3000,
+      onAuthorization: async url => { await f.authorize(url); } }))
+      .rejects.toMatchObject({ code: 'mcp_error', phase: 'tools_list', delivery: 'uncertain' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+    await f.checkCallbackClosed();
+  });
+
+  it('does not clean up after a local deadline while awaiting an SDK response', async () => {
+    const f = await fixture('mcp-empty');
     await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 100, signInTimeoutMs: 3000,
       onAuthorization: async url => { await f.authorize(url); } }))
       .rejects.toMatchObject({ code: 'deadline', phase: 'tools_list', delivery: 'uncertain' });

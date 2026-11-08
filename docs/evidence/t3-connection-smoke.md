@@ -53,6 +53,8 @@ Independent review found two session-cleanup defects. A refused HTTP 405 termina
 
 A subsequent recheck found that a per-request deadline could still trigger cleanup. A regression reproduced the extra DELETE; cleanup now sends nothing after either a request or overall deadline. Ordinary initialization failures still receive the single bounded cleanup attempt.
 
+A further recheck found that a server JSON-RPC error can share the SDK's timeout code. The connector now tracks its own deadline independently: a prompt server error is reported as an MCP error and receives bounded cleanup, while an actual local deadline still suppresses new sends. Focused synthetic cases cover both paths.
+
 1. Install the locked dependencies in the selected checkout without lifecycle scripts: `pnpm install --frozen-lockfile --ignore-scripts`.
 2. In a private local terminal, run `pnpm exec tsx scripts/t3-connect.ts --endpoint '<YOUR_LOCAL_MCP_URL>'`. Supply the copied same-machine URL at runtime; do not put it into tracked scripts or docs. There is no default address or port.
 3. Open the printed local authorization link yourself. Verify `NemoPal local connection check` and the local return destination, explicitly choose **Read only**, then approve in T3. If requested, enter the pairing code only in T3. No agent should enter it or approve for you. If `iss` is missing, stop and update/review compatibility rather than weakening the callback check.

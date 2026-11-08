@@ -51,6 +51,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   let failure: T3ConnectionError | undefined;
   let bearer = '';
   let sessionId = '';
+  let deadlineExpired = false;
   const fail = (code: ConnectionCode): never => {
     failure = new T3ConnectionError(code, phase()); throw failure;
   };
@@ -77,12 +78,12 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
     if (signal.aborted) return fail(signal.reason === 'deadline' ? 'deadline' : 'cancelled');
     if (method === 'POST' || method === 'DELETE') attempted();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort('deadline'), timeoutMs);
+    const timer = setTimeout(() => { deadlineExpired = true; controller.abort('deadline'); }, timeoutMs);
     active.set(controller, timer);
     const combined = AbortSignal.any([signal, controller.signal, ...(init.signal ? [init.signal] : [])]);
     const finish = () => { clearTimeout(timer); active.delete(controller); };
     const abortCode = () => signal.aborted ? (signal.reason === 'deadline' ? 'deadline' : 'cancelled') :
-      controller.signal.aborted ? 'deadline' : 'http_error';
+      controller.signal.reason === 'deadline' ? 'deadline' : 'http_error';
     try {
       const headers = new Headers(init.headers);
       if (url.href === endpoint.href) headers.set('Authorization', `Bearer ${bearer}`);
@@ -130,6 +131,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
     fetch: guardedFetch,
     setBearer(value: string) { bearer = value; },
     get sessionId() { return sessionId; },
+    get deadlineExpired() { return deadlineExpired; },
     get failure() { return failure; },
     dispose() { bearer = ''; sessionId = ''; for (const [request, timer] of active) { clearTimeout(timer); request.abort(); } active.clear(); },
   };

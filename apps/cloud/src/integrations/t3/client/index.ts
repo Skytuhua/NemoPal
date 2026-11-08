@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { exchangeAuthorization, registerClient, startAuthorization } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema, type OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { T3_TOOLS } from '../protocol';
 import { callbackReceiver } from './callback';
 import { localEndpoint, networkBoundary, untilAborted, T3ConnectionError, type ConnectionPhase } from './boundary';
@@ -42,6 +42,13 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
   let codeVerifier = '';
   let authorizationCode = '';
   let cleanupFailed = false;
+  let localRequestExpired = false;
+  const boundedMcp = async <T>(request: (requestSignal: AbortSignal) => Promise<T>): Promise<T> => {
+    const controller = new AbortController();
+    const requestTimer = setTimeout(() => { localRequestExpired = true; controller.abort('deadline'); }, requestMs);
+    try { return await request(AbortSignal.any([signal, controller.signal])); }
+    finally { clearTimeout(requestTimer); }
+  };
   let result: { status: 'connected'; transport: 'loopback_http'; permissions: string[]; expectedReadTools: string[];
     toolCalls: 0; credentials: 'discarded'; checkedAt: string; session: 'closed' } | undefined;
   let error: T3ConnectionError | undefined;
@@ -89,9 +96,9 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
       reconnectionOptions: { maxRetries: 0, initialReconnectionDelay: 0, maxReconnectionDelay: 0, reconnectionDelayGrowFactor: 1 } });
     client = new Client({ name: 'NemoPal local connection check', version: '0.1.0' }, { capabilities: {} });
     phase = 'initialize';
-    await client.connect(transport, { signal, timeout: requestMs, maxTotalTimeout: requestMs });
+    await boundedMcp(requestSignal => client!.connect(transport!, { signal: requestSignal, timeout: requestMs + 1000, maxTotalTimeout: requestMs + 1000 }));
     phase = 'tools_list';
-    const tools = await client.listTools({}, { signal, timeout: requestMs, maxTotalTimeout: requestMs });
+    const tools = await boundedMcp(requestSignal => client!.listTools({}, { signal: requestSignal, timeout: requestMs + 1000, maxTotalTimeout: requestMs + 1000 }));
     if (tools.nextCursor || !T3_TOOLS.every(expected => tools.tools.some(tool => tool.name === expected)))
       throw new T3ConnectionError('missing_tools', phase);
     signal.throwIfAborted();
@@ -99,7 +106,9 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
       expectedReadTools: [...T3_TOOLS], toolCalls: 0, credentials: 'discarded', session: 'closed', checkedAt: new Date().toISOString() };
   } catch (caught) {
     const code = signal.aborted ? (signal.reason === 'deadline' ? 'deadline' : 'cancelled') :
-      caught instanceof McpError && caught.code === ErrorCode.RequestTimeout ? 'deadline' :
+      localRequestExpired || network.deadlineExpired ? 'deadline' :
+      network.failure?.code === 'response_too_large' ? 'response_too_large' :
+      caught instanceof McpError ? 'mcp_error' :
       network.failure?.code ?? (caught instanceof T3ConnectionError ? caught.code :
         phase === 'discovery' ? 'invalid_metadata' : phase === 'initialize' || phase === 'tools_list' ? 'mcp_error' : 'oauth_error');
     error = new T3ConnectionError(code, phase, attempted ? 'uncertain' : 'known_unsent');
