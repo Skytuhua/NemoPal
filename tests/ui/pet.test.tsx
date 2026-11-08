@@ -32,7 +32,7 @@ test('pet identity and local visibility preferences fence foreign questions', as
   const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
   h.emit({ ...h.event, projectId: snapshot(100).project.id, managerName: 'Second manager' });
   expect(screen.queryByText('Have you recorded the demo?')).not.toBeInTheDocument();
-  expect(screen.getByText('Second manager')).toBeVisible();
+  expect(screen.getByRole('img', { name: /Second manager/ })).toBeVisible();
   h.emit({ ...h.event, preference: { ...h.event.preference, focus: true } });
   expect(screen.queryByText('Have you recorded the demo?')).not.toBeInTheDocument();
   expect(screen.getByText('Focus mode · proactive question hidden')).toBeVisible();
@@ -43,7 +43,7 @@ test('six deterministic pet states render locally and cloud offline outranks a q
   const h = harness(); render(<Pet bridge={h.bridge} />);
   for (const state of ['idle', 'reviewing', 'waiting_for_you', 'milestone', 'snoozed', 'offline'] as const) {
     h.emit({ ...h.event, state, checkIn: state === 'waiting_for_you' || state === 'offline' ? h.event.checkIn : null });
-    expect(screen.getByRole('img')).toHaveAttribute('data-pet-state', state);
+    expect(screen.getByRole('img', { name: /^Nemo/ })).toHaveAttribute('data-pet-state', state);
   }
   expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
 });
@@ -60,7 +60,7 @@ test('mouse keeps its accessible state identity when reduced motion changes', ()
 });
 test('pet preference actions wait for desktop state and preserve keyboard focus', async () => {
   const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
-  const open = screen.getByRole('button', { name: 'Open project' });
+  const open = screen.getByRole('button', { name: 'Expand to project chat' });
   await userEvent.click(open);
   expect(h.invoke).toHaveBeenLastCalledWith({ type: 'openProject', projectId: h.event.projectId });
   expect(open).toHaveFocus();
@@ -86,6 +86,7 @@ test('pet preference actions wait for desktop state and preserve keyboard focus'
 });
 test('snoozing keeps the revisioned command and waits for canonical desktop state', async () => {
   const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
+  await userEvent.click(screen.getByRole('button', { name: 'Snooze options' }));
   await userEvent.type(screen.getByLabelText('Snooze until'), '2026-11-08T15:00');
   await userEvent.click(screen.getByRole('button', { name: 'Snooze question' }));
   expect(h.invoke).toHaveBeenCalledOnce();
