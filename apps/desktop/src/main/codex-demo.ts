@@ -61,8 +61,10 @@ export async function createDemoSession(options: { executable: string; args: str
           const waiting = pending.get(message.id);
           if (waiting) {
             pending.delete(message.id); clearTimeout(waiting.timer);
-            if (message.error || !('result' in message)) waiting.reject(Error('App-server rejected request'));
-            else waiting.resolve(message.result);
+            if ('error' in message && !('result' in message) && z.object({ code: z.number().int(), message: z.string() }).safeParse(message.error).success)
+              waiting.reject(Error('App-server rejected request'));
+            else if (!('error' in message) && 'result' in message) waiting.resolve(message.result);
+            else waiting.reject(Error('Malformed app-server response'));
           }
         } else if ((message.method === 'item/completed' || message.method === 'turn/completed') && message.params && typeof message.params === 'object' && active) {
           const event = { method: message.method, params: message.params as Record<string, unknown> };

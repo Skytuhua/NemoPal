@@ -48,6 +48,16 @@ it('reports uncertain delivery if the server exits after receiving a send', asyn
   finally { demo.close(); }
 });
 
+it('distinguishes a malformed acknowledgement from an explicit rejection', async () => {
+  const options = { executable: process.execPath, args: [fixture], workspace: process.cwd(), onReply: () => {} };
+  const malformed = await createDemoSession(options);
+  try { await expect(malformed.send('malformed')).rejects.toThrow('may have been accepted'); }
+  finally { malformed.close(); }
+  const rejected = await createDemoSession(options);
+  try { await expect(rejected.send('rejected')).rejects.toThrow('App-server rejected request'); }
+  finally { rejected.close(); }
+});
+
 it('reports an idle server exit without waiting for another input', async () => {
   const input = new PassThrough();
   const output = new Writable({ write(_chunk, _encoding, done) { done(); } });

@@ -15,6 +15,8 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (request.method !== 'turn/start' || request.params.threadId !== 'demo-owned') process.exit(4);
   const text = request.params.input[0].text;
   if (text === 'lost') process.exit(0);
+  if (text === 'malformed') return send({ id: request.id });
+  if (text === 'rejected') return send({ id: request.id, error: { code: -32600, message: 'rejected' } });
   const turnId = `turn-${++count}`;
   if (text === 'approval') return send({ id: 100, method: 'item/commandExecution/requestApproval', params: { threadId: 'demo-owned' } });
   send({ method: 'item/completed', params: { threadId: 'foreign', turnId, item: { type: 'agentMessage', id: 'foreign', text: 'foreign secret' } } });
