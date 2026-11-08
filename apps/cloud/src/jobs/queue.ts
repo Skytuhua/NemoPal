@@ -10,7 +10,7 @@ import { sendblueConfig, type SendblueConfig } from '../integrations/sendblue/co
 import { enqueueManagerReply } from '../integrations/sendblue/outbox';
 import { DomainError } from '../domain/errors';
 const grants = (sources: c.SourceBinding[]) => sources.filter(s => s.state === 'following' && s.exportPolicy !== 'off').map(s => ({ bindingId: s.id, grantRevision: s.grantRevision })).sort((a, b) => a.bindingId.localeCompare(b.bindingId));
-export async function persistJob(db: PoolClient, job: c.ManagerJob) { await db.query('UPDATE jobs SET data=$2,state=$3,run_after=$4,lease_expires_at=$5,generation=$6 WHERE id=$1', [job.id, job, job.state, job.runAfter, job.leaseExpiresAt, job.leaseGeneration]); }
+export async function persistJob(db: PoolClient, job: c.ManagerJob, markUnstarted = false) { await db.query("UPDATE jobs SET data=$2,state=$3,run_after=$4,lease_expires_at=$5,generation=$6,authority=CASE WHEN $7::boolean THEN authority || jsonb_build_object('unstartedGeneration',$6::integer) ELSE authority END WHERE id=$1", [job.id, job, job.state, job.runAfter, job.leaseExpiresAt, job.leaseGeneration, markUnstarted]); }
 export class JobQueue {
     constructor(public pool: Pool, public now: () => Date = () => new Date(), public phoneConfig: SendblueConfig = sendblueConfig()) { }
     async claim(): Promise<c.ManagerJob | null> {
@@ -55,12 +55,51 @@ export class JobQueue {
             job.projectEpoch = project.epoch;
             job.grantVersions = grants(sources);
             job.errorClass = null;
-            await persistJob(db, job);
+            // Only claims produced by this version are eligible for unstarted release.
+            await persistJob(db, job, true);
             await appendEvent(db, project, 'job_updated', job.id);
             return job;
         });
     }
+    /** Returns true only for a committed release. Errors may have an unknown commit outcome. */
+    async releaseUnstarted(job: c.ManagerJob): Promise<boolean> {
+        return transaction(this.pool, async db => {
+            await db.query('SELECT pg_advisory_xact_lock(7317503)');
+            const authority = (await db.query('SELECT authority FROM jobs WHERE id=$1', [job.id])).rows[0]?.authority as JobAuthority | undefined;
+            if (!authority) return false;
+            await reauthorizeJob(db, authority, this.now, job.projectId, 'manager', this.phoneConfig);
+            const project = await lockProject(db, job.projectId, authority.ownerId);
+            const row = (await db.query('SELECT * FROM jobs WHERE id=$1 FOR UPDATE', [job.id])).rows[0];
+            if (!row || row.project_id !== job.projectId || row.state !== 'running' || row.generation !== job.leaseGeneration || row.authority?.unstartedGeneration !== job.leaseGeneration) return false;
+            // Time can advance while waiting for the project or job row lock.
+            await reauthorizeJob(db, authority, this.now, project.id, 'manager', this.phoneConfig);
+            const current = c.ManagerJobSchema.parse(row.data);
+            if (current.tries < 1) return false;
+            current.state = 'queued';
+            current.tries--;
+            current.leaseGeneration++;
+            current.leaseExpiresAt = null;
+            await persistJob(db, current);
+            await db.query("UPDATE jobs SET authority=authority - 'unstartedGeneration' WHERE id=$1", [job.id]);
+            await appendEvent(db, project, 'job_updated', job.id);
+            return true;
+        });
+    }
+    // Commit the start fence separately, so an error in subsequent work cannot undo it.
+    private async beginWork(job: c.ManagerJob): Promise<void> {
+        await transaction(this.pool, async db => {
+            const authority = (await db.query('SELECT authority FROM jobs WHERE id=$1', [job.id])).rows[0]?.authority as JobAuthority | undefined;
+            if (!authority) throw new Error('lease_authority');
+            await reauthorizeJob(db, authority, this.now, job.projectId, 'manager', this.phoneConfig);
+            await lockProject(db, job.projectId, authority.ownerId);
+            const row = (await db.query('SELECT * FROM jobs WHERE id=$1 FOR UPDATE', [job.id])).rows[0];
+            if (!row || row.project_id !== job.projectId || row.state !== 'running' || row.generation !== job.leaseGeneration || !row.lease_expires_at || new Date(row.lease_expires_at) <= this.now()) throw new Error('lease_lost');
+            if (row.authority?.unstartedGeneration === job.leaseGeneration)
+                await db.query("UPDATE jobs SET authority=authority - 'unstartedGeneration' WHERE id=$1", [job.id]);
+        });
+    }
     private async locked<T>(job: c.ManagerJob, work: (db: PoolClient, current: c.ManagerJob, project: c.Project, authority: JobAuthority, staleCount: number) => Promise<T>): Promise<T> {
+        await this.beginWork(job);
         return transaction(this.pool, async (db) => {
             const authority = (await db.query('SELECT authority FROM jobs WHERE id=$1', [job.id])).rows[0]?.authority as JobAuthority | undefined;
             if (!authority)
