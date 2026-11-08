@@ -24,6 +24,7 @@ export async function startCloudApplication(options: {
   pool: Pool;
   env: NodeJS.ProcessEnv;
   listen: { host: string; port: number };
+  signal?: AbortSignal;
   dependencies?: CloudDependencies;
 }) {
   const { pool } = options;
@@ -47,9 +48,11 @@ export async function startCloudApplication(options: {
   };
 
   try {
+    options.signal?.throwIfAborted();
     const phoneConfig = sendblueConfig(options.env);
     if (phoneConfig.enabled && !capability(phoneConfig).available) throw new Error('Sendblue configuration is invalid.');
     const model = await deps.configureModel(pool);
+    options.signal?.throwIfAborted();
     app = deps.buildServer(pool, { inference: model.inference, sendblue: phoneConfig });
     stops.push(deps.startManager(deps.createQueue(pool, phoneConfig), model.adapter));
     stops.push(deps.startCheckins(pool));
@@ -61,10 +64,53 @@ export async function startCloudApplication(options: {
     });
     stops.push(() => runtime.stop());
     await app.listen(options.listen);
+    options.signal?.throwIfAborted();
     runtime.start();
     return { close, inferenceAvailable: model.inference.available };
   } catch (error) {
     try { await close(); } catch { /* Preserve the startup error after cleanup. */ }
     throw error;
+  }
+}
+
+
+type CloudProcessApplication = { close(): Promise<void>; inferenceAvailable: boolean };
+type ShutdownSignals = {
+  on(event: 'SIGTERM' | 'SIGINT', listener: () => void): unknown;
+  removeListener(event: 'SIGTERM' | 'SIGINT', listener: () => void): unknown;
+};
+
+/** Install signal handlers before starting; wait for owned startup resources before shutdown. */
+export async function runCloudProcess(options: {
+  signals: ShutdownSignals;
+  start(signal: AbortSignal): Promise<CloudProcessApplication>;
+  onStarted(application: CloudProcessApplication): void;
+  onShutdownError(): void;
+}): Promise<void> {
+  const controller = new AbortController();
+  let stopping: Promise<void> | undefined;
+  let shutdownRequested = false;
+  const startup = Promise.resolve().then(() => options.start(controller.signal));
+  const detach = () => {
+    options.signals.removeListener('SIGTERM', onSignal);
+    options.signals.removeListener('SIGINT', onSignal);
+  };
+  const onSignal = () => {
+    if (shutdownRequested) return;
+    shutdownRequested = true;
+    controller.abort();
+    stopping = startup.then(application => application.close(), () => {}).catch(() => {
+      try { options.onShutdownError(); } catch { /* Do not leak reporter errors. */ }
+    }).finally(detach);
+  };
+  options.signals.on('SIGTERM', onSignal);
+  options.signals.on('SIGINT', onSignal);
+  try {
+    const application = await startup;
+    if (controller.signal.aborted) { if (stopping) await stopping; }
+    else options.onStarted(application);
+  } catch (error) {
+    if (controller.signal.aborted) { if (stopping) await stopping; }
+    else { detach(); throw error; }
   }
 }

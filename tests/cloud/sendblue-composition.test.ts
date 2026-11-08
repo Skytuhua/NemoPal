@@ -1,6 +1,7 @@
+import { EventEmitter } from 'node:events';
 import type { Pool } from 'pg';
 import { afterEach, expect, it, vi } from 'vitest';
-import { startCloudApplication, type CloudDependencies } from '../../apps/cloud/src/application';
+import { runCloudProcess, startCloudApplication, type CloudDependencies } from '../../apps/cloud/src/application';
 import type { SendblueConfig } from '../../apps/cloud/src/integrations/sendblue/config';
 
 const configured = { NEMOPAL_SENDBLUE_ENABLED: 'true', SENDBLUE_ACCOUNT_EMAIL: 'synthetic@example.test', SENDBLUE_RECEIVING_LINE: '+15555550123', SENDBLUE_API_KEY_ID: 'synthetic-key', SENDBLUE_API_SECRET_KEY: 'synthetic-secret', SENDBLUE_WEBHOOK_SECRET: 'synthetic-hook' };
@@ -122,4 +123,48 @@ it('closes already started resources when a later worker fails to start', async 
   expect(s.stopManager).toHaveBeenCalledTimes(1);
   expect(s.app.close).toHaveBeenCalledTimes(1);
   expect(s.pool.end).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(['model', 'listen'] as const)('drains resources after a signal during %s startup', async phase => {
+  const s = setup({ ...configured });
+  const signals = new EventEmitter();
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  if (phase === 'model') {
+    s.dependencies.configureModel.mockImplementationOnce(async () => { await held; return { inference: { available: false }, adapter: {} }; });
+  } else {
+    s.app.listen.mockImplementationOnce(async () => { await held; });
+  }
+  const started = vi.fn();
+  const launch = runCloudProcess({
+    signals,
+    start: signal => startCloudApplication({ pool: s.pool, env: s.env, listen: { host: 'fixture', port: 1 }, dependencies: s.dependencies as unknown as CloudDependencies, signal }),
+    onStarted: started,
+    onShutdownError: vi.fn(),
+  });
+  await vi.waitFor(() => expect(phase === 'model' ? s.dependencies.configureModel : s.app.listen).toHaveBeenCalledOnce());
+  expect(signals.listenerCount('SIGTERM')).toBe(1);
+  expect(signals.listenerCount('SIGINT')).toBe(1);
+  signals.emit(phase === 'model' ? 'SIGTERM' : 'SIGINT');
+  signals.emit('SIGTERM');
+  signals.emit('SIGINT');
+  expect(signals.listenerCount('SIGTERM')).toBe(1);
+  expect(signals.listenerCount('SIGINT')).toBe(1);
+  expect(s.pool.end).not.toHaveBeenCalled();
+  release();
+  await launch;
+  expect(signals.listenerCount('SIGTERM')).toBe(0);
+  expect(signals.listenerCount('SIGINT')).toBe(0);
+  expect(started).not.toHaveBeenCalled();
+  expect(s.pool.end).toHaveBeenCalledTimes(1);
+  if (phase === 'model') {
+    expect(s.dependencies.buildServer).not.toHaveBeenCalled();
+    expect(s.dependencies.startManager).not.toHaveBeenCalled();
+  } else {
+    expect(s.app.close).toHaveBeenCalledTimes(1);
+    expect(s.stopManager).toHaveBeenCalledTimes(1);
+    expect(s.stopCheckins).toHaveBeenCalledTimes(1);
+    expect(s.delivery.tick).not.toHaveBeenCalled();
+  }
 });
