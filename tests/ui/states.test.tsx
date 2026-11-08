@@ -10,7 +10,7 @@ test('stale source alone leaves cloud distinct; offline and paused states preser
   const seed = snapshot(); seed.sourceBindings[0]!.state = 'stale'; seed.connection.sync = 'offline'; seed.project.status = 'paused';
   render(<App client={createFixtureClient({ snapshots: [seed] })} drafts={memoryDrafts()} fixture />);
   expect(await screen.findByText(/Cloud offline · writes unavailable\. You can keep drafting notes/)).toBeVisible();
-  await userEvent.click(screen.getByText('Connection details'));
+  await userEvent.click(screen.getByText('Connection details', { selector: 'summary' }));
   expect(screen.getByText('Cloud offline · writes unavailable')).toBeVisible();
   expect(screen.getByText(/Source freshness: stale/)).toBeVisible();
   expect(screen.getByText('Project paused')).toBeVisible();

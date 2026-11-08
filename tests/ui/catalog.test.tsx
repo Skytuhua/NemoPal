@@ -9,7 +9,7 @@ afterEach(cleanup);
 test('all six trusted panel variants resolve canonical records and expose evidence labels', async () => {
   const { container } = render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture />);
   await screen.findByRole('heading', { name: 'Demo notes' });
-  expect([...container.querySelectorAll('[data-panel-type]')].map(el => el.getAttribute('data-panel-type'))).toEqual(['next_action', 'checklist', 'question_card', 'document_editor', 'milestone_timeline', 'evidence_card']);
+  expect([...container.querySelectorAll('[data-panel-type]')].map(el => el.getAttribute('data-panel-type'))).toEqual(['next_action', 'milestone_timeline', 'checklist', 'evidence_card', 'document_editor', 'question_card']);
   await userEvent.click(screen.getByText(/Agent reported/));
   expect(screen.getByText(/Observed at/)).toBeVisible();
 });

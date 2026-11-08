@@ -15,9 +15,10 @@ test('owner accepts the proposed plan and corrects task status without chat', as
   await waitFor(() => expect(screen.getByLabelText('Status: Record the demo')).toHaveValue('done'));
   expect(await screen.findByText(/Owner reported/)).toBeVisible();
   expect((await client.getSnapshot(snapshot().project.id)).project.tasks[0]?.ownerOverride).toBe(true);
+  await userEvent.click(await screen.findByText('Demo', { selector: 'summary' }));
   expect(screen.getByText(/synthetic data · no live model/)).toBeVisible();
-  expect(screen.getByText('Your manager can’t reply yet')).toBeVisible();
-  await userEvent.click(screen.getByText('Connection details'));
+  expect(screen.getByLabelText('Manager chat status')).toHaveTextContent(/draft only/i);
+  await userEvent.click(screen.getByText('Connection details', { selector: 'summary' }));
   expect(screen.getByText(/Nemotron unavailable/)).toBeVisible();
 });
 test('a new project has unknown progress and unavailable inference rather than green readiness', async () => {
@@ -32,6 +33,7 @@ test('a new project has unknown progress and unavailable inference rather than g
 });
 test('snapshot fixture provenance is visible even when a desktop adapter supplies it', async () => {
   render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture={false} />);
+  await userEvent.click(await screen.findByText('Demo', { selector: 'summary' }));
   expect(await screen.findByText('Fixture mode · synthetic data · no live model')).toBeVisible();
 });
 test('new project brief drafts survive remount before creation', async () => {

@@ -1,13 +1,9 @@
-# First project and project workspace
+# First project and project overview
 
-Mode: Operate. Direction is approved in the owner dispatch; the reference board is inspiration only.
+Mode: Operate. User direction is settled in the visual workspace rebuild plan; no concept lottery.
 
-THESIS: A place to turn a goal into clear steps, with the next useful action always easy to find.
-OWN-WORLD: Restrained charcoal surfaces, readable white type, blue actions, green only for recorded progress. A familiar project list and spacious working page, with the unchanged approved grey mouse used once as a friendly guide. No dashboard metrics, invented integrations or copied board composition.
-STORY: Name the project and explain the goal; open a real project; review its plan, update an actual task or write notes; ask the project's manager when available.
-FIRST VIEWPORT: Welcome and the two-field form for an empty account. Otherwise the selected project's name, goal, actual task count and next action lead; the manager explains its own availability. Projects has an overview, not a fabricated dashboard.
-FORM: Native controls, 44px targets, visible focus, fluid 375px and landscape layouts, reduced motion. Advanced project/connection details are closed by default. Sources & privacy has a direct header shortcut, and stop/revoke remain one disclosure away.
+An empty account shows the approved mouse beside a deliberate two-field create flow. Project title and brief keep visible labels, local draft persistence and the exact persisted creation command for retry. Creating saves the brief; it does not claim that an unavailable planner produced tasks. Unknown progress remains unknown.
 
-Preserve existing request tickets, revision checks, document identity, held layouts and draft stores. Browsing the overview hides rather than removes the working editors. Synthetic mode is explicitly labeled in the application header. No provider, source, native or production acceptance is inferred from headless fixtures.
+Projects shows real project names/goals, active-project count and canonical unanswered check-in count. Continue opens an existing project. New project is the only new-work action; no unsupported Reports/Templates destinations. A compact Demo badge discloses provenance on demand. The richer app-local example requires the existing explicit runtime fixture opt-in and validated fixture client; a desktop bridge never falls back to it.
 
-Implementation: App/WorkspaceRoot and small presentation components; feature rendering and scoped stylesheet changes only. Existing contracts and client behavior remain unchanged. Independent code/design review belongs to the parent; no nested agents, push or PR before that review.
+The actual layout, colors, type and controls are in DESIGN.md and .impeccable/design.json. The compact frame replaces the rejected long-page composition. Parent performs all visual acceptance and final review; worker evidence is limited to synthetic behavior and static CSS.

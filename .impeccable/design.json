@@ -2,29 +2,172 @@
   "schemaVersion": 2,
   "title": "Design System: Living Playbooks",
   "extensions": {
-    "motion": [{ "name": "control-transition", "value": "160ms ease-out", "purpose": "Control feedback only; disabled with reduced motion." }],
-    "breakpoints": [{ "name": "compact-desktop", "value": "1200px" }, { "name": "single-surface", "value": "1000px" }],
-    "focus": [{ "name": "keyboard-focus", "value": "3px solid var(--focus)", "purpose": "Visible focus with 3px offset." }]
+    "motion": [
+      {
+        "name": "control-transition",
+        "value": "160ms ease-out",
+        "purpose": "Control feedback only; disabled with reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-desktop",
+        "value": "1180px"
+      },
+      {
+        "name": "single-surface",
+        "value": "1000px"
+      }
+    ],
+    "focus": [
+      {
+        "name": "keyboard-focus",
+        "value": "3px solid var(--focus)",
+        "purpose": "Visible focus with 3px offset."
+      }
+    ],
+    "layout": [
+      {
+        "name": "desktop-frame",
+        "value": "56px header / 200px rail / minmax(0,1fr) desk / 290px manager"
+      },
+      {
+        "name": "bounded-lower-lists",
+        "value": "min-height:0; overflow:auto",
+        "purpose": "Tasks and evidence/notes may scroll independently; the check-in follows outside those scroll containers."
+      }
+    ],
+    "colorMeta": {
+      "action": {
+        "role": "primary",
+        "displayName": "Working blue",
+        "canonical": "#286cde",
+        "tonalRamp": [
+          "#1c2939",
+          "#22344c",
+          "#2459a1",
+          "#26364b",
+          "#28394e",
+          "#405b7c",
+          "#43597a",
+          "#4b6484",
+          "#506787",
+          "#526481",
+          "#5679a6",
+          "#84b7ff",
+          "#b0c6e4",
+          "#b5d3ff",
+          "#b9c5d7",
+          "#bed3f3",
+          "#c0cee0",
+          "#c1d9ff",
+          "#c2d7f6",
+          "#c2dcff",
+          "#c4d7f5",
+          "#c5dcff",
+          "#f0f3f8"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Recorded green",
+        "canonical": "#85d6a7",
+        "tonalRamp": [
+          "#20362a",
+          "#254233",
+          "#4a795e",
+          "#68ad83",
+          "#70b88e",
+          "#72b48d",
+          "#85d6a7",
+          "#a1edbb",
+          "#bcf5cb"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Charcoal workspace",
+        "canonical": "#1a1d22",
+        "tonalRamp": [
+          "#121519",
+          "#1a1d22",
+          "#232830",
+          "#2c333d",
+          "#343c47",
+          "#566273",
+          "#687586",
+          "#adb7c6",
+          "#ffffff24"
+        ]
+      }
+    },
+    "shadows": [
+      {
+        "name": "detail-drawer",
+        "value": "-18px 16px 60px #0008",
+        "purpose": "A detail drawer sits above the desk."
+      },
+      {
+        "name": "primary-inset",
+        "value": "inset 0 1px 0 #ffffff24",
+        "purpose": "Light edge on blue primary controls."
+      }
+    ]
   },
-  "components": [{
-    "name": "Primary action", "kind": "button", "refersTo": "button-primary", "description": "The current explicit project action.",
-    "html": "<button class=\"ds-primary\">Accept plan</button>",
-    "css": ".ds-primary{font:600 16px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:10px 12px;border:1px solid #286cde;border-radius:8px;background:#286cde;color:white}.ds-primary:hover{background:#2266d2}.ds-primary:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
-  }, {
-    "name": "Project input", "kind": "input", "description": "Persistent label and native text input.",
-    "html": "<label class=\"ds-input\">Project title<input placeholder=\"e.g. Launch my website\"></label>",
-    "css": ".ds-input{display:grid;gap:8px;font:600 16px 'Segoe UI',system-ui,sans-serif;color:#f1f2f4}.ds-input input{font:inherit;font-weight:400;min-height:44px;padding:10px 12px;border:1px solid #626b79;border-radius:8px;background:#1b1d21;color:#f1f2f4}.ds-input input::placeholder{color:#b0b6c0}.ds-input input:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
-  }, {
-    "name": "Narrow navigation", "kind": "nav", "description": "Projects, workspace or manager conversation below 1000px.",
-    "html": "<nav class=\"ds-nav\"><button>Projects</button><button aria-pressed=\"true\">Workspace</button><button>Chat</button></nav>",
-    "css": ".ds-nav{display:flex;gap:8px;background:#151619;padding:12px 20px}.ds-nav button{flex:1;min-width:0;overflow-wrap:anywhere;font:600 14px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:10px 8px;border:1px solid #626b79;border-radius:8px;background:#1b1d21;color:#f1f2f4}.ds-nav button[aria-pressed=true]{background:#2b3442;border-color:#93c2ff}.ds-nav button:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
-  }],
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The current explicit project action.",
+      "html": "<button class=\"ds-primary\">Accept plan</button>",
+      "css": ".ds-primary{font:600 14px 'Segoe UI',system-ui,sans-serif;min-height:36px;padding:8px 12px;border:1px solid #286cde;border-radius:7px;background:#286cde;color:white}.ds-primary:hover{background:#2266d2}.ds-primary:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
+    },
+    {
+      "name": "Project input",
+      "kind": "input",
+      "description": "Persistent label and native text input.",
+      "html": "<label class=\"ds-input\">Project title<input placeholder=\"e.g. Launch my website\"></label>",
+      "css": ".ds-input{display:grid;gap:8px;font:600 16px 'Segoe UI',system-ui,sans-serif;color:#f0f3f8}.ds-input input{font:inherit;font-weight:400;min-height:44px;padding:10px 12px;border:1px solid #566273;border-radius:8px;background:#1a1d22;color:#f0f3f8}.ds-input input::placeholder{color:#adb7c6}.ds-input input:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
+    },
+    {
+      "name": "Narrow navigation",
+      "kind": "nav",
+      "description": "Projects, workspace or manager conversation below 1000px.",
+      "html": "<nav class=\"ds-nav\"><button>Projects</button><button aria-pressed=\"true\">Workspace</button><button>Chat</button></nav>",
+      "css": ".ds-nav{display:flex;gap:8px;background:#121519;padding:12px 20px}.ds-nav button{flex:1;min-width:0;overflow-wrap:anywhere;font:600 14px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:10px 8px;border:1px solid #566273;border-radius:8px;background:#1a1d22;color:#f0f3f8}.ds-nav button[aria-pressed=true]{background:#26364b;border-color:#93c2ff}.ds-nav button:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
+    }
+  ],
   "narrative": {
     "northStar": "The project desk",
-    "overview": "Calm charcoal surfaces, direct actions and plain language help a first-time project owner find the next useful step.",
-    "keyCharacteristics": ["Readable task-first workspace", "Recognizable project navigation", "Progressive disclosure", "Unchanged approved mouse"],
-    "rules": [{ "name": "Recorded progress", "body": "Green and progress counts describe real task records; unknown stays unknown.", "section": "colors" }, { "name": "Capability truth", "body": "Source permissions, cloud connection and model availability remain distinct.", "section": "components" }],
-    "dos": ["Preserve drafts and focused editors", "Label synthetic mode", "Keep privacy controls directly reachable"],
-    "donts": ["No fabricated metrics or integrations", "No automatic fixture fallback", "No copied board composition"]
+    "overview": "An original compact charcoal project desk shows actual progress, next action, connected steps, task/evidence/notes cards, check-in and manager together.",
+    "keyCharacteristics": [
+      "Compact three-column workspace",
+      "Recorded data and connected steps",
+      "Bounded collections and retained detail editors",
+      "Unchanged approved mouse and light native pet"
+    ],
+    "rules": [
+      {
+        "name": "Recorded progress",
+        "body": "Green and progress counts describe real task records; unknown stays unknown.",
+        "section": "colors"
+      },
+      {
+        "name": "Capability truth",
+        "body": "Source permissions, cloud connection and model availability remain distinct.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Preserve drafts and focused editors",
+      "Label synthetic mode",
+      "Keep privacy controls directly reachable"
+    ],
+    "donts": [
+      "No fabricated metrics or integrations",
+      "No automatic fixture fallback",
+      "No copied board composition"
+    ]
   }
 }

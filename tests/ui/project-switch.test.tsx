@@ -13,7 +13,7 @@ test('late A snapshot never populates selected B workspace or conversation', asy
   client.getSnapshot = (id, signal) => id === a.project.id ? late.promise : original(id, signal);
   render(<App client={client} drafts={memoryDrafts()} fixture />);
   await userEvent.click(await screen.findByRole('button', { name: /Second project/ }));
-  await screen.findByRole('heading', { name: 'Second project' });
+  await screen.findByRole('heading', { name: 'Second project', level: 1 });
   a.project.goal = 'LATE A MUST STAY OUT';
   a.messages[0]!.text = 'Late private A conversation';
   await act(async () => late.resolve(a));
@@ -31,5 +31,5 @@ test('late A owner mutation completion cannot invalidate a still-loading B reque
   await userEvent.click(screen.getByRole('button', { name: /Second project/ }));
   await act(async () => mutation.resolve({ operationId: crypto.randomUUID(), requestHash: '0'.repeat(64), status: 'completed', result: a.project, projectRevision: 1, eventSequence: 1 }));
   await act(async () => loadingB.resolve(b));
-  expect(await screen.findByRole('heading', { name: 'Second project' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Second project', level: 1 })).toBeVisible();
 });

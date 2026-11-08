@@ -8,104 +8,145 @@ colors:
   success: "#85d6a7"
   error: "#ffb1ad"
   error-surface: "#352326"
-  chrome: "#151619"
-  surface: "#1b1d21"
-  raised: "#24272d"
-  selected: "#2b3442"
-  ink: "#f1f2f4"
-  muted: "#b0b6c0"
-  line: "#383d46"
-  control-line: "#626b79"
+  chrome: "#121519"
+  surface: "#1a1d22"
+  raised: "#232830"
+  selected: "#26364b"
+  ink: "#f0f3f8"
+  muted: "#adb7c6"
+  line: "#343c47"
+  control-line: "#566273"
 typography:
   title:
     fontFamily: "Segoe UI, system-ui, sans-serif"
-    fontSize: "clamp(1.75rem, 2.5vw, 2.25rem)"
+    fontSize: "1.5625rem"
     fontWeight: 650
-    lineHeight: 1.2
+    lineHeight: 1.25
     letterSpacing: "-0.025em"
   welcome:
     fontFamily: "Segoe UI, system-ui, sans-serif"
-    fontSize: "clamp(2rem, 4vw, 3rem)"
+    fontSize: "2.375rem"
     fontWeight: 650
-    lineHeight: 1.2
+    lineHeight: 1.25
   heading:
     fontFamily: "Segoe UI, system-ui, sans-serif"
-    fontSize: "1.125rem"
+    fontSize: "0.875rem"
     fontWeight: 650
     lineHeight: 1.4
   body:
     fontFamily: "Segoe UI, system-ui, sans-serif"
-    fontSize: "16px"
+    fontSize: "14px"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.45
   secondary:
     fontFamily: "Segoe UI, system-ui, sans-serif"
-    fontSize: "0.875rem"
+    fontSize: "0.8125rem"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.45
+  metadata:
+    fontSize: "0.75rem"
+    fontWeight: 500
+    lineHeight: 1.4
+  action-title:
+    fontSize: "1.125rem"
+    fontWeight: 650
+    lineHeight: 1.45
+  overview-title:
+    fontSize: "1.0625rem"
+    fontWeight: 650
+    lineHeight: 1.4
+  progress:
+    fontSize: "1.4375rem"
+    fontWeight: 650
+    lineHeight: 1
+  form-title:
+    fontSize: "1.3125rem"
+    fontWeight: 650
+    lineHeight: 1.4
+  compact-label:
+    fontSize: "0.9375rem"
+    fontWeight: 500
+    lineHeight: 1.45
+  mobile-title:
+    fontSize: "1.625rem"
+    fontWeight: 650
+    lineHeight: 1.25
+  mobile-welcome:
+    fontSize: "1.875rem"
+    fontWeight: 650
+    lineHeight: 1.15
 rounded:
-  control: "8px"
-  progress: "4px"
-  pet-bubble: "12px"
+  control: "7px"
+  compact-control: "6px"
+  chip: "5px"
+  marker: "4px"
+  input: "8px"
+  panel: "10px"
+  detail: "12px"
+  circular-marker: "50%"
 spacing:
   small: "8px"
   group: "12px"
   medium: "16px"
   content: "20px"
-  section: "28px"
-  surface: "32px"
+  section: "18px"
+  surface: "20px"
 components:
   button:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
     rounded: "{rounded.control}"
-    padding: "10px 12px"
-    height: "44px"
+    padding: "8px 12px"
+    height: "36px"
   button-primary:
     backgroundColor: "{colors.action}"
     textColor: "#ffffff"
     rounded: "{rounded.control}"
-    padding: "10px 12px"
+    padding: "8px 12px"
 ---
 
 # Design System: Living Playbooks
 
 ## Overview
 
-The project desk uses restrained charcoal layers and clear working space. Familiar navigation, direct actions and plain language carry the interface. The supplied board establishes atmosphere; this product has its own composition and only supported destinations. The approved grey pixel mouse adds a small friendly presence.
+The compact project desk replaces the rejected long page. A project owner can read recorded progress, follow the next action and connected steps, inspect tasks and evidence, open notes, answer a check-in and draft a manager message in the same desktop viewport. The supplied board sets the clarity and density bar; this is an original composition with supported actions only.
 
 ## Colors
 
-Blue identifies an available primary action; pale blue identifies keyboard focus and supporting actions. White leads and soft grey explains. Green represents recorded task progress, never service readiness or assumed success. Errors use readable warm text on a quiet dark surface. State always has a text label.
+The app owns charcoal surface tokens under `.app-shell`. Blue identifies available actions and current work; green describes recorded task completion. Counts always come from current canonical task records. White leads, blue-grey explains, and warm error text names recovery. Status has a text label or a labelled control as well as color.
 
-The separate native pet window retains its incumbent light bubble and transparent background. Its existing scoped variables are deliberately distinct from the project desk.
+The separate `.pet-window` keeps its existing light tokens, transparent ground, default Question presentation and exact approved sprite bytes. Application theme overrides must stay inside `.app-shell`.
 
 ## Typography
 
-One system sans family follows the Windows application setting. Body text is 16px; secondary text is 14px, with 12–13px reserved for short provenance/navigation metadata. Working headings step through 18, 20 and 24px; project titles are fluid 28–36px. The first-project welcome reaches 48px on desktop and reduces to 28px on a narrow screen. Copy wraps rather than truncates; body measure is capped at 72ch.
+The desktop working surface uses Segoe UI/system sans at 14px with 1.45 line height, 25px project titles, 18px next-action titles and 14px card headings. Short provenance, status and navigation metadata uses 12-13px; notes and primary controls remain 14-16px. The first-project heading uses 38px on desktop and 30px on mobile. Titles wrap; long collections scroll inside bounded lists. No whole-app scaling or clipping to force fit.
 
 ## Layout
 
-Desktop uses a 224px project list, a majority-width working surface and a 312px manager panel. At 1200px the side panels narrow to 192px and 280px. Below 1000px, Projects / Workspace / Chat selects one visible surface. The overview and create form use the space normally occupied by the manager panel. Main gutters are fluid with 20px on mobile; forms are capped at 660px. Page scrolling remains native.
+Desktop has a 56px header, 200px project rail, flexible desk and 290px manager track. The app occupies 100dvh with min-height:0 at each flex/grid boundary. The manager owns its internal padding and anchored composer. The desk uses 18px top, 20px horizontal and 12px bottom insets with 10-12px gaps.
+
+Within the desk, project identity leads into a single progress/review band. The next-action card and connected steps lead to a lower task list beside files/evidence and a notes preview. A full-width check-in row follows those bounded lists; its answer actions stay outside their scroll area. Settings, connection, source/privacy, notes and evidence use reachable detail surfaces. The overview is a real project list with derived project, active-project and unanswered-question counts; it invents no cross-project completion estimate.
+
+At <=1000px, Projects / Workspace / Chat switches surfaces. Narrow or short viewports, enlarged text and long content may reflow and scroll for accessibility. Desktop overview fitting at 1366x768 and 1440x900 is an integration acceptance gate, not a claim made by DOM tests.
 
 ## Elevation & Depth
 
-Flat tonal layers and fine separators provide depth. No decorative shadows or glass. Working sections sit directly on the page instead of repeating a card grid.
+Fine outlined/inset panels define working regions. The next-action surface carries a quiet blue tint. Detail drawers use a soft directional shadow and dialogs use a dark backdrop. No decorative glass, gradients, charts or fabricated artifacts.
 
 ## Shapes
 
-Native controls have soft 8px corners and at least 44px target height. Consistent authored 20px outline icons accompany labels. The mouse uses the original sprite's first cell, pixelated at display size, with no new animation or alteration of its bytes.
+Controls use 7-8px corners, panels 10px and focused detail surfaces 12px. Native semantic buttons, selects, progress, details and dialogs retain keyboard behavior. Pointer controls are 36px in dense desktop groups; primary forms, check-in actions and coarse-pointer controls use at least 44px. Focus is a 3px pale-blue outline with offset. Motion is limited to 160ms control feedback and respects reduced motion.
 
 ## Components
 
-Projects shows real names, goals, plan state and unanswered questions; no invented dashboard totals. The workspace orders next action, tasks, check-in, notes, milestones and evidence, preserving stable panel/editor identity. Task progress is a native progress element backed by actual done/total counts and a visible count label; unknown stays unknown.
+The progress band displays the actual done/total fraction, a native progress element and derived status counts. No tasks means progress unknown. Plan acceptance shares the band so it does not push the rest of the overview down. Task selectors remain guarded owner actions. Connected steps and the manager open the real task control, with a detail inspector when the trusted checklist omits that task.
 
-Project settings, connection details and source permissions use native disclosures. The header's Sources & privacy shortcut opens and focuses the source controls directly. Consent and stop/revoke actions retain their existing semantics. Chat explains unavailability and offers the useful work still supported. Drafts remain editable and recoverable. Focus rings are 3px; control feedback is 160ms and disabled under reduced motion.
+Notes have a preview/open trigger and one retained editor/draft instance. Overview navigation hides the workspace instead of unmounting it. Detail open/close preserves the editor identity. Canonical check-ins omitted from the trusted layout still appear in the check-in area. Source/privacy keeps its direct header shortcut and reachable pause/revoke controls. Explicit demo mode has a compact badge whose disclosure explains synthetic provenance; the richer app-local example is constructed only after the existing runtime returns fixture=true, using the validated fixture client. It never supplies native-bridge fallback data.
 
 ## Do's and Don'ts
 
-- Keep the open project and next action visible; retain keyboard and draft behavior across navigation.
-- Label demo/synthetic mode explicitly and keep source, connection and model status distinct.
-- Preserve the approved mouse asset; do not infer a pet redesign from this workspace redesign.
-- Do not add unsupported Reports, Templates, integrations, fabricated dates, percentages or completion claims.
-- Do not interpret headless fixture checks as native, provider, production or user visual acceptance.
+- Keep the next action, recorded progress, steps, task/evidence/notes regions, check-in and manager composer in the ordinary desktop viewport.
+- Preserve revision checks, request tickets, durable drafts, canonical questions and held trusted layouts.
+- Open real existing document/evidence records; use no decorative dead file rows or unsupported destinations.
+- Keep the approved grey pixel mouse unchanged and preserve the independent native pet theme.
+- Do not treat synthetic behavior/CSS checks as viewport, visual, native, model, source-read or hosted acceptance.

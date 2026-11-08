@@ -1,9 +1,25 @@
 import { useState } from 'react';
-import type { PlaybooksClient, ProjectSnapshot } from '@living-playbooks/contracts';
+import type { PlaybooksClient, ProjectSnapshot, TaskStatus } from '@living-playbooks/contracts';
 import type { DraftStore } from '../documents/drafts';
 import { useDraft } from '../documents/useDraft';
 import { ManagerMouse } from '../../app/Presentation';
-export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace }: { snapshot: ProjectSnapshot; client: PlaybooksClient; store: DraftStore; disabled: boolean; refresh(): Promise<void>; openWorkspace?(): void }) {
+import { ManagerOverview } from './ManagerOverview';
+import { ManagerIcon } from './ManagerIcon';
+import './manager-panel.css';
+
+export interface ChatProps {
+  snapshot: ProjectSnapshot;
+  client: PlaybooksClient;
+  store: DraftStore;
+  disabled: boolean;
+  refresh(): Promise<void>;
+  openWorkspace?(): void;
+  fixture?: boolean;
+  openTask?: (id: string) => void;
+  updateTask?: (id: string, status: TaskStatus) => void;
+}
+
+export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace, fixture = false, openTask, updateTask }: ChatProps) {
   const { project } = snapshot, local = useDraft(store, `${project.id}:chat`, '', 0);
   const [busy, setBusy] = useState(false), [status, setStatus] = useState('');
   async function send() {
@@ -16,10 +32,58 @@ export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace
       setStatus(`Manager request ${job.state}. A reply is not available yet.`); await refresh();
     } catch { setStatus('Message not confirmed. Draft preserved; refresh before retrying.'); } finally { setBusy(false); }
   }
-  return <><header className="surface-header"><ManagerMouse /><div><h2>{project.manager.displayName}</h2><small>Your project manager</small></div></header>
-    <p className="manager-context">Here to help with <strong>{project.title}</strong>.</p>
-    {!snapshot.connection.inference.available && <div className="manager-unavailable"><h3>Your manager can’t reply yet</h3><p>{disabled ? 'You can keep drafting messages. Refresh the project before saving changes.' : project.tasks.length || snapshot.documents.length ? 'You can still update tasks and write notes. Draft a message here to send when the model is available.' : 'Your project brief is saved. You can draft a message here to send when the model is available.'}</p>{openWorkspace && <button onClick={openWorkspace}>{project.tasks.length || snapshot.documents.length ? 'Go to tasks & notes' : 'Go to project'}</button>}</div>}
-    <div className="messages" role="log" aria-label="Selected manager conversation">{snapshot.messages.length ? snapshot.messages.map(message => <article key={message.id}><strong>{message.role === 'owner' ? 'You' : project.manager.displayName}</strong><p>{message.text}</p>{message.observationIds.length > 0 && <small>References {message.observationIds.length} observations</small>}</article>) : <p>No messages yet. Your tasks and notes are available in Workspace.</p>}</div>
-    <form className="composer" onSubmit={event => { event.preventDefault(); void send(); }}><label htmlFor="manager-message">Message to {project.manager.displayName}</label><textarea id="manager-message" placeholder="Ask a question about this project…" rows={4} value={local.draft.text} disabled={!local.ready} onChange={event => local.change({ text: event.target.value, baseRevision: 0 })} /><button disabled={disabled || !snapshot.connection.inference.available || !local.ready || !local.draft.text.trim() || busy || !!local.error}>{busy ? 'Sending…' : 'Send message'}</button>{!snapshot.connection.inference.available && <small>Sending is unavailable. Your draft stays on this device.</small>}{status && <p role="status">{status}</p>}{local.error && <p role="alert">{local.error}</p>}</form>
-  </>;
+
+  const inference = snapshot.connection.inference;
+  const demo = fixture || snapshot.connection.mode === 'fixture';
+  const chatState = snapshot.connection.sync === 'offline' ? 'Offline'
+    : snapshot.connection.sync === 'stale' ? 'Refresh needed'
+      : snapshot.connection.sync === 'updating' ? 'Syncing'
+        : disabled ? 'Read only'
+          : !inference.available ? demo ? 'Demo · draft only' : 'Draft only'
+            : demo ? 'Demo chat' : 'Chat enabled';
+  const chatExplanation = disabled ? 'Sending is unavailable. You can keep a local draft.'
+    : !inference.available ? 'Replies are unavailable. You can keep a local draft.'
+      : demo ? 'Demo workspace. No live model is connected.' : 'Messaging is available for this project.';
+  // The fixture's diagnostic record is provenance, not an AI conversation.
+  // Never hide owner messages or apply this filter to a live conversation.
+  const messages = demo ? snapshot.messages.filter(message => message.role !== 'manager' || message.text !== 'This is a synthetic fixture. No live model has run.') : snapshot.messages;
+
+  return <div className="manager-desk">
+    <header className="manager-heading">
+      <h2>Project manager</h2>
+      <span className="manager-chat-state" id="manager-chat-state" aria-label="Manager chat status" title={chatExplanation}><ManagerIcon name="message" />{chatState}</span>
+    </header>
+
+    <div className="manager-identity">
+      <div className="manager-avatar"><ManagerMouse /></div>
+      <div><h3>{project.manager.displayName}</h3><p>Your project manager</p></div>
+    </div>
+
+    <div className="manager-scroll">
+      <ManagerOverview project={project} disabled={disabled || busy} openTask={openTask} updateTask={updateTask} openWorkspace={openWorkspace} />
+      <section className="manager-conversation" aria-label="Conversation">
+        <h3>Conversation</h3>
+        <div className="manager-messages" role="log" aria-label="Selected manager conversation" tabIndex={0}>
+          {messages.length ? messages.map(message => <article key={message.id} className={`manager-message manager-message-${message.role}`}>
+            <strong>{message.role === 'owner' ? 'You' : project.manager.displayName}</strong>
+            <p>{message.text}</p>
+            {message.observationIds.length > 0 && <small>References {message.observationIds.length} observations</small>}
+          </article>) : <p className="manager-conversation-empty">No messages yet.</p>}
+        </div>
+      </section>
+    </div>
+
+    <form className="manager-composer" aria-busy={busy} onSubmit={event => { event.preventDefault(); void send(); }}>
+      <label htmlFor="manager-message">Message to {project.manager.displayName}</label>
+      <div className="manager-composer-field">
+        <textarea id="manager-message" placeholder="Ask about this project…" aria-describedby="manager-chat-state" rows={2} value={local.draft.text} disabled={!local.ready} onChange={event => local.change({ text: event.target.value, baseRevision: 0 })} />
+        <div className="manager-composer-toolbar">
+          <small>Local draft</small>
+          <button type="submit" aria-label={busy ? 'Sending…' : 'Send message'} disabled={disabled || !snapshot.connection.inference.available || !local.ready || !local.draft.text.trim() || busy || !!local.error}>{busy ? 'Sending…' : 'Send'}<ManagerIcon name="send" /></button>
+        </div>
+      </div>
+      {status && <p className="manager-send-status" role="status">{status}</p>}
+      {local.error && <p className="manager-draft-error" role="alert">{local.error}</p>}
+    </form>
+  </div>;
 }

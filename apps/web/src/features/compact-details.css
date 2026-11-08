@@ -1,0 +1,140 @@
+/* These feature surfaces belong to the workspace; the native pet is unchanged. */
+.app-shell .compact-question {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.app-shell .compact-question-copy { flex: 1 1 180px; min-width: 0; }
+.app-shell .compact-question-copy p { margin: 0; color: var(--ink); font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.app-shell .compact-question-copy small { display: block; margin-top: 4px; color: var(--muted); font-size: 0.875rem; }
+.app-shell .compact-question-copy .question-saved { color: var(--success); }
+.app-shell .compact-question-actions { display: flex; flex: 0 1 auto; align-items: center; flex-wrap: wrap; gap: 8px; }
+.app-shell .compact-question > [role="alert"], .app-shell .compact-question > [role="status"] { flex-basis: 100%; margin: 0; }
+
+.app-shell :is(.compact-question, .detail-surface) button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 7px 12px;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--control-line);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out;
+}
+.app-shell :is(.compact-question, .detail-surface) button:hover:not(:disabled) { background: var(--selected); border-color: var(--focus); }
+.app-shell :is(.compact-question, .detail-surface) button:active:not(:disabled) { background: var(--chrome); }
+.app-shell :is(.compact-question, .detail-surface) button:disabled { cursor: default; opacity: 0.5; }
+.app-shell :is(.compact-question, .detail-surface) .detail-primary { background: var(--action); border-color: var(--action); color: var(--ink); }
+.app-shell :is(.compact-question, .detail-surface) .detail-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--action) 80%, var(--ink)); border-color: var(--focus); }
+.app-shell .compact-question .detail-icon-button { width: 44px; padding: 8px; }
+.app-shell .compact-question .detail-text-button { color: var(--focus); border-color: transparent; background: transparent; font-weight: 500; }
+.app-shell .compact-question-actions svg { flex-shrink: 0; width: 17px; height: 17px; }
+.app-shell :is(.compact-question, .compact-notes, .source-controls, .detail-surface) :is(button, input, select, textarea, summary):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+
+.app-shell .compact-notes { min-width: 0; }
+.app-shell .notes-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.app-shell .notes-preview:hover { background: var(--raised); }
+.app-shell .notes-preview:active { background: var(--selected); }
+.app-shell .notes-preview-icon { display: grid; place-items: center; flex: 0 0 36px; height: 40px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--chrome); }
+.app-shell .notes-preview-copy { display: grid; min-width: 0; gap: 4px; flex: 1; }
+.app-shell .notes-preview-copy strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink); font-size: 0.875rem; font-weight: 600; overflow-wrap: anywhere; }
+.app-shell .notes-preview-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; color: var(--muted); font-size: 0.875rem; line-height: 1.45; }
+.app-shell .notes-preview small { color: var(--muted); font-size: 0.875rem; }
+.app-shell .notes-preview small.notes-attention { color: var(--error); }
+.app-shell .notes-preview > svg { flex-shrink: 0; margin-top: 9px; color: var(--focus); }
+
+.app-shell .detail-surface {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: min(640px, calc(100vw - 40px));
+  max-width: none;
+  max-height: calc(100dvh - 64px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--control-line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  color-scheme: dark;
+  font-size: 1rem;
+  line-height: 1.5;
+  scrollbar-color: var(--control-line) var(--surface);
+  scrollbar-width: thin;
+}
+.app-shell .detail-surface[hidden], .app-shell .detail-surface:not([open]) { display: none; }
+.app-shell .detail-surface::backdrop { background: color-mix(in srgb, var(--chrome) 78%, transparent); }
+.app-shell .detail-surface-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.app-shell .detail-surface-header h2 { flex: 1; min-width: 0; margin: 0; font-size: 1.125rem; line-height: 1.4; font-weight: 650; overflow-wrap: anywhere; }
+.app-shell .detail-surface .detail-close { flex: 0 0 44px; width: 44px; padding: 8px; border-color: transparent; background: transparent; color: var(--muted); }
+.app-shell .detail-surface-body { padding: 20px; }
+.app-shell .detail-surface-body > :first-child { margin-top: 0; }
+.app-shell .detail-surface-body > :last-child { margin-bottom: 0; }
+.app-shell .detail-surface p { margin: 0 0 16px; max-width: 65ch; overflow-wrap: anywhere; }
+.app-shell .detail-surface label { display: grid; gap: 8px; margin: 12px 0; color: var(--ink); }
+.app-shell .detail-surface label:has(input[type="checkbox"]) { display: flex; align-items: flex-start; gap: 10px; }
+.app-shell .detail-surface :is(textarea, input:not([type="checkbox"]), select) { box-sizing: border-box; min-width: 0; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--control-line); border-radius: 8px; background-color: var(--chrome); color: var(--ink); caret-color: var(--focus); font: inherit; line-height: 1.5; }
+.app-shell .detail-surface select { padding-inline-end: 36px; }
+.app-shell .detail-surface input[type="checkbox"] { flex-shrink: 0; width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--action); }
+.app-shell .detail-surface textarea { display: block; min-height: 250px; max-height: 50dvh; resize: vertical; }
+.app-shell .detail-surface :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+.app-shell .detail-surface ::selection { background: var(--selected); color: var(--ink); }
+.app-shell .detail-surface .actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 14px 0; }
+.app-shell .detail-surface .actions small { color: var(--muted); font-size: 0.875rem; }
+.app-shell .detail-surface [role="alert"] { color: var(--error); }
+.app-shell .detail-surface [role="status"] { color: var(--muted); }
+.app-shell .detail-surface fieldset { min-width: 0; margin: 20px 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
+.app-shell .detail-surface legend { padding: 0 6px; font-weight: 600; }
+.app-shell .detail-surface summary { min-height: 44px; padding: 10px 0; color: var(--focus); cursor: pointer; font-weight: 600; }
+.app-shell .detail-surface .document-copy { max-height: 180px; overflow: auto; padding: 12px; background: var(--chrome); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.app-shell .question-detail { width: min(440px, calc(100vw - 40px)); }
+.app-shell .privacy-detail { width: min(620px, calc(100vw - 40px)); }
+.app-shell .source-controls > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--muted); cursor: pointer; }
+.app-shell .source-controls > summary::marker { content: ''; }
+.app-shell .source-controls > summary::-webkit-details-marker { display: none; }
+.app-shell .privacy-detail .source-row { margin: 16px 0; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.app-shell .privacy-detail .source-row p { margin: 4px 0; }
+.app-shell .privacy-detail .source-row small { color: var(--muted); font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.app-shell .privacy-detail .source-row .actions { margin-bottom: 0; }
+.app-shell .privacy-detail .pet-preferences { margin-top: 20px; border-top: 1px solid var(--line); }
+.app-shell .privacy-detail .pet-preferences fieldset { margin-top: 8px; }
+
+@media (max-width: 600px) {
+  .app-shell .detail-surface { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .app-shell .detail-surface-header { padding: 12px 16px; }
+  .app-shell .detail-surface-body { padding: 16px; }
+  .app-shell .compact-question { align-items: flex-start; }
+  .app-shell .compact-question-copy { flex-basis: 100%; }
+  .app-shell .compact-question-actions { gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell :is(.compact-question, .detail-surface) button { transition: none; }
+}
