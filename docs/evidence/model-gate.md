@@ -1,8 +1,8 @@
 # T03 / J2 model gate - 2026-11-07
 
-Live acceptance: **BLOCKED / NOT RUN**. This change implements the missing dispatched entry point; deterministic synthetic responses do not qualify a model endpoint or the full application. J1 is author-reported PASS and does not clear J2. The parent must independently review this PR before Lead's live run.
+Live acceptance: **BLOCKED / HOSTED ATTEMPTS DENIED**. The entry point and response correction were reviewed before Lead attempted the hosted probe. Two HTTP submissions were consumed without qualifying native tool or proposal behavior; the diagnostic attempt returned HTTP 403. No full-app J2 acceptance is claimed.
 
-Latest operator update: both the Brev VM and hosted NVIDIA API are reported ready. Lead exclusively owns private hosted credentials/configuration and exactly one bounded synthetic capability probe, preferring hosted access first. No credential or finite allowance was supplied to this implementation task. No endpoint, VM readiness or model identity was independently verified here; no secrets were requested/read and no real model requests or VM commands were run.
+Operator reports both the Brev VM and hosted NVIDIA API ready. Lead reused the previously supplied private key; NVIDIA's model metadata endpoint returned 200, while the hosted inference diagnostic returned 403. Lead requested a key with inference access privately. The implementation worker received no credential and made no real requests. No VM operation has been performed for this hosted attempt.
 
 ## Entry point and guards
 
@@ -55,3 +55,11 @@ Independent PR19 review found that inherited response translation discarded nati
 Focused adapter/gate/dispatcher verification: 61 tests passed across 4 files; typecheck and diff checks passed. This is deterministic evidence only. On a successful live probe, the existing model hash now identifies a configuration whose served identity matched on every response; on a failed probe it remains only a requested-configuration hash. No live inference call has been made by this correction. Fresh parent review is pending before the single hosted test.
 
 Broader parent verification after restoring the two model-safety fixture envelopes: full dedicated PostgreSQL/desktop/UI/contracts suite 315/315 across64files PASS, typecheck PASS, production cloud/web/desktop build PASS, diff checks PASS. Independent code reviewer approved the production guard correction and requested those fixture updates; their correction/error-class assertions now pass in the full suite. Still zero real inference calls at this checkpoint.
+
+## Lead hosted attempt: denied, not qualified
+
+Reviewed/tested source: 3a5f09dd8789a37ed39355b3882c255432ff99ff. Official HTTPS API base https://integrate.api.nvidia.com/v1; exact configured model ID nvidia/nemotron-nano-3-30b-a3b from its live model list. Older 9B v2 was absent from that list; its separate Brev receipts are not attributed to this hosted model.
+
+Lead used the existing private key without printing or copying it into the repository. The first guarded production probe submitted one request and blocked before native tool selection. A diagnostic retry retained the same model/production gate and captured only HTTP status; it returned 403. The retry used only the remaining three-call / 114279-reservation allowance, not a fresh four-call budget.
+
+Cumulative receipt: 2 HTTP submissions of the declared maximum 4; 33586 conservative reserved units of 131072. Both probes stayed BLOCKED with all native-tool/result/schema/authority capability flags false and fullAppVerified false. No transcript/source data, API key, provider body or model content was retained in public evidence. No model generation success or dollar charge is inferred from HTTP submission counts. No further inference requests may consume the remaining two slots until usable access/configuration is available. Private detailed safe receipts remain with Lead; the key itself remains outside the repository.
