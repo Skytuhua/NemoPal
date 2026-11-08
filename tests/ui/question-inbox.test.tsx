@@ -8,8 +8,14 @@ import { deferred, memoryDrafts, snapshot } from './helpers';
 
 afterEach(cleanup);
 
-function withoutQuestionCard(offset = 0) {
+function freshQuestionSnapshot(offset = 0) {
   const seed = snapshot(offset);
+  seed.checkIns[0]!.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  return seed;
+}
+
+function withoutQuestionCard(offset = 0) {
+  const seed = freshQuestionSnapshot(offset);
   seed.project.workspace.panels = seed.project.workspace.panels.filter(panel => panel.type !== 'question_card');
   return seed;
 }
@@ -27,7 +33,7 @@ test.each(['Not yet', 'Recorded'] as const)('a canonical question without a canv
 });
 
 test('a question already displayed in a canvas card has no duplicate inbox form', async () => {
-  render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture />);
+  render(<App client={createFixtureClient({ snapshots: [freshQuestionSnapshot()] })} drafts={memoryDrafts()} fixture />);
   await screen.findByText('Have you recorded the demo?');
   expect(screen.getAllByText('Have you recorded the demo?')).toHaveLength(1);
   expect(screen.getAllByRole('button', { name: 'Recorded' })).toHaveLength(1);

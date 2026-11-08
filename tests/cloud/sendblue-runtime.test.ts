@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createSendblueRuntime } from '../../apps/cloud/src/integrations/sendblue/runtime';
@@ -76,4 +77,23 @@ describe('Sendblue runtime lifecycle (synthetic only)', () => {
     expect(tick).toHaveBeenCalledTimes(2);
     await runtime.stop();
   });
+
+  it('consumes rejected async reporter promises and continues polling', () => {
+    const script = `
+      import { createSendblueRuntime } from './apps/cloud/src/integrations/sendblue/runtime.ts';
+      let calls = 0;
+      const runtime = createSendblueRuntime({
+        enabled: true, intervalMs: 10,
+        tick: async () => { if (++calls === 1) throw new Error('private tick'); },
+        onError: async () => { throw new Error('private reporter'); },
+      });
+      runtime.start();
+      setTimeout(async () => { await runtime.stop(); console.log('calls=' + calls); }, 100);
+    `;
+    const result = spawnSync(process.execPath, ['--unhandled-rejections=strict', '--import', 'tsx', '--input-type=module', '-e', script], { encoding: 'utf8', timeout: 30000 });
+    expect(result.status).toBe(0);
+    expect(Number(result.stdout.match(/calls=(\d+)/)?.[1])).toBeGreaterThanOrEqual(2);
+    expect(result.stderr).not.toContain('private reporter');
+  }, 40000);
+
 });

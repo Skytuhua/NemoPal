@@ -6,7 +6,7 @@ export function createSendblueRuntime(options: {
   tick: (signal: AbortSignal) => Promise<void>;
   intervalMs?: number;
   // Intentionally receives no exception, provider response, or message data.
-  onError?: () => void;
+  onError?: () => void | Promise<void>;
 }) {
   const intervalMs = options.intervalMs ?? 15000;
   if (!Number.isInteger(intervalMs) || intervalMs < 1 || intervalMs > 2147483647) throw new RangeError('Invalid Sendblue polling interval');
@@ -16,7 +16,10 @@ export function createSendblueRuntime(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let active: Promise<void> | undefined;
 
-  const report = () => { try { options.onError?.(); } catch { /* Logging must not break the lifecycle. */ } };
+  const report = () => {
+    try { void Promise.resolve(options.onError?.()).catch(() => {}); }
+    catch { /* Logging must not break the lifecycle. */ }
+  };
   const run = () => {
     if (stopped || active) return;
     active = Promise.resolve().then(async () => {
