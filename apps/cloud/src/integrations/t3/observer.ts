@@ -79,7 +79,7 @@ export class T3Observer {
 }
 
 const receiptSchema = z.object({ receiptId: id, ownerId: id, projectId: id, environmentId: id, threadId: id, taskId: id, runId: id,
-  grantRevision: z.number().int().positive(), taskRevision: z.number().int().positive(), mappingRevision: z.number().int().positive(), runOrdinal: z.number().int().positive(),
+  grantRevision: z.number().int().positive(), taskRevision: z.number().int().nonnegative().safe(), mappingRevision: z.number().int().positive(), runOrdinal: z.number().int().positive(),
   policyRevision: z.number().int().positive(), criterionId: id, outcome: z.literal('success') }).strict();
 export type T3SuccessReceipt = z.infer<typeof receiptSchema>;
 /** Verifier must validate a trusted criterion/receipt, never assistant prose or arbitrary task_status. Parent commits with canonical authority. */

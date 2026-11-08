@@ -225,10 +225,12 @@ export class Store {
                 source.exportPolicy = 'off';
                 x.epoch++;
                 await withdrawEvidence(db, x, id, this.now());
+                await db.query('UPDATE t3_enrollments SET revoked=true,consent=false,checkpoint=NULL WHERE binding_id=$1', [id]);
             }
             else if (mode === 'state') {
                 source.state = (input as c.SourceStateInput).state;
                 x.epoch++;
+                if (source.state === 'paused') await db.query('UPDATE t3_enrollments SET checkpoint=NULL WHERE binding_id=$1', [id]);
             }
             else {
                 const health = input as c.SourceHealthInput;
