@@ -1,0 +1,21 @@
+# T3 backend composition: bounded handoff
+
+Status: **incomplete; disabled and not registered in the application**. The service composes the existing local read-only session, adapter and observer, but the only store exercised here is synthetic. There is no production grant store, enrollment command, application lifecycle wiring, live authorization, or verified provider session in this change. Do not enable this service on the strength of these tests.
+
+## Required authority and persistence patch
+
+The existing `SourceBinding` stores the owning device, source state, export policy and a grant revision. It does not store the selected T3 environment, T3 project, thread, start position, task/run mapping, explicit local-read consent, or a T3 grant expiration. `Store.enroll` initializes the canonical source grant revision to zero; `T3Context` requires a positive T3 grant revision. Do not equate these counters or derive consent from a source's `following` state or export policy.
+
+The owner of the authenticated command and application lifecycle seams must implement and review the following before enabling the service:
+
+1. Add a durable T3 enrollment record bound to the canonical source ID and its current grant revision, the authenticated owner/device/project, explicit local-read consent, selected environment/project/thread and start position, expiry, a separate positive monotonic T3 grant revision, and the selected task/run mapping and mapping revision. Store no credentials or transcript text. Enrollment must reauthorize the current device and lock/check the canonical project, source and selected task in the same transaction; it must not accept an owner or device asserted by untrusted content. Validate actual task revision including zero according to the canonical contract; reconcile this with the current positive-only T3 mapping schema before use.
+2. Implement `T3ServiceStore.load` by querying those records and the current canonical project/source/task authority on every call. Fail closed on absent, revoked, expired, paused, deleted, mismatched or changed records. Build the `T3Context` from persisted trusted data, never from a caller-supplied context or source prose.
+3. Implement `commitIfCurrent` as a transaction that locks/rechecks the same canonical source, project, task and enrollment/mapping rows and writes sanitized observer checkpoint metadata only if every captured authority revision and consent is still current. Serialize this transaction with source pause, revoke, project deletion, task edits, mapping edits, and T3 enrollment revocation. A separate read followed by an unconditional write is insufficient. Clear the checkpoint in the same revocation transaction; reject late writes.
+4. Implement `revoke` through the existing canonical revocation semantics, including source grant revision/epoch changes and evidence withdrawal where applicable, together with T3 enrollment revocation and checkpoint removal under the same locking discipline. Reauthorize the device; do not treat the process-local cancellation as durable revocation. Report a failure as pending/unconfirmed rather than claiming cloud withdrawal.
+5. In the authorized host lifecycle, construct one service with the durable store, explicitly start it only after owner selection and real consent, and await `stop()` at shutdown. A host-owned, authenticated local control seam must carry selection and authorization handling; do not add a wider-network listener, expose credentials, or start a browser. Coordinate single-instance ownership and verify recovery after process crash.
+
+A real transaction test requires a fresh disposable test-owned database with verified cleanup, followed by a separately authorized live session verification. Neither was run here. This handoff does not change public contracts or implement those seams.
+
+## Offline evidence
+
+`pnpm exec vitest run tests/cloud/t3-service.test.ts tests/cloud/t3-observer.test.ts` exercises the real adapter and observer with synthetic session and persistence, including selection mismatch, disabled default, revocation during reads and checkpoint commits, shutdown/startup and restart races, failed persistence, scheduling, and metadata filtering. It does not verify PostgreSQL transactions, canonical enrollment, OAuth, native UI, hosted services, or user acceptance.
