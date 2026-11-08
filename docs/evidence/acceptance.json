@@ -10,7 +10,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A02",
@@ -21,7 +21,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A03",
@@ -32,18 +32,18 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A04",
                       "scenario":  "Genuine Nemotron loop",
-                      "status":  "not_run",
-                      "mode":  "none",
-                      "commit":  null,
+                      "status":  "passed",
+                      "mode":  "live",
+                      "commit":  "e0b07b89a0c2be4fdb685f6804cf5b465aa2374a",
                       "evidence":  [
-
+                                       "docs/evidence/model-gate.md"
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Live adapter tool/result/strict proposal capability passed; this does not establish full-app J2, which remains blocked before launch."
                   },
                   {
                       "id":  "A05",
@@ -54,7 +54,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A06",
@@ -65,7 +65,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A07",
@@ -76,7 +76,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A08",
@@ -87,29 +87,29 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A09",
                       "scenario":  "Read-only Codex observation",
-                      "status":  "not_run",
+                      "status":  "blocked",
                       "mode":  "none",
                       "commit":  null,
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Needs one named harmless vendor source, explicit local-read consent and actual read-only observation evidence."
                   },
                   {
                       "id":  "A10",
                       "scenario":  "Two fresh persisted source items",
-                      "status":  "not_run",
+                      "status":  "blocked",
                       "mode":  "none",
                       "commit":  null,
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Two fresh persisted items have not been observed from an explicitly selected real source."
                   },
                   {
                       "id":  "A11",
@@ -120,7 +120,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A12",
@@ -131,7 +131,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A13",
@@ -142,7 +142,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A14",
@@ -153,7 +153,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A15",
@@ -164,7 +164,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A16",
@@ -175,7 +175,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A17",
@@ -186,7 +186,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A18",
@@ -197,7 +197,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A19",
@@ -208,7 +208,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A20",
@@ -219,7 +219,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A21",
@@ -230,7 +230,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A22",
@@ -241,7 +241,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A23",
@@ -252,7 +252,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A24",
@@ -263,7 +263,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A25",
@@ -274,7 +274,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A26",
@@ -285,7 +285,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A27",
@@ -296,7 +296,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A28",
@@ -307,7 +307,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A29",
@@ -318,7 +318,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A30",
@@ -329,7 +329,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A31",
@@ -340,29 +340,29 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A32",
                       "scenario":  "Optional MCP",
-                      "status":  "not_run",
+                      "status":  "deferred",
                       "mode":  "none",
                       "commit":  null,
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Optional MCP bridge is deferred under the master plan cut order; core live workflow takes priority."
                   },
                   {
                       "id":  "A33",
                       "scenario":  "Optional phone",
-                      "status":  "not_run",
+                      "status":  "deferred",
                       "mode":  "none",
                       "commit":  null,
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Optional phone view is deferred under the master plan cut order; core live workflow takes priority."
                   },
                   {
                       "id":  "A34",
@@ -373,7 +373,7 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A35",
@@ -384,18 +384,18 @@
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Not individually accepted. See the current build ledger and integration evidence; passing tests alone do not establish this scenario."
                   },
                   {
                       "id":  "A36",
                       "scenario":  "Full demonstration",
-                      "status":  "not_run",
+                      "status":  "blocked",
                       "mode":  "none",
                       "commit":  null,
                       "evidence":  [
 
                                    ],
-                      "reason":  "Not yet executed; implementation and live gates remain pending."
+                      "reason":  "Full J2 launch was rejected before execution; actual selected-source and complete live pet demonstration remain open."
                   }
               ]
 }
