@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/sadmann7/diceui",
+  "revision": "048cdea5d20bb8b677690bfd47be8bd772e7781f",
+  "upstream": {
+    "path": "docs/registry/bases/radix/ui/kanban.tsx",
+    "bytes": 32344,
+    "gitBlob": "a03016bac0deefda600a1c1493f4f15c49e770da",
+    "sha256": "b5d8d177f47510ccf31ab5b42c7e39890f2769e31f10660fd3e321f0aeb8f96e",
+    "verification": {
+      "contentsApi": "https://api.github.com/repos/sadmann7/diceui/contents/docs/registry/bases/radix/ui/kanban.tsx?ref=048cdea5d20bb8b677690bfd47be8bd772e7781f",
+      "blobApi": "https://api.github.com/repos/sadmann7/diceui/git/blobs/a03016bac0deefda600a1c1493f4f15c49e770da",
+      "method": "GitHub contents API revision/path/blob/size; GitHub blob API base64 decoded bytes; local SHA-256",
+      "date": "2026-11-08"
+    }
+  },
+  "license": {
+    "spdx": "MIT",
+    "copyright": "Copyright (c) 2024 Sadman Sakib",
+    "upstreamPath": "LICENSE",
+    "gitBlob": "6a059f7e2465f9b3f7d5e85f21a7ca7e8e449894",
+    "localPath": "packages/project-ui/src/ui/LICENSE.diceui.md",
+    "bytes": 1068,
+    "sha256": "798456e9f649d796bad55d80f9ee50a71eb2d16920300a66a8221b70123e40db",
+    "verbatim": true
+  },
+  "adapted": {
+    "path": "packages/project-ui/src/ui/kanban.tsx",
+    "bytes": 35476,
+    "sha256": "9621d0ae8831f3a41986d3c803fb10dc6a76d71f7b43ef3f1e3f885f690170b2"
+  },
+  "modifications": [
+    "Add upstream attribution and links to this provenance and verbatim MIT license.",
+    "Replace cn package alias with existing local ./utils; replace radix-ui/internal useComposedRefs with public pinned @radix-ui/react-compose-refs@1.1.2. Retain radix-ui Slot.",
+    "Use own-property checks when distinguishing column and item identities, including Object.prototype-named task IDs.",
+    "Keep accepted preview reference and pickup snapshot; invalidate drag snapshot on unrelated controlled value replacement. Roll back only the still-current accepted preview on cancellation or missing drop target.",
+    "Compute move origin from pickup and destination from accepted preview; avoid applying accepted reorder twice; dispatch onMove for cross-column and empty-column drops, including callback-only mode.",
+    "Skip unsuitable keyboard candidates instead of aborting candidate scan; honor root strategy for item SortableContext.",
+    "Keep disabled parents authoritative even when a child handle explicitly passes disabled=false.",
+    "Suppress board click capture while dragging; retain upstream real mouse sensor post-drag click suppression.",
+    "Wrap portal overlay in scoped workspace-ui display:contents element with inert, aria-hidden and pointer-events:none; no global CSS or pet changes.",
+    "Announce valid one-based empty-column insertion position and total."
+  ],
+  "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
+    "@radix-ui/react-compose-refs": "1.1.2"
+  },
+  "boundaries": [
+    "Controlled interface primitives only; callers own mutation authority and persistence.",
+    "No Kan/AGPL code, documentation app, modifiers dependency, global CSS, pet, chat, T3 or model integration.",
+    "Source cn-kanban-* class hooks retained; consumers supply board/card layout classes."
+  ]
+}
