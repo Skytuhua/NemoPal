@@ -1,8 +1,8 @@
 # T03 / J2 model gate - 2026-11-07
 
-Live acceptance: **BLOCKED / NOT RUN**. This change implements the missing dispatched entry point; deterministic synthetic responses do not qualify a model endpoint or the full application. J1 is author-reported PASS and does not clear J2. The parent must independently review this PR before Lead's live run.
+Model capability gate: **LIVE PASS**, with the newly supplied Build key on Nemotron 3.5 Lightning. Three HTTP 200 submissions completed automatic tool selection, scoped tool-result interpretation, strict proposal and authority validation in about 14 seconds. **Full-app J2 remains unverified.** Earlier denied attempts are retained below.
 
-Latest operator update: both the Brev VM and hosted NVIDIA API are reported ready. Lead exclusively owns private hosted credentials/configuration and exactly one bounded synthetic capability probe, preferring hosted access first. No credential or finite allowance was supplied to this implementation task. No endpoint, VM readiness or model identity was independently verified here; no secrets were requested/read and no real model requests or VM commands were run.
+Operator reports both the Brev VM and hosted NVIDIA API ready. Lead first reused the previous private key and recorded denied hosted submissions, then used the new key supplied through a private card. The implementation worker received no credential and made no real requests. No VM operation was needed for the successful hosted probe.
 
 ## Entry point and guards
 
@@ -47,3 +47,29 @@ The tests cover guard rejection without HTTP, authentication/AUTO settings, actu
 After independent parent review, Lead may privately supply the seven required environment values for the hosted endpoint and execute **once**: `pnpm test:live:model`. This command was not run by the implementation agent. Keep credentials outside committed evidence and command output. Retain the safe receipt and actual exit status; an unavailable endpoint, invalid proposal or exhausted budget remains BLOCKED, with no automatic switch to the VM/provider or retry beyond the adapter's correction policy. Full-app J2 acceptance still needs its own authorized integrated evidence.
 
 Publish this focused PR onto PR 15, preserving stack PR 15 -> PR 8 -> PR 5. No watch, merge or self-archive. Parent owns final-result acknowledgment, `completed` / `result_available` / no-pending-child confirmation and recoverable archive after handoff.
+
+## Parent qualification corrections
+
+Independent PR19 review found that inherited response translation discarded native message role/tool type/finish reason and returned model identity. Before correction, 11 new malformed-envelope/model mismatch cases incorrectly qualified (RED). The production adapter now requires assistant messages, native function tool calls with tool_calls termination, final stop termination, and an exact served-model match on every response. Missing or unexplained alias/model differences fail closed; no automatic model normalization is added. Existing positive synthetic envelopes now include those actual protocol fields.
+
+Focused adapter/gate/dispatcher verification: 61 tests passed across 4 files; typecheck and diff checks passed. This is deterministic evidence only. On a successful live probe, the existing model hash now identifies a configuration whose served identity matched on every response; on a failed probe it remains only a requested-configuration hash. No live inference call has been made by this correction. Fresh parent review is pending before the single hosted test.
+
+Broader parent verification after restoring the two model-safety fixture envelopes: full dedicated PostgreSQL/desktop/UI/contracts suite 315/315 across64files PASS, typecheck PASS, production cloud/web/desktop build PASS, diff checks PASS. Independent code reviewer approved the production guard correction and requested those fixture updates; their correction/error-class assertions now pass in the full suite. Still zero real inference calls at this checkpoint.
+
+## Lead hosted attempt: denied, not qualified
+
+Reviewed/tested source: 3a5f09dd8789a37ed39355b3882c255432ff99ff. Official HTTPS API base https://integrate.api.nvidia.com/v1; exact configured model ID nvidia/nemotron-nano-3-30b-a3b from its live model list. Older 9B v2 was absent from that list; its separate Brev receipts are not attributed to this hosted model.
+
+Lead used the existing private key without printing or copying it into the repository. The first guarded production probe submitted one request and blocked before native tool selection. A diagnostic retry retained the same model/production gate and captured only HTTP status; it returned 403. The retry used only the remaining three-call / 114279-reservation allowance, not a fresh four-call budget.
+
+Cumulative receipt: 2 HTTP submissions of the declared maximum 4; 33586 conservative reserved units of 131072. Both probes stayed BLOCKED with all native-tool/result/schema/authority capability flags false and fullAppVerified false. No transcript/source data, API key, provider body or model content was retained in public evidence. No model generation success or dollar charge is inferred from HTTP submission counts. No further inference requests may consume the remaining two slots until usable access/configuration is available. Private detailed safe receipts remain with Lead; the key itself remains outside the repository.
+
+## Live capability PASS with new Build key
+
+Lead executed the independently reviewed production entry/adapter using the new privately supplied key and exact model nvidia/nemotron-3.5-lightning-30b-a3b at https://integrate.api.nvidia.com/v1. This is a different served model from the earlier Brev9B and retired Nano3 attempts. NVIDIA's current model page marks Lightning's free endpoint available; the older Nano3 page marks its free endpoint deprecated, so that first 403 alone did not establish an invalid key.
+
+Source tested: be586bcfe96ae78529cd0dd61ff2c123f48fa164 (production code identical to reviewed3a5f09d). Start2026-11-08T01:03:55.643Z; finish01:04:09.230Z. New-credential attempt: HTTP[200,200,200], 3submissions of maximum4, 52632 conservative reserved units of131072, 120000ms deadline. Automatic tool selection, tool-result interpretation, strict full proposal schema and proposal-authority validation all true. The third call is the one permitted model correction; no client output rewriting or grammar guarantee was used. fullAppVerified remains false.
+
+Previous credential attempts consumed3 denied submissions, including an HTTP403 on the currently available Lightning endpoint. New attempt had a separately declared4-call bound; cumulative submitted requests across both credentials are6. The old pending key requests were cancelled before the final successful private submission. Neither key, a key hash, provider content nor source data was printed or committed. No source export, database mutation, app inference enablement, VM operation or deployment was performed by this standalone capability test.
+
+Safe identity hashes: endpoint SHA256 adce5cab6ed01787cddac55a52227d516d0b749d95e2cf056e16df698049b4dc; model SHA256 57b7e204b183bff6d5ebf22bb3cce561705ec6d10fbf1b7248f2325c58dc5f85. Served identity was required to match the configured model on every response. Lead retains the safe timed JSON receipt privately. Complete J2 still requires actual app generation, owner edit and reload; this PASS does not establish that journey or J3-J5.

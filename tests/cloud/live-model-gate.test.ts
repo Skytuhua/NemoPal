@@ -20,8 +20,8 @@ type Body = {
   model: string; tool_choice: unknown; max_tokens: number; response_format?: unknown;
   messages: { role: string; content: string; tool_call_id?: string; tool_calls?: { id: string }[] }[];
 };
-const tool = () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'synthetic-auto', type: 'function', function: { name: 'read_project_state', arguments: '{}' } }] } }] });
-const content = (value: string) => Response.json({ choices: [{ message: { content: value } }] });
+const tool = () => Response.json({ model: environment.NEMOTRON_MODEL, choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', tool_calls: [{ id: 'synthetic-auto', type: 'function', function: { name: 'read_project_state', arguments: '{}' } }] } }] });
+const content = (value: string) => Response.json({ model: environment.NEMOTRON_MODEL, choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: value } }] });
 function proposal(body: Body): ManagerProposal {
   const required = JSON.parse(body.messages.find(message => message.role === 'user')!.content).requiredProposal as ManagerProposal;
   const result = body.messages.find(message => message.role === 'tool');
