@@ -143,6 +143,17 @@ export function createFixtureClient(options: FixtureClientOptions = {}): c.Playb
         case 'record_decision':
           snapshot.project.decisions.push({ id: crypto.randomUUID(), text: action.text, origin: 'owner', createdAt: new Date().toISOString(), observationIds: [] });
           break;
+        case 'update_task_details': {
+          const task = snapshot.project.tasks.find(item => item.id === action.taskId);
+          if (!task) throw new ClientError('not_found', 'The requested fixture record is unavailable.');
+          expectRevision(task.revision, action.expectedTaskRevision);
+          if (action.description !== undefined) task.description = action.description;
+          if (action.dueAt === null) delete task.dueAt;
+          else if (action.dueAt !== undefined) task.dueAt = action.dueAt;
+          if (action.checklist !== undefined) task.checklist = action.checklist;
+          task.revision++;
+          break;
+        }
         case 'update_task': {
           const task = snapshot.project.tasks.find(item => item.id === action.taskId);
           if (!task) throw new ClientError('not_found', 'The requested fixture record is unavailable.');

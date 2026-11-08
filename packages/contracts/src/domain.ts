@@ -17,7 +17,8 @@ export const PanelTypeSchema = z.enum(['checklist', 'milestone_timeline', 'evide
 export const CapabilitySchema = z.discriminatedUnion('available', [z.strictObject({ available: z.literal(true) }), z.strictObject({ available: z.literal(false), reason: boundedText(512, true) })]);
 
 export const ManagerIdentitySchema = z.strictObject({ id, projectId: id, displayName: boundedText(120, true), petPackId: boundedText(80, true), promptVersion: boundedText(40, true) });
-export const TaskSchema = z.strictObject({ id, title: boundedText(512, true), status: TaskStatusSchema, revision, requirementOrigin: RequirementOriginSchema, evidenceLevel: EvidenceLevelSchema, evidenceIds: z.array(id).max(100), dueAt: timestamp.optional(), ownerOverride: z.boolean() });
+export const TaskChecklistItemSchema = z.strictObject({ id, text: boundedText(512, true), completed: z.boolean() });
+export const TaskSchema = z.strictObject({ id, title: boundedText(512, true), description: boundedText(4096).optional(), status: TaskStatusSchema, revision, requirementOrigin: RequirementOriginSchema, evidenceLevel: EvidenceLevelSchema, evidenceIds: z.array(id).max(100), dueAt: timestamp.optional(), checklist: z.array(TaskChecklistItemSchema).max(40).refine(items => new Set(items.map(item => item.id)).size === items.length, 'Duplicate checklist item identity').optional(), ownerOverride: z.boolean() });
 export const DecisionSchema = z.strictObject({ id, text: boundedText(2048, true), origin: z.enum(['owner', 'manager']), createdAt: timestamp, observationIds: z.array(id).max(100) });
 const panelBase = { id, heading: boundedText(160, true) };
 export const WorkspacePanelSchema = z.discriminatedUnion('type', [
@@ -99,6 +100,7 @@ export type CheckInState = z.infer<typeof CheckInStateSchema>;
 export type PetState = z.infer<typeof PetStateSchema>;
 export type PanelType = z.infer<typeof PanelTypeSchema>;
 export type ManagerIdentity = z.infer<typeof ManagerIdentitySchema>;
+export type TaskChecklistItem = z.infer<typeof TaskChecklistItemSchema>;
 export type Task = z.infer<typeof TaskSchema>;
 export type Decision = z.infer<typeof DecisionSchema>;
 export type WorkspacePanel = z.infer<typeof WorkspacePanelSchema>;

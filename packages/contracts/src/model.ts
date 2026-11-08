@@ -3,7 +3,7 @@ import { boundedText, IdSchema as id, RevisionSchema as revision, TimestampSchem
 import { TaskSchema, TaskStatusSchema, EvidenceLevelSchema, WorkspaceSpecSchema, ProjectSnapshotSchema } from './domain';
 
 export const GrantVersionSchema = z.strictObject({ bindingId: id, grantRevision: revision });
-export const ModelCreatedTaskSchema = TaskSchema.omit({ ownerOverride: true, revision: true }).extend({ requirementOrigin: z.enum(['brief', 'model_suggestion']) });
+export const ModelCreatedTaskSchema = TaskSchema.omit({ ownerOverride: true, revision: true, description: true, checklist: true }).extend({ requirementOrigin: z.enum(['brief', 'model_suggestion']) });
 export const TaskChangeSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('create'), task: ModelCreatedTaskSchema }),
   z.strictObject({ type: z.literal('update'), taskId: id, expectedRevision: revision, status: TaskStatusSchema.optional(), title: boundedText(512, true).optional(), evidenceLevel: EvidenceLevelSchema, evidenceIds: z.array(id).max(100) }),
