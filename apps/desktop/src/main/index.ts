@@ -47,6 +47,17 @@ async function start() {
       if (quitting || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
         return Promise.reject(Error('Source enrollment authority changed'));
     }
+    const observations = /^\/v1\/sources\/([^/]+)\/observations$/.exec(path);
+    if (init?.method === 'POST' && observations) {
+      const command = c.commandEnvelopeSchema(c.IngestObservationsInputSchema).parse(JSON.parse(String(init.body)));
+      const upload = store.pendingUpload(command.operationId);
+      const binding = upload && store.binding(upload.bindingId)?.binding;
+      if (quitting || !upload || !binding || upload.bindingId !== observations[1] || binding.deviceId !== vault.deviceId() ||
+          !store.isFollowing(binding.id) || binding.grantRevision !== upload.grantRevision || binding.exportPolicy === 'off' ||
+          !store.canExport(binding.id, upload.grantRevision, currentReceiving()) || JSON.stringify(upload.input) !== JSON.stringify(command.input) ||
+          new Headers(init.headers).get('Authorization') !== vault.authorization())
+        return Promise.reject(Error('Observation export authority changed'));
+    }
     return fetch(input, { ...init, signal: init?.headers && new Headers(init.headers).get('Accept') === 'text/event-stream' ? init.signal : AbortSignal.any([AbortSignal.timeout(15000), ...(init?.signal ? [init.signal] : [])]) });
   };
   const client = createHttpClient({ origin: origin ?? 'http://127.0.0.1:4310', allowInsecureLoopback: !app.isPackaged, getAuthorization: () => vault.authorization(), fetch: fetchBounded });

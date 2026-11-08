@@ -99,6 +99,7 @@ export class JournalStore implements LocalStore {
     });
   }
   async pendingUploads(limit: number): Promise<PendingUpload[]> { await this.tail; return structuredClone(this.data.uploads.filter(u => !this.fenced.has(u.bindingId)).slice(0, Math.max(0, Math.min(limit, 20)))); }
+  pendingUpload(operationId: string): PendingUpload | undefined { const value = this.data.uploads.find(upload => upload.operationId === operationId); return value ? structuredClone(value) : undefined; }
   async acknowledgeUploads(ids: string[]): Promise<void> { await this.mutate(data => { data.uploads = data.uploads.filter(u => !ids.includes(u.id)); }); }
   fence(id: string): void { this.fenced.add(id); }
   async blockBinding(id: string): Promise<void> {
