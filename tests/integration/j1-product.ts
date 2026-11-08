@@ -11,12 +11,13 @@ import { promisify } from 'node:util';
 import { _electron, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { issueGrant } from '../../apps/cloud/src/auth/credentials';
-import type { Project } from '@living-playbooks/contracts';
+import { CheckInSchema, ProjectSchema, type Project } from '@living-playbooks/contracts';
 import { assertSchedulerIsolation, Blocked, bounded } from './j1-safety';
 
 // Catches broken trusted pairing, saved snapshot rendering, owner writes and native credential recovery.
 // Run only after the parent releases the dedicated DB; never import cloud/helpers (it truncates).
 const receipt: Record<string, boolean | string> = {};
+const checkinCase = process.argv.includes('--checkin');
 let stage = 'preflight';
 let pool: Pool | undefined;
 let cloud: ChildProcess | undefined;
@@ -238,9 +239,122 @@ try {
   assert.equal((await pool.query("SELECT id FROM credentials WHERE owner_id=$1 AND kind='access'", [ownerId])).rowCount, 1);
   receipt.fullProcessRestartRestoresProtectedCredentialAndSavedState = true;
 
+  if (checkinCase) {
+    stage = 'scripted-checkin-fixture';
+    await assertSchedulerIsolation(pool, ownerId);
+    const taskId = randomUUID(), checkInId = randomUUID(), presentationId = randomUUID();
+    const taskTitle = 'SCRIPTED: Capture synthetic demo';
+    const question = 'SCRIPTED: Did you record the synthetic demo?';
+    const installedAt = new Date();
+    const q = CheckInSchema.parse({ id: checkInId, projectId: initial.id, taskId, revision: 0, subjectRevision: 0,
+      question, dueAt: new Date(installedAt.getTime() - 1000).toISOString(),
+      expiresAt: new Date(installedAt.getTime() + 86400000).toISOString(), state: 'scheduled', presentationId, answer: null });
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query('SELECT id FROM owners WHERE id=$1 FOR UPDATE', [ownerId]);
+      const project = ProjectSchema.parse((await db.query('SELECT data FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [initial.id, ownerId])).rows[0]?.data);
+      assert.equal(project.tasks.length, 0); assert.equal(project.workspace.panels.length, 0);
+      const authorities = (await db.query("SELECT id,device_id FROM credentials WHERE owner_id=$1 AND kind='access' AND revoked_at IS NULL AND expires_at>now()", [ownerId])).rows;
+      assert.equal(authorities.length, 1); assert(authorities[0]!.device_id);
+      const authority = { credentialId: authorities[0]!.id, ownerId, deviceId: authorities[0]!.device_id };
+      project.tasks.push({ id: taskId, title: taskTitle, status: 'in_progress', revision: 0, requirementOrigin: 'brief', evidenceLevel: 'none', evidenceIds: [], ownerOverride: false });
+      project.workspace.panels = [{ id: randomUUID(), type: 'checklist', heading: 'SCRIPTED task fixture', taskIds: [taskId] },
+        { id: randomUUID(), type: 'question_card', heading: 'SCRIPTED question fixture', checkInId }];
+      project.workspace.revision++; project.revision++; project.updatedAt = installedAt.toISOString();
+      ProjectSchema.parse(project);
+      // Canonical SCRIPTED input only: no model/job claim. Production dispatcher owns admission/presentation.
+      assert.equal((await db.query('UPDATE projects SET data=$3,revision=$4 WHERE id=$1 AND owner_id=$2', [initial.id, ownerId, project, project.revision])).rowCount, 1);
+      assert.equal((await db.query("INSERT INTO checkins(id,project_id,data,dependencies,authority) SELECT $1,id,$3,'[]'::jsonb,$4 FROM projects WHERE id=$2 AND owner_id=$5", [checkInId, initial.id, q, authority, ownerId])).rowCount, 1);
+      // Explicit consent and disabled quiet hours apply only to our synthetic owner; retain the real cap.
+      assert.equal((await db.query('UPDATE owners SET reminders=true,quiet_start=0,quiet_end=0 WHERE id=$1 AND attention_limit=3', [ownerId])).rowCount, 1);
+      await db.query('COMMIT');
+    } catch (error) { await db.query('ROLLBACK'); throw error; }
+    finally { db.release(); }
+    receipt.scriptedCanonicalFixtureOnly = true;
+
+    const petEntry = `${rendererEntry}?surface=pet`;
+    async function petWindow() {
+      const checkpoint = stage;
+      stage = `${checkpoint}:pet-native-window`;
+      const pet = desktop!.windows().find(window => window.url() === petEntry) ??
+        await desktop!.waitForEvent('window', { predicate: window => window.url() === petEntry, timeout: 10000 });
+      pet.setDefaultTimeout(10000);
+      await expect.poll(() => bounded(desktop!.evaluate(({ BrowserWindow }, target) => {
+        const window = BrowserWindow.getAllWindows().find(window => window.webContents.getURL() === target);
+        return Boolean(window?.isVisible() && window.isAlwaysOnTop() && window.webContents.getType() === 'window');
+      }, petEntry))).toBe(true);
+      stage = checkpoint;
+      return pet;
+    }
+    async function storedQuestion() {
+      const rows = (await pool!.query('SELECT c.data FROM checkins c JOIN projects p ON p.id=c.project_id WHERE p.id=$1 AND p.owner_id=$2', [initial.id, ownerId])).rows;
+      assert.equal(rows.length, 1);
+      return CheckInSchema.parse(rows[0]!.data);
+    }
+    async function answered() {
+      const checkpoint = stage;
+      stage = `${checkpoint}:canonical-answer`;
+      assert.deepEqual(await storedQuestion(), canonicalAnswer);
+      const project = ProjectSchema.parse((await pool!.query('SELECT data FROM projects WHERE id=$1 AND owner_id=$2', [initial.id, ownerId])).rows[0]?.data);
+      assert.equal(project.tasks.length, 1);
+      assert.deepEqual(project.tasks[0], { id: taskId, title: taskTitle, status: 'done', revision: 1, requirementOrigin: 'brief', evidenceLevel: 'user_reported', evidenceIds: [], ownerOverride: true });
+      assert.equal(project.workspace.panels.length, 2);
+      assert(project.workspace.panels.some(panel => panel.type === 'question_card' && panel.checkInId === checkInId));
+      assert.equal((await pool!.query('SELECT presentation_id FROM checkin_presentations WHERE owner_id=$1', [ownerId])).rows.length, 1);
+      stage = `${checkpoint}:workspace`;
+      await rendered(page, 'building');
+      await expect(page.getByLabel(`Status: ${taskTitle}`, { exact: true })).toHaveValue('done');
+      await expect(page.getByText('Answer saved: Recorded', { exact: true })).toBeVisible();
+      await expect(page.getByText(/Owner reported/)).toBeVisible();
+      stage = `${checkpoint}:pet-idle`;
+      await expect(pet.locator('[data-pet-state]')).toHaveAttribute('data-pet-state', 'idle');
+      await expect(pet.getByText(question, { exact: true })).toHaveCount(0);
+      await expect(pet.getByRole('button', { name: 'Recorded', exact: true })).toHaveCount(0);
+      stage = checkpoint;
+    }
+
+    stage = 'actual-scheduler-and-native-pet';
+    let pet = await petWindow();
+    // Real 15-second dispatcher, real clock, no manual tick or availability/presentation fixture.
+    await expect.poll(async () => (await storedQuestion()).state, { timeout: 30000 }).toBe('presented');
+    const presented = await storedQuestion();
+    assert.equal(presented.id, checkInId); assert.equal(presented.presentationId, presentationId); assert.equal(presented.revision, 2);
+    const attention = (await pool.query('SELECT presentation_id,checkin_id,authorized_at FROM checkin_presentations WHERE owner_id=$1', [ownerId])).rows;
+    assert.equal(attention.length, 1); assert.equal(attention[0]!.presentation_id, presentationId); assert.equal(attention[0]!.checkin_id, checkInId);
+    assert(new Date(attention[0]!.authorized_at).getTime() >= installedAt.getTime());
+    await expect(pet.getByText(question, { exact: true })).toBeVisible();
+    await expect(pet.locator('[data-pet-state]')).toHaveAttribute('data-pet-state', 'waiting_for_you');
+    await expect(pet.getByText('Demo reminder timing', { exact: true })).toHaveCount(0);
+    receipt.actualSchedulerAdmittedAndNativePetPresented = true;
+
+    stage = 'actual-pet-recorded';
+    await pet.getByRole('button', { name: 'Recorded', exact: true }).click();
+    await expect.poll(async () => (await storedQuestion()).state).toBe('answered');
+    const canonicalAnswer = await storedQuestion();
+    assert.equal(canonicalAnswer.id, checkInId); assert.equal(canonicalAnswer.presentationId, presentationId);
+    assert.equal(canonicalAnswer.revision, 3); assert.deepEqual(canonicalAnswer.answer, { kind: 'recorded' });
+    await answered();
+    receipt.actualPetAnswerSavedSameCheckInAndTask = true;
+
+    stage = 'answered-renderer-reconnect';
+    await page.reload(); await answered();
+    stage = 'answered-native-restart';
+    const answeredPid = desktop!.process().pid;
+    await closeDesktop(); page = await launch(); pet = await petWindow();
+    assert.notEqual(desktop!.process().pid, answeredPid);
+    await answered();
+    // Observe beyond another scheduler tick and reconnect; the one logical question must stay closed.
+    await page.waitForTimeout(16000);
+    await page.reload(); await answered();
+    const journal = JSON.parse(await readFile(join(appData, 'LivingPlaybooks', 'journal.json'), 'utf8')) as { data: { presentations: unknown[] } };
+    assert.deepEqual(journal.data.presentations, [{ checkInId, presentationId }]);
+    receipt.answeredRestartReconnectNoLogicalRepeat = true;
+  }
+
   stage = 'off-gates';
-  assert.equal((await pool.query('SELECT reminders FROM owners WHERE id=$1', [ownerId])).rows[0]!.reminders, false);
-  for (const table of ['source_bindings', 'observations', 'checkins'])
+  assert.equal((await pool.query('SELECT reminders FROM owners WHERE id=$1', [ownerId])).rows[0]!.reminders, checkinCase);
+  for (const table of ['source_bindings', 'observations', ...(checkinCase ? [] : ['checkins'])])
     assert.equal((await pool.query(`SELECT id FROM ${table} WHERE project_id=$1`, [initial.id])).rowCount, 0);
   assert.deepEqual((await pool.query('SELECT calls,reserved_tokens FROM model_usage')).rows, modelUsageBefore);
   // A source-free profile need not have written a journal yet. If present, it must contain no sharing state.
@@ -252,7 +366,7 @@ try {
     const journal = JSON.parse(journalText) as { data: { entries: unknown[]; uploads: unknown[]; sourceCommands: unknown[] } };
     assert.equal(journal.data.entries.length, 0); assert.equal(journal.data.uploads.length, 0); assert.equal(journal.data.sourceCommands.length, 0);
   }
-  receipt.modelExportRemindersOff = true;
+  receipt[checkinCase ? 'modelSourceExportDemoOffSyntheticRemindersOnly' : 'modelExportRemindersOff'] = true;
   stage = 'complete';
 } catch (error) {
   failure = error instanceof Blocked ? 'BLOCKED' : 'FAIL';
