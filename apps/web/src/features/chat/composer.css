@@ -1,0 +1,16 @@
+.desktop-shell .composer { display: block; padding: 12px 14px 16px; border-top: 0; background: transparent; }
+.desktop-shell .composer-input { padding: 5px; border: 1px solid #3d3d3d; border-radius: 22px; background: #222; transition: border-color 120ms ease; }
+.desktop-shell .composer-input:focus-within { border-color: #ccc; outline: 2px solid #aaa; outline-offset: 2px; }
+.desktop-shell .composer textarea { width: 100%; min-height: 68px; max-height: min(180px,30dvh); resize: none; padding: 10px 12px 6px; border: 0; border-radius: 16px; background: transparent; color: #f4f4f4; font-size: 15px; line-height: 1.6; box-shadow: none; outline: none; }
+.desktop-shell .composer textarea::placeholder { color: #b3b3b3; }
+.desktop-shell .composer textarea:focus-visible { border: 0; outline: none; box-shadow: none; }
+.desktop-shell .composer-actions { display: flex; justify-content: flex-end; padding: 2px 5px 5px; }
+.desktop-shell .composer-send { width: 34px; height: 34px; min-height: 34px; padding: 0; border: 0; border-radius: 50%; color: #161616; background: #e4e4e4; }
+.desktop-shell .composer-send:hover:not(:disabled) { background: #fff; }
+.desktop-shell .composer-send:disabled { opacity: 1; color: #aaa; background: #343434; cursor: not-allowed; }
+.desktop-shell .composer-send:focus-visible { outline: 2px solid #fafafa; outline-offset: 3px; box-shadow: none; }
+.desktop-shell .composer-send svg { width: 20px; height: 20px; }
+.desktop-shell .composer [role=status], .desktop-shell .composer [role=alert] { margin: 10px 4px 0; font-size: 13px; line-height: 1.5; }
+.desktop-shell .send-pending { animation: composer-spin 1.2s linear infinite; }
+@keyframes composer-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .desktop-shell .composer-input { transition: none; } .desktop-shell .send-pending { animation: none; } }

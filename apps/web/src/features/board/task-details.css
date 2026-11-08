@@ -1,0 +1,81 @@
+.workspace-ui[data-slot=sheet-scope]:has(.task-details-dialog) > [data-slot=sheet-overlay] { position: fixed; inset: 0; z-index: 200; background: rgb(0 0 0 / .7); }
+.workspace-ui .task-details-dialog { position: fixed; inset: 50% auto auto 50%; z-index: 201; display: flex; flex-direction: column; gap: 0; width: min(760px, calc(100vw - 48px)); max-width: none; height: auto; max-height: calc(100dvh - 48px); min-width: 0; min-height: 0; padding: 0; overflow: hidden; transform: translate(-50%, -50%); border: 1px solid #444; border-radius: 12px; background: #171717; color: #eee; box-shadow: 0 22px 72px rgb(0 0 0 / .5); font-family: Geist, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.45; color-scheme: dark; }
+.workspace-ui .task-details-dialog ::selection { background: #555; color: #fff; }
+.workspace-ui .task-details-header { display: flex; flex: none; align-items: flex-start; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid #363636; }
+.workspace-ui .task-details-header > div { flex: 1; min-width: 0; }
+.workspace-ui .task-details-title-row { display: flex; align-items: flex-start; gap: 10px; }
+.workspace-ui .task-details-title-row > div:last-child { min-width: 0; }
+.workspace-ui .task-details-header h2 { margin: 1px 0 0; color: #f5f5f5; font-size: 23px; font-weight: 600; line-height: 1.3; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.workspace-ui .task-details-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.workspace-ui .task-details-status-label { display: block; margin-top: 4px; color: #bcbcbc; }
+.workspace-ui .task-details-dialog button { min-height: 34px; padding: 5px 10px; border: 1px solid #484848; border-radius: 6px; background: #252525; color: #eee; font: inherit; cursor: pointer; }
+.workspace-ui .task-details-dialog button:hover:not(:disabled) { background: #363636; border-color: #686868; }
+.workspace-ui .task-details-dialog button:disabled { opacity: .5; cursor: default; }
+.workspace-ui .task-details-dialog :is(input, textarea, select) { min-width: 0; border: 1px solid #484848; border-radius: 6px; padding: 6px 10px; background: #202020; color: #ededed; caret-color: #fff; font: inherit; }
+.workspace-ui .task-details-dialog :is(input, textarea, select):disabled { opacity: 1; color: #bebebe; background: #1a1a1a; }
+.workspace-ui .task-details-dialog :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid #eee; outline-offset: 3px; }
+.workspace-ui .task-details-dialog input::placeholder, .workspace-ui .task-details-dialog textarea::placeholder { color: #a9a9a9; }
+.workspace-ui .task-details-dialog .task-details-close { display: grid; flex: none; place-items: center; width: 34px; height: 34px; min-height: 34px; padding: 6px; border-color: transparent; background: transparent; }
+.workspace-ui .task-details-close svg { width: 20px; height: 20px; }
+.workspace-ui .task-details-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #555 transparent; }
+.workspace-ui .task-details-main { min-width: 0; padding: 20px 22px; }
+.workspace-ui .task-details-status { flex: none; }
+.workspace-ui .task-details-status .task-board-status-trigger { display: grid; place-items: center; width: 32px; min-height: 32px; padding: 5px; border-color: transparent; background: transparent; }
+.workspace-ui .task-details-dialog .task-board-status-menu { z-index: 210; }
+.workspace-ui .task-details-due { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 20px; }
+.workspace-ui .task-details-due > label { color: #bcbcbc; }
+.workspace-ui .task-details-due > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.workspace-ui .task-details-due input { max-width: 100%; min-height: 34px; font-variant-numeric: tabular-nums; }
+.workspace-ui .task-details-due > p { margin: 0; color: #bcbcbc; }
+.workspace-ui .task-details-description > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-ui .task-details-description textarea { display: block; width: 100%; min-height: 88px; resize: vertical; font-weight: 400; line-height: 1.5; }
+.workspace-ui .task-details-description textarea[hidden] { display: none; }
+.workspace-ui .task-details-description .task-details-add-description { background: transparent; color: #bcbcbc; }
+.workspace-ui .task-details-empty { color: #bcbcbc; }
+.workspace-ui .task-details-checklist { margin-top: 24px; }
+.workspace-ui .task-details-section-heading { display: flex; align-items: center; gap: 12px; min-height: 24px; margin-bottom: 8px; }
+.workspace-ui .task-details-description .task-details-section-heading { justify-content: space-between; }
+.workspace-ui .task-details-dialog h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.workspace-ui .task-details-section-heading > span { color: #b6b6b6; font-variant-numeric: tabular-nums; }
+.workspace-ui .task-details-checklist ul { display: grid; gap: 2px; max-height: min(320px, 36dvh); margin: 0 0 8px; padding: 0 4px 0 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #555 transparent; list-style: none; }
+.workspace-ui .task-details-checklist li { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; }
+.workspace-ui .task-details-checklist input[type=checkbox] { flex: none; width: 17px; height: 17px; margin: 0; accent-color: #d1d1d1; cursor: pointer; }
+.workspace-ui .task-details-checklist input[type=text] { flex: 1; width: 100%; padding: 4px 8px; border-color: transparent; background: transparent; }
+.workspace-ui .task-details-checklist input[type=text]:hover { border-color: #484848; }
+.workspace-ui .task-details-checklist input[type=checkbox]:checked + input { color: #aaa; text-decoration: line-through; }
+.workspace-ui .task-details-checklist .task-details-remove { display: grid; flex: none; place-items: center; width: 30px; min-height: 30px; padding: 5px; border-color: transparent; background: transparent; color: #b9b9b9; }
+.workspace-ui .task-details-remove svg { width: 18px; height: 18px; }
+.workspace-ui .task-details-save { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; margin-top: 20px; border-top: 1px solid #363636; }
+.workspace-ui .task-details-save > span { color: #b5b5b5; }
+.workspace-ui .task-details-save > button { background: #e2e2e2; color: #111; border-color: #e2e2e2; font-weight: 550; }
+.workspace-ui .task-details-save > button:hover:not(:disabled) { background: #fff; color: #111; }
+.workspace-ui .task-details-notice, .workspace-ui .task-details-dialog [role=alert] { margin: 12px 0 0; color: #dfd0b9; overflow-wrap: anywhere; }
+.workspace-ui .task-details-conflict { padding-top: 16px; margin-top: 20px; border-top: 1px solid #585044; color: #dfd0b9; }
+.workspace-ui .task-details-conflict h4 { margin: 15px 0 4px; font-size: 15px; }
+.workspace-ui .task-details-conflict p, .workspace-ui .task-details-conflict ul { margin: 8px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-ui .task-details-supporting { border-top: 1px solid #363636; }
+.workspace-ui .task-details-supporting > summary { display: flex; align-items: center; gap: 8px; padding: 14px 22px; color: #bcbcbc; cursor: pointer; list-style: none; }
+.workspace-ui .task-details-supporting > summary::-webkit-details-marker { display: none; }
+.workspace-ui .task-details-supporting > summary:hover { color: #eee; background: #202020; }
+.workspace-ui .task-details-supporting > summary > svg { flex: none; width: 16px; height: 16px; }
+.workspace-ui .task-details-supporting[open] > summary > svg { transform: rotate(90deg); }
+.workspace-ui .task-details-supporting > summary > span { margin-left: auto; font-variant-numeric: tabular-nums; }
+.workspace-ui .task-details-evidence { min-width: 0; padding: 0 22px 18px; }
+.workspace-ui .task-details-evidence dl { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0 0 14px; }
+.workspace-ui .task-details-evidence dt { color: #aaa; }
+.workspace-ui .task-details-evidence dd { margin: 3px 0 0; color: #dedede; }
+.workspace-ui .task-details-evidence article { padding-top: 18px; margin-top: 18px; border-top: 1px solid #393939; }
+.workspace-ui .task-details-evidence article strong { font-weight: 550; }
+.workspace-ui .task-details-evidence p { margin: 10px 0; color: #bdbdbd; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-ui .task-details-evidence time { color: #aaa; }
+.workspace-ui .task-details-evidence details { margin-top: 12px; }
+.workspace-ui .task-details-evidence summary { color: #d4d4d4; cursor: pointer; text-underline-offset: 4px; }
+@media (max-width: 700px) {
+  .workspace-ui .task-details-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .workspace-ui .task-details-header { padding: 18px 18px 16px; }
+  .workspace-ui .task-details-header h2 { font-size: 21px; }
+  .workspace-ui .task-details-main { padding: 18px; }
+  .workspace-ui .task-details-supporting > summary { padding-inline: 18px; }
+  .workspace-ui .task-details-evidence { padding: 0 18px 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .workspace-ui .task-details-dialog, .workspace-ui .task-details-dialog *, .workspace-ui[data-slot=sheet-scope]:has(.task-details-dialog) > [data-slot=sheet-overlay] { animation: none !important; transition: none !important; scroll-behavior: auto; } }

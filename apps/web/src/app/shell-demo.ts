@@ -16,6 +16,16 @@ export function shellDemo(): ProjectSnapshot {
   sample.project.tasks = titles.map((title, index) => ({
     id: id(index), title, status: statuses[index]!, revision: 0, requirementOrigin: 'brief',
     evidenceLevel: index < 3 ? 'user_reported' : 'none', evidenceIds: [], ownerOverride: index < 3,
+    description: [
+      'Choose the problem and the main flow to demonstrate.',
+      'Build the core project flow and verify the happy path.',
+      'Capture a short walkthrough of the working project.',
+      'Check the audio, pacing and final screen before sharing.',
+      'Collect the setup guide and the final project links.',
+      'Share the reviewed walkthrough and handoff with the team.',
+    ][index],
+    dueAt: index >= 3 ? '2026-11-10T17:00:00.000Z' : undefined,
+    checklist: (index === 3 ? ['Check the audio', 'Review the ending', 'Confirm the final links'] : ['Prepare the work', 'Review the result']).map((text, item) => ({ id: id(600 + index * 10 + item), text, completed: index < 3 || (index === 3 && item === 0) })),
   }));
   const panels = sample.project.workspace.panels;
   sample.project.workspace.panels = [

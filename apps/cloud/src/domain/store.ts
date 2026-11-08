@@ -113,6 +113,21 @@ export class Store {
                 }
                 x.decisions.push({ id: randomUUID(), text: `Owner updated task ${task.id} to ${task.status}.`, origin: 'owner', createdAt: this.now().toISOString(), observationIds: [] });
             }
+            if (input.type === 'update_task_details') {
+                const task = x.tasks.find(t => t.id === input.taskId);
+                if (!task)
+                    reject(404, 'not_found', 'Task is unavailable.');
+                revision(task.revision, input.expectedTaskRevision);
+                if (input.description !== undefined)
+                    task.description = input.description;
+                if (input.dueAt === null)
+                    delete task.dueAt;
+                else if (input.dueAt !== undefined)
+                    task.dueAt = input.dueAt;
+                if (input.checklist !== undefined)
+                    task.checklist = input.checklist;
+                task.revision++;
+            }
             if (input.type === 'record_decision')
                 x.decisions.push({ id: randomUUID(), text: input.text, origin: 'owner', createdAt: this.now().toISOString(), observationIds: [] });
             if (input.type === 'set_project_status') {

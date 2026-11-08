@@ -113,10 +113,10 @@ test('pet answer reaches the shared canonical project view through the client in
     }
   };
   render(<><App client={client} drafts={memoryDrafts()} fixture /><Pet bridge={h.bridge} /></>);
-  await screen.findByLabelText('Status: Record the demo'); h.emit();
+  await screen.findByRole('button', { name: /^Status: Record the demo/ }); h.emit();
   const buttons = screen.getAllByRole('button', { name: 'Recorded' });
   await userEvent.click(buttons[buttons.length - 1]!);
-  await waitFor(() => expect(screen.getByLabelText('Status: Record the demo')).toHaveValue('done'));
-  expect(await screen.findByText('Answer saved: Recorded')).toBeVisible();
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Status: Record the demo/ })).toHaveAccessibleName(/Done$/));
+  expect(await screen.findByText('You marked this task done.')).toBeVisible();
   expect(screen.queryByText('Submitted · waiting for canonical desktop state')).not.toBeInTheDocument();
 });
