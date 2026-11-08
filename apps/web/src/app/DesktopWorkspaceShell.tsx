@@ -1,9 +1,9 @@
 import { useImperativeHandle, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type Ref, type CSSProperties } from 'react';
-import { Button, ResizableHandle, ResizablePanel, ResizablePanelGroup, Sheet, SheetContent, SheetDescription, SheetTitle, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@living-playbooks/project-ui';
+import { Button, ResizableHandle, ResizablePanel, ResizablePanelGroup, Sheet, SheetContent, SheetDescription, SheetTitle } from '@living-playbooks/project-ui';
 import { useDesktopPaneLayout } from './useDesktopPaneLayout';
 import './desktop-shell.css';
 
-export type DesktopShellHandle = { openProjects(): void; showWorkspace(): void };
+export type DesktopShellHandle = { openProjects(): void; showWorkspace(): void; resetLayout(): void };
 
 function tabbable(root: ParentNode): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,summary,[tabindex]')].filter(element => {
@@ -20,8 +20,8 @@ function tabbable(root: ParentNode): HTMLElement[] {
   });
 }
 
-export function DesktopWorkspaceShell({ ref, title, fixture, offline, refresh, projects, workspace, manager }: {
-  ref?: Ref<DesktopShellHandle>; title: string; fixture: boolean; offline: boolean; refresh(): void;
+export function DesktopWorkspaceShell({ ref, projects, workspace, manager }: {
+  ref?: Ref<DesktopShellHandle>;
   projects: ReactNode; workspace: ReactNode; manager: ReactNode;
 }) {
   const pane = useDesktopPaneLayout();
@@ -35,7 +35,7 @@ export function DesktopWorkspaceShell({ ref, title, fixture, offline, refresh, p
     opener.current = element instanceof HTMLElement ? element : null;
     pane.openDrawer(side);
   };
-  useImperativeHandle(ref, () => ({ openProjects: () => open('projects'), showWorkspace: () => pane.closeDrawer() }));
+  useImperativeHandle(ref, () => ({ openProjects: () => open('projects'), showWorkspace: () => pane.closeDrawer(), resetLayout: pane.resetLayout }));
 
   // The Group owns dragging/keyboard mechanics. Measurement only re-applies the
   // effective layout and never persists an automatic constraint adjustment.
@@ -92,17 +92,8 @@ export function DesktopWorkspaceShell({ ref, title, fixture, offline, refresh, p
   }
 
   const sizes = { '--projects-width': `${pane.preferredWidths.projects}px`, '--manager-width': `${pane.preferredWidths.manager}px` } as CSSProperties;
-  return <TooltipProvider><div className="workspace-ui desktop-shell" data-narrow={pane.narrow} style={sizes}>
+  return <div className="workspace-ui desktop-shell" data-narrow={pane.narrow} style={sizes}>
     <a className="skip-link" href="#workspace">Skip to workspace</a>
-    <header className="desktop-toolbar" inert={modal}>
-      <Button ref={projectsButton} variant="ghost" className="drawer-opener" hidden={!pane.narrow} onClick={event => open('projects', event.currentTarget)}>Projects</Button>
-      <span className="desktop-context" title={title}>{title || 'Workspace'}</span>
-      {fixture && <span className="demo-indicator" aria-label="Demo · synthetic data · no live model" title="Sample data. No live model is connected.">Demo</span>}
-      {offline && <span className="offline-indicator">Cloud offline</span>}
-      <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="sm" aria-label="Reset layout" onClick={pane.resetLayout}>Reset layout</Button></TooltipTrigger><TooltipContent>Restore sidebar widths</TooltipContent></Tooltip>
-      <Button variant="ghost" size="sm" onClick={refresh}>Refresh</Button>
-      <Button ref={chatButton} variant="outline" className="drawer-opener" hidden={!pane.narrow} onClick={event => open('chat', event.currentTarget)}>Chat</Button>
-    </header>
     <div className="pane-container" ref={pane.containerRef} data-pane-measure>
       <ResizablePanelGroup orientation="horizontal" disabled={pane.narrow}
         groupRef={handle => { applySizes.current = handle ? layout => { handle.setLayout(layout); } : () => {}; }}
@@ -123,7 +114,12 @@ export function DesktopWorkspaceShell({ ref, title, fixture, offline, refresh, p
           </Sheet>
         </ResizablePanel>
         <ResizableHandle aria-label="Resize Projects" disabled={pane.narrow} hidden={pane.narrow} withHandle />
-        <ResizablePanel id="canvas" minSize={pane.narrow ? 0 : 480} inert={modal}>{workspace}</ResizablePanel>
+        <ResizablePanel id="canvas" minSize={pane.narrow ? 0 : 480} inert={modal}><div className="workspace-canvas">
+          <nav className="narrow-workspace-actions" aria-label="Workspace navigation" hidden={!pane.narrow}>
+            <Button id="projects-drawer-toggle" ref={projectsButton} variant="ghost" size="icon" aria-label="Projects" title="Projects" onClick={event => open('projects', event.currentTarget)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></svg></Button>
+            <Button ref={chatButton} variant="ghost" size="icon" aria-label="Chat" title="Chat" onClick={event => open('chat', event.currentTarget)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-1 1V11.5a9 9 0 0 1 18 0Z" /><path d="M8 11h8M8 15h5" /></svg></Button>
+          </nav>{workspace}
+        </div></ResizablePanel>
         <ResizableHandle aria-label="Resize Chat" disabled={pane.narrow} hidden={pane.narrow} withHandle />
         <ResizablePanel id="manager" defaultSize={360} minSize={pane.narrow ? 0 : 300} maxSize={pane.narrow ? 0 : 560} collapsible collapsedSize={0} inert={pane.narrow && pane.drawer !== 'chat'}>
           <Sheet open={!pane.narrow || pane.drawer === 'chat'} modal={false} onOpenChange={open => { if (!open && pane.narrow) pane.closeDrawer(); }}>
@@ -131,7 +127,7 @@ export function DesktopWorkspaceShell({ ref, title, fixture, offline, refresh, p
               hidden={pane.narrow && pane.drawer !== 'chat'} role={pane.narrow ? 'dialog' : 'complementary'} aria-modal={modal && pane.drawer === 'chat' ? true : undefined}
               onOpenAutoFocus={event => event.preventDefault()} onCloseAutoFocus={event => event.preventDefault()} onInteractOutside={event => event.preventDefault()}
               onEscapeKeyDown={event => { event.preventDefault(); if (pane.narrow) pane.closeDrawer(); }} onKeyDownCapture={desktopTab}>
-              <SheetTitle className="sr-only">Manager chat</SheetTitle><SheetDescription className="sr-only">Project conversation and check-ins.</SheetDescription>
+              <SheetTitle className="sr-only">Manager chat</SheetTitle><SheetDescription className="sr-only">Project conversation and manager questions.</SheetDescription>
               {manager}
             </SheetContent>
           </Sheet>
@@ -139,5 +135,5 @@ export function DesktopWorkspaceShell({ ref, title, fixture, offline, refresh, p
       </ResizablePanelGroup>
     </div>
     {modal && <button className="drawer-backdrop" aria-label="Close drawer" tabIndex={-1} onClick={pane.closeDrawer} />}
-  </div></TooltipProvider>;
+  </div>;
 }

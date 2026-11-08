@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
@@ -18,6 +18,7 @@ test.each(['saved', 'conflict'] as const)('a late document %s response preserves
     return receipt;
   };
   const view = render(<App client={client} drafts={store} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.clear(screen.getByLabelText('Document: Demo notes'));
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), 'Submitted text');
@@ -26,6 +27,8 @@ test.each(['saved', 'conflict'] as const)('a late document %s response preserves
   await userEvent.click(screen.getByRole('button', { name: /Second project/ }));
   await screen.findByRole('heading', { name: 'Second project' });
   await userEvent.click(screen.getByRole('button', { name: /Hackathon demo/ }));
+  await screen.findByRole('heading', { name: 'Hackathon demo' });
+  await userEvent.click(screen.getByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.clear(screen.getByLabelText('Document: Demo notes'));
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), 'Newer text after return');
@@ -33,6 +36,7 @@ test.each(['saved', 'conflict'] as const)('a late document %s response preserves
   await waitFor(async () => expect((await store.read(`${a.project.id}:document:${a.documents[0]!.id}`))?.text).toBe('Newer text after return'));
   view.unmount();
   render(<App client={client} drafts={store} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toHaveValue('Newer text after return'));
 });
 
@@ -62,6 +66,7 @@ test('a late chat acknowledgment cannot remove the newer composer draft after re
 test('a replacement document keeps the focused old editor until its owner applies the layout', async () => {
   const a = snapshot(), client = createFixtureClient(), store = memoryDrafts();
   render(<App client={client} drafts={store} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   const editor = screen.getByLabelText('Document: Demo notes');
   await userEvent.type(editor, ' Keep this local text');
@@ -99,7 +104,7 @@ test('project creation replays the exact persisted command after a lost response
   await screen.findByText(/Project creation not confirmed/);
   view.unmount(); render(<App client={client} drafts={store} fixture />);
   await screen.findByRole('heading', { name: 'Retry safe project' });
-  await userEvent.click(screen.getByText('New project', { selector: 'summary' }));
+  await userEvent.click(screen.getByRole('button', { name: 'New project' }));
   await waitFor(() => expect(screen.getByRole('button', { name: /Create project|Retry project creation/ })).toBeEnabled());
   await userEvent.click(screen.getByRole('button', { name: /Create project|Retry project creation/ }));
   await waitFor(() => expect(operationIds).toHaveLength(2));
@@ -111,18 +116,20 @@ test.each([
   ['question', 'missing'], ['question', 'omitted'],
   ['next_action', 'missing'], ['next_action', 'omitted'],
   ['milestone', 'missing'], ['milestone', 'omitted'],
-] as const)('the %s task action reveals a task when its checklist is %s', async (source, checklist) => {
+] as const)('task details remain reachable with a %s layout whose checklist is %s', async (source, checklist) => {
   const seed = snapshot();
   const type = { question: 'question_card', next_action: 'next_action', milestone: 'milestone_timeline' }[source];
   seed.project.workspace.panels = seed.project.workspace.panels.filter(panel => panel.type === type || (checklist === 'omitted' && panel.type === 'checklist'));
   for (const panel of seed.project.workspace.panels) if (panel.type === 'checklist') panel.taskIds = [];
   const client = createFixtureClient({ snapshots: [seed] });
   render(<App client={client} drafts={memoryDrafts()} fixture />);
-  const opener = { question: 'Open linked task', next_action: 'Open task', milestone: 'Record the demo' }[source];
+  const opener = source === 'question' ? 'Open linked task' : 'Open task: Record the demo';
   await userEvent.click(await screen.findByRole('button', { name: opener }));
-  const status = await screen.findByLabelText('Status: Record the demo');
-  await waitFor(() => expect(document.activeElement).toBe(document.getElementById(`task-${seed.project.tasks[0]!.id}`)));
-  await userEvent.selectOptions(status, 'done');
-  await waitFor(() => expect(status).toHaveValue('done'));
+  const dialog = await screen.findByRole('dialog', { name: 'Record the demo' });
+  const status = within(dialog).getByRole('button', { name: /^Status: Record the demo/ });
+  await waitFor(() => expect(document.activeElement).toBe(document.getElementById(`board-detail-${seed.project.tasks[0]!.id}`)));
+  await userEvent.click(status);
+  await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Done' }));
+  await waitFor(() => expect(status).toHaveAccessibleName(/Done$/));
   expect((await client.getSnapshot(seed.project.id)).project.tasks[0]!.ownerOverride).toBe(true);
 });

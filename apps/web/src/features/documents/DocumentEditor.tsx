@@ -33,7 +33,7 @@ export function DocumentEditor({ document, heading, client, store, disabled, ref
   return <>
     <label className="sr-only" htmlFor={`document-${document.id}`}>Document: {heading}</label>
     <textarea id={`document-${document.id}`} data-draft-editor value={local.draft.text} disabled={!local.ready} onChange={event => local.change({ ...local.draft, text: event.target.value })} rows={6} />
-    <div className="actions"><button disabled={!local.ready || !local.dirty || busy || disabled || !!local.error} onClick={() => void save()}>{busy ? 'Saving…' : 'Save document'}</button><small>{local.dirty ? 'Local draft · revision ' : 'Saved revision '}{local.draft.baseRevision}</small></div>
+    <div className="actions"><button disabled={!local.ready || !local.dirty || busy || disabled || !!local.error} onClick={() => void save()}>{busy ? 'Saving…' : 'Save document'}</button><small title={`Revision ${local.draft.baseRevision}`}>{local.dirty ? 'Unsaved changes' : 'Saved'}</small></div>
     {local.error && <p role="alert">{local.error}</p>}
     {notice && <p role="status">{notice}</p>}
     {(remote || local.draft.conflict !== undefined) && <details open><summary>Current server copy</summary><pre className="document-copy">{remote?.text ?? local.draft.conflict}</pre>{remote && <button onClick={() => { local.change({ text: local.draft.text, baseRevision: remote.revision }); setRemote(undefined); setNotice('Your text is retained against the latest revision. Save explicitly to replace the server copy.'); }}>Keep my text with latest revision</button>}</details>}

@@ -22,6 +22,7 @@ test('pet open-project event selects the requested project and preserves the cur
   const a = snapshot(), b = snapshot(100), client = createFixtureClient({ snapshots: [a, b] });
   const drafts = memoryDrafts(), desktop = events();
   render(<App client={client} drafts={drafts} bridge={desktop.bridge} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), ' Local unsaved text');
   desktop.emit({ type: 'open_project', projectId: b.project.id });
@@ -33,12 +34,13 @@ test('pet open-project event cannot discard a draft when storage flush fails', a
   const a = snapshot(), b = snapshot(100), client = createFixtureClient({ snapshots: [a, b] });
   const drafts = memoryDrafts(), desktop = events();
   render(<App client={client} drafts={drafts} bridge={desktop.bridge} fixture />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), ' Keep this text');
   drafts.flush = async () => { throw new Error('Storage failed'); };
   desktop.emit({ type: 'open_project', projectId: b.project.id });
   await screen.findByText('Draft storage failed. Copy your work before switching projects.');
-  expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
+  expect(screen.getByRole('button', { name: /Hackathon demo/ })).toHaveAttribute('aria-current', 'page');
   expect((screen.getByLabelText('Document: Demo notes') as HTMLTextAreaElement).value).toContain('Keep this text');
 });
 
