@@ -53,4 +53,3 @@ it('rejects malformed fixture commands before any project mutation', async () =>
   }
   expect(await client.getSnapshot(fixtureIds.project)).toEqual(before);
 });
-
