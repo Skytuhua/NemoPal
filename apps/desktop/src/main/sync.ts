@@ -18,8 +18,15 @@ export class SyncEngine {
       while (!this.stopped) {
         const source = this.store.pendingSourceCommands()[0];
         if (source) {
-          if (source.kind === 'revoke') await this.client.revokeSource(source.bindingId, { operationId: source.operationId, input: { grantRevision: source.grantRevision, removeExcerpts: true } });
-          else await this.client.setSourceState(source.bindingId, { operationId: source.operationId, input: { grantRevision: source.grantRevision, state: 'paused' } });
+          try {
+            if (source.kind === 'revoke') await this.client.revokeSource(source.bindingId, { operationId: source.operationId, input: { grantRevision: source.grantRevision, removeExcerpts: true } });
+            else await this.client.setSourceState(source.bindingId, { operationId: source.operationId, input: { grantRevision: source.grantRevision, state: 'paused' } });
+          } catch (error) {
+            // Deletion or a prior revoke already satisfies withdrawal. Require the
+            // validated API code as well as status; router/conflict errors stay pending.
+            const withdrawn = error instanceof ClientError && (error.status === 404 && error.apiCode === 'not_found' || error.status === 409 && error.apiCode === 'source_revoked');
+            if (!withdrawn) throw error;
+          }
           await this.store.acknowledgeSourceCommand(source.id); continue;
         }
         const upload = (await this.store.pendingUploads(1))[0];
