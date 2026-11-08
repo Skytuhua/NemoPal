@@ -368,11 +368,18 @@ test('dragging from the title uses the card mouse sensor and suppresses opening 
   await waitFor(() => expect(document.querySelector('[data-board-drag-preview]')).toBeInTheDocument());
   fireEvent.mouseMove(document, { buttons: 1, clientX: 430, clientY: 140 });
   await waitFor(() => expect(document.querySelector('[data-task-column="owner:later"]')).toContainElement(screen.getByRole('button', { name: 'Open task: Project task 1' })));
-  const movedTitle = screen.getByRole('button', { name: 'Open task: Project task 1' });
   fireEvent.mouseUp(document, { button: 0, clientX: 430, clientY: 140 });
-  fireEvent.click(movedTitle);
+  const currentTitle = document.querySelector<HTMLButtonElement>('[data-board-task-id] [data-card-control="open"]');
+  expect(currentTitle?.isConnected).toBe(true);
+  fireEvent.click(currentTitle!);
   expect(calls.openTask).not.toHaveBeenCalled();
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  // A later ordinary click must still open the current card.
+  await new Promise(resolve => setTimeout(resolve, 80));
+  const settledTitle = document.querySelector<HTMLButtonElement>('[data-board-task-id] [data-card-control="open"]');
+  expect(settledTitle?.isConnected).toBe(true);
+  fireEvent.click(settledTitle!);
+  expect(calls.openTask).toHaveBeenCalledExactlyOnceWith(value.project.tasks[0]!.id);
 });
 
 test('the actual mouse column handle changes column order and keeps task membership', async () => {
