@@ -51,8 +51,15 @@ profiles; a recording fetch stub supplies all HTTP responses.
   recording fetch that honors aborted signals reproduced that failed retry.
   Fresh redemption controllers correct it while old local withdrawal remains
   usable. Review rechecks are tracked on the PR.
-- Final parent execution: **172 desktop tests in 28 files PASS**, including
-  **16 new owner-session cases in two files**. Typecheck, the desktop main
+- Two subsequent independent reviews identified mid-pair tray pin restoration
+  and lost old-device withdrawal access after a preference write failed behind
+  credential replacement. Seven new RED cases reproduced both findings.
+  Tray toggles now retain the current volatile pin instead of the old menu pin,
+  and the fallible journal clear precedes credential replacement. Tests hold
+  both protected saving and journal clearing, and exercise pause/revoke through
+  IPC and the native tray after failure, followed by successful explicit retry.
+- Final parent execution: **179 desktop tests in 29 files PASS**, including
+  **23 new owner-session cases in three files**. Typecheck, the desktop main
   bundle and whitespace validation pass.
 
 ```powershell

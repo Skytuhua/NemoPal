@@ -285,3 +285,34 @@ it('pairing clears the old owner pin durably while retaining non-owner pet prefe
     expect((await JournalStore.open(main.path)).preference()).toEqual({ hidden: false, focus: true, reducedMotion: true, pinnedProjectId: null });
   } finally { await main.close(); }
 });
+
+it.each(['pause', 'revoke', 'tray-revoke'] as const)('failed pin persistence preserves old %s custody until explicit retry succeeds', async action => {
+  const main = await startSyntheticMain({ seed: store => store.putBinding(localBinding, true) });
+  try {
+    const { JournalStore: ActualJournal } = await import('../../apps/desktop/src/main/local-store');
+    vi.spyOn(ActualJournal.prototype, 'setPreference').mockRejectedValueOnce(Error('Synthetic preference save failed'));
+    await prepareB(main);
+    vi.mocked(globalThis.fetch).mockImplementation(async (_url, init) => {
+      if (init?.signal?.aborted) throw new DOMException('Synthetic Fetch honors cancellation', 'AbortError');
+      return Response.json({ token: 'synthetic-owner-b-token', deviceId: fixtureIds.owner, expiresAt: '2099-01-01T00:00:00.000Z' });
+    });
+    const encrypt = vi.spyOn(main.protectedStorage, 'encryptStringAsync');
+    const cursor = (await ActualJournal.open(main.path)).cursor(localBinding.binding.id);
+    await expect(main.invoke('pair', { code: 'synthetic-code', deviceName: 'Synthetic B' })).rejects.toThrow();
+    await expect(main.invoke('capabilities')).resolves.toMatchObject({ paired: false });
+    await expect(main.invoke('invoke', { type: 'listProjects' })).rejects.toThrow();
+    if (action === 'tray-revoke') {
+      main.dialog.showMessageBox.mockResolvedValue({ response: 0 });
+      main.clickTray('revoke-sources');
+    } else await expect(main.invoke(action === 'pause' ? 'pauseSource' : 'revokeSource', localBinding.binding.id)).resolves.toBeUndefined();
+    const state = action === 'pause' ? 'paused' : 'revoked';
+    await vi.waitFor(async () => expect((await ActualJournal.open(main.path)).binding(localBinding.binding.id)?.binding.state).toBe(state));
+    const retained = await ActualJournal.open(main.path);
+    expect(retained.cursor(localBinding.binding.id)).toEqual(cursor);
+    expect(retained.pendingSourceCommands()).toContainEqual(expect.objectContaining({ bindingId: localBinding.binding.id, kind: action === 'pause' ? 'pause' : 'revoke' }));
+    expect(encrypt).not.toHaveBeenCalled();
+    await expect(main.invoke('pair', { code: 'synthetic-code-retry', deviceName: 'Synthetic B' })).resolves.toMatchObject({ paired: true, deviceId: fixtureIds.owner });
+    expect(main.client.revokeSource).not.toHaveBeenCalled(); expect(main.client.setSourceState).not.toHaveBeenCalled();
+    expect((await ActualJournal.open(main.path)).pendingSourceCommands()).toEqual(retained.pendingSourceCommands());
+  } finally { await main.close(); }
+});

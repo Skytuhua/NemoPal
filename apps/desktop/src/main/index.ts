@@ -173,7 +173,8 @@ async function start() {
     void cycle();
   }
   const quit = () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); };
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
+  // Tray toggles may arrive from a menu built before pairing.
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
     if (action) reportWithdrawalFailure();
     else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
   } });
@@ -249,9 +250,10 @@ async function start() {
           for (const entry of enrollments) { entry.withdrawal = 'revoke'; if (entry.bindingId) store.fence(entry.bindingId); }
           await Promise.all([sources.stop(), sync.stop()]);
           assertOwner(owner);
-          const result = await vault.save(credential);
-          assertOwner(owner);
+          // Retain prior local withdrawal custody until the journal transition succeeds.
           await store.setPreference({ ...store.preference(), pinnedProjectId: null });
+          assertOwner(owner);
+          const result = await vault.save(credential);
           assertOwner(owner);
           ownerAbort = new AbortController(); client = makeClient(); observer = makeObserver(); sources = makeController();
           sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId()); presentation = makePresentation();
