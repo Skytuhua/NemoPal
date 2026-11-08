@@ -48,6 +48,9 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
   let timer = setTimeout(() => deadline.abort('deadline'), signInMs);
   let sessionTimer: ReturnType<typeof setTimeout> | undefined;
   let tokenDeadline: number | undefined;
+  let tokenMonotonicDeadline: number | undefined;
+  const expired = () => (tokenDeadline !== undefined && Date.now() >= tokenDeadline) ||
+    (tokenMonotonicDeadline !== undefined && performance.now() >= tokenMonotonicDeadline);
   const signal = AbortSignal.any([deadline.signal, ...(options.signal ? [options.signal] : [])]);
   let phase: ConnectionPhase = 'discovery';
   let attempted = false;
@@ -105,18 +108,22 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
     await callback.close(); callback = undefined;
     phase = 'token';
     const tokenRequestStartedAt = Date.now();
+    const tokenRequestStartedMonotonic = performance.now();
     tokens = await exchangeAuthorization(endpoint.origin, { metadata, clientInformation: information, authorizationCode,
       codeVerifier, redirectUri: String(authorization.authorizationUrl.searchParams.get('redirect_uri')), resource: endpoint, fetchFn: network.fetch });
     codeVerifier = ''; authorization.codeVerifier = ''; authorizationCode = '';
     if (tokens.token_type.toLowerCase() !== 'bearer' || tokens.scope !== 'orchestration:read' ||
       !tokens.access_token || /[\x00-\x20\x7f]/.test(tokens.access_token) || (tokens.expires_in !== undefined && tokens.expires_in <= 0))
       throw new T3ConnectionError('oauth_error', phase);
-    const currentTokenDeadline = Math.min(Date.now() + sessionMs, tokens.expires_in === undefined ? Infinity : tokenRequestStartedAt + tokens.expires_in * 1000);
-    if (scoped) {
+    const currentTokenDeadline = Math.min(scoped ? Date.now() + sessionMs : Infinity, tokens.expires_in === undefined ? Infinity : tokenRequestStartedAt + tokens.expires_in * 1000);
+    const currentTokenMonotonicDeadline = Math.min(scoped ? performance.now() + sessionMs : Infinity, tokens.expires_in === undefined ? Infinity : tokenRequestStartedMonotonic + tokens.expires_in * 1000);
+    if (Number.isFinite(currentTokenDeadline) || Number.isFinite(currentTokenMonotonicDeadline)) {
       tokenDeadline = currentTokenDeadline;
-      network.setSessionDeadline({ expiresAt: currentTokenDeadline, onExpiry: () => deadline.abort('deadline') });
-      sessionTimer = setTimeout(() => deadline.abort('deadline'), Math.max(0, currentTokenDeadline - Date.now()));
-      if (Date.now() >= currentTokenDeadline) deadline.abort('deadline');
+      tokenMonotonicDeadline = currentTokenMonotonicDeadline;
+      network.setSessionDeadline({ expiresAt: currentTokenDeadline, isExpired: expired, onExpiry: () => deadline.abort('deadline') });
+      const remaining = Math.min(currentTokenDeadline - Date.now(), currentTokenMonotonicDeadline - performance.now());
+      sessionTimer = setTimeout(() => deadline.abort('deadline'), Math.min(2147483647, Math.max(0, remaining)));
+      if (expired()) deadline.abort('deadline');
       signal.throwIfAborted();
     }
     network.setBearer(tokens.access_token);
@@ -133,9 +140,9 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
     signal.throwIfAborted();
     if (scoped) {
       clearTimeout(timer);
-      const remainingMs = currentTokenDeadline - Date.now();
+      const remainingMs = Math.min(currentTokenDeadline - Date.now(), currentTokenMonotonicDeadline - performance.now());
       if (remainingMs <= 0) throw new T3ConnectionError('deadline', 'initialize');
-      network.enableScopedCalls({ environmentId: scoped.environmentId, threadId: scoped.threadId, expiresAt: currentTokenDeadline, onExpiry: () => deadline.abort('deadline') });
+      network.enableScopedCalls({ environmentId: scoped.environmentId, threadId: scoped.threadId, expiresAt: currentTokenDeadline, isExpired: expired, onExpiry: () => deadline.abort('deadline') });
       let closed = false;
       let busy = false;
       let calls = 0;
@@ -144,7 +151,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
         if (closing) return closing;
         closed = true;
         signal.removeEventListener('abort', onAbort);
-        if (Date.now() >= currentTokenDeadline && !signal.aborted) deadline.abort('deadline');
+        if (expired() && !signal.aborted) deadline.abort('deadline');
         if (busy && !signal.aborted) deadline.abort('cancelled');
         closing = (async () => {
           phase = 'cleanup';
@@ -171,7 +178,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
         configuration: Object.freeze({ endpoint: endpoint.href, environmentId: scoped.environmentId }),
         toolNames: Object.freeze([...T3_TOOLS]), permissions: Object.freeze(['orchestration:read']),
         async callTool(name: T3ToolName, args: Record<string, unknown>, requestSignal: AbortSignal) {
-          if (Date.now() >= currentTokenDeadline && !signal.aborted) deadline.abort('deadline');
+          if (expired() && !signal.aborted) deadline.abort('deadline');
           if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'tool_call');
           if (requestSignal.aborted) throw new T3ConnectionError('cancelled', 'tool_call');
           if (closed || busy || calls >= 300 || !permittedCall(name, args, scoped))
@@ -185,11 +192,11 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
           try {
             const result = await boundedMcp(inner => client!.callTool({ name, arguments: args }, undefined,
               { signal: inner, timeout: requestMs + 1000, maxTotalTimeout: requestMs + 1000 }));
-            if (Date.now() >= currentTokenDeadline && !signal.aborted) deadline.abort('deadline');
+            if (expired() && !signal.aborted) deadline.abort('deadline');
             if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'tool_call');
             return result;
           } catch {
-            if (Date.now() >= currentTokenDeadline && !signal.aborted) deadline.abort('deadline');
+            if (expired() && !signal.aborted) deadline.abort('deadline');
             const code = signal.aborted ? (signal.reason === 'deadline' ? 'deadline' : 'cancelled') :
               localRequestExpired || network.deadlineExpired ? 'deadline' :
               network.failure?.code === 'response_too_large' ? 'response_too_large' : 'mcp_error';
@@ -205,7 +212,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
     result = { status: 'connected', transport: 'loopback_http', permissions: ['orchestration:read'],
       expectedReadTools: [...T3_TOOLS], toolCalls: 0, credentials: 'discarded', session: 'closed', checkedAt: new Date().toISOString() };
   } catch (caught) {
-    if (tokenDeadline !== undefined && Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
+    if (expired() && !signal.aborted) deadline.abort('deadline');
     const code = signal.aborted ? (signal.reason === 'deadline' ? 'deadline' : 'cancelled') :
       localRequestExpired || network.deadlineExpired ? 'deadline' :
       network.failure?.code === 'response_too_large' ? 'response_too_large' :
@@ -233,7 +240,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
     clearTimeout(timer); clearTimeout(sessionTimer);
     }
   }
-  if (tokenDeadline !== undefined && Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
+  if (expired() && !signal.aborted) deadline.abort('deadline');
   if (error && signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', error.phase, error.delivery);
   if (error) throw error;
   if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'cleanup', 'uncertain');

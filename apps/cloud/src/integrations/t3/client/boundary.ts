@@ -67,7 +67,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   let sessionId = '';
   let deadlineExpired = false;
   let scoped: { environmentId: string; threadId: string; expiresAt: number; onExpiry: () => void } | undefined;
-  let sessionDeadline: { expiresAt: number; onExpiry: () => void } | undefined;
+  let sessionDeadline: { expiresAt: number; onExpiry: () => void; isExpired?: () => boolean } | undefined;
   const fail = (code: ConnectionCode): never => {
     failure = new T3ConnectionError(code, phase()); throw failure;
   };
@@ -84,7 +84,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
       throw requestFailure;
     };
     if (url.origin !== endpoint.origin || url.username || url.password || url.search || url.hash) return fail('invalid_metadata');
-    if (sessionDeadline && url.href === endpoint.href && Date.now() >= sessionDeadline.expiresAt) { sessionDeadline.onExpiry(); return failRequest('deadline'); }
+    if (sessionDeadline && url.href === endpoint.href && (Date.now() >= sessionDeadline.expiresAt || sessionDeadline.isExpired?.())) { sessionDeadline.onExpiry(); return failRequest('deadline'); }
     let action = `${method} ${url.pathname}`;
     const publicActions = ['GET /.well-known/oauth-protected-resource/mcp', 'GET /.well-known/oauth-authorization-server',
       'POST /oauth/mcp/register', 'POST /oauth/mcp/token'];
@@ -123,7 +123,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
       if (url.href === endpoint.href) headers.set('Authorization', `Bearer ${bearer}`);
       else headers.delete('Authorization');
       const prepared: RequestInit = { ...init, headers, signal: combined, redirect: 'manual', credentials: 'omit', cache: 'no-store' };
-      if (sessionDeadline && url.href === endpoint.href && Date.now() >= sessionDeadline.expiresAt) { sessionDeadline.onExpiry(); return failRequest('deadline'); }
+      if (sessionDeadline && url.href === endpoint.href && (Date.now() >= sessionDeadline.expiresAt || sessionDeadline.isExpired?.())) { sessionDeadline.onExpiry(); return failRequest('deadline'); }
       const response = await fetch(url, prepared);
       if (url.href === endpoint.href && method === 'POST') {
         const observed = response.headers.get('mcp-session-id');
@@ -169,8 +169,8 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   return {
     fetch: guardedFetch,
     setBearer(value: string) { bearer = value; },
-    setSessionDeadline(value: { expiresAt: number; onExpiry: () => void }) { sessionDeadline = value; },
-    enableScopedCalls(value: { environmentId: string; threadId: string; expiresAt: number; onExpiry: () => void }) { scoped = value; sessionDeadline = value; },
+    setSessionDeadline(value: { expiresAt: number; onExpiry: () => void; isExpired?: () => boolean }) { sessionDeadline = value; },
+    enableScopedCalls(value: { environmentId: string; threadId: string; expiresAt: number; onExpiry: () => void; isExpired?: () => boolean }) { scoped = value; sessionDeadline = value; },
     clearFailure() { failure = undefined; },
     get sessionId() { return sessionId; },
     get deadlineExpired() { return deadlineExpired; },

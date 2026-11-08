@@ -679,3 +679,91 @@ it('reports a deadline that expires during setup failure cleanup', async () => {
     expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
   } finally { clock?.mockRestore(); fetchSpy.mockRestore(); vi.unstubAllGlobals(); }
 });
+
+
+it('connection check rejects a token that expires during exchange', async () => {
+  const f = await fixture('token-aged');
+  const later = Date.now() + 2000;
+  let wall: ReturnType<typeof vi.spyOn> | undefined;
+  f.setOnToken(() => { wall = vi.spyOn(Date, 'now').mockReturnValue(later); });
+  try {
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(f.requests.filter(r => r.path === '/mcp')).toHaveLength(0);
+  } finally { wall?.mockRestore(); }
+});
+
+it('connection check prevents sends after token expiry during initialization', async () => {
+  const f = await fixture('token-aged');
+  const later = Date.now() + 2000;
+  let wall: ReturnType<typeof vi.spyOn> | undefined;
+  f.setOnInitialized(() => { wall = vi.spyOn(Date, 'now').mockReturnValue(later); });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(f.requests.filter(r => r.body.includes('tools/list'))).toHaveLength(0);
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { wall?.mockRestore(); fetchSpy.mockRestore(); }
+});
+
+it('does not extend a token when the wall clock moves backwards during exchange', async () => {
+  const f = await fixture('token-aged');
+  const earlierWall = Date.now() - 60000;
+  const laterMonotonic = performance.now() + 2000;
+  let wall: ReturnType<typeof vi.spyOn> | undefined;
+  let monotonic: ReturnType<typeof vi.spyOn> | undefined;
+  f.setOnToken(() => {
+    wall = vi.spyOn(Date, 'now').mockReturnValue(earlierWall);
+    monotonic = vi.spyOn(performance, 'now').mockReturnValue(laterMonotonic);
+  });
+  try {
+    await expect(connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 5000,
+      onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(f.requests.filter(r => r.path === '/mcp')).toHaveLength(0);
+  } finally { wall?.mockRestore(); monotonic?.mockRestore(); }
+});
+
+
+it('fences boundary cleanup when monotonic time expires despite wall-clock rollback', async () => {
+  const f = await fixture('session');
+  const controller = new AbortController();
+  const wallNow = Date.now();
+  const monoNow = performance.now();
+  const onExpiry = vi.fn(() => controller.abort('deadline'));
+  const boundary = networkBoundary(new URL(f.endpoint), controller.signal, 1000, () => 'cleanup', () => {});
+  boundary.setBearer('fixture-secret-access-token');
+  boundary.enableScopedCalls({ environmentId: 'env', threadId: 'thread', expiresAt: wallNow + 5000,
+    isExpired: () => performance.now() >= monoNow + 5000, onExpiry });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+  let wall: ReturnType<typeof vi.spyOn> | undefined;
+  let mono: ReturnType<typeof vi.spyOn> | undefined;
+  const headers = { get 'x-fixture'() {
+    wall = vi.spyOn(Date, 'now').mockReturnValue(wallNow - 60000);
+    mono = vi.spyOn(performance, 'now').mockReturnValue(monoNow + 6000);
+    return 'value';
+  } };
+  try {
+    await expect(boundary.fetch(f.endpoint, { method: 'DELETE', headers })).rejects.toMatchObject({ code: 'deadline' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onExpiry).toHaveBeenCalledOnce();
+  } finally { boundary.dispose(); wall?.mockRestore(); mono?.mockRestore(); fetchSpy.mockRestore(); }
+});
+
+it('classifies a late tool failure as deadline despite wall-clock rollback', async () => {
+  const f = await fixture('call-error');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 5000,
+    onAuthorization: async url => { await f.authorize(url); } });
+  const wallNow = Date.now();
+  const monoNow = performance.now();
+  let wall: ReturnType<typeof vi.spyOn> | undefined;
+  let mono: ReturnType<typeof vi.spyOn> | undefined;
+  f.setOnCall(() => {
+    wall = vi.spyOn(Date, 'now').mockReturnValue(wallNow - 60000);
+    mono = vi.spyOn(performance, 'now').mockReturnValue(monoNow + 6000);
+  });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(session.callTool('t3_thread_read', reviewReadArgs, new AbortController().signal)).rejects.toMatchObject({ code: 'deadline' });
+    await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed' });
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { wall?.mockRestore(); mono?.mockRestore(); fetchSpy.mockRestore(); }
+});
