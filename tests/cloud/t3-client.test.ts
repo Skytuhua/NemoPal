@@ -12,12 +12,14 @@ afterEach(async () => { await Promise.all(fixtures.splice(0).map(f => f.close())
 type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 'oversize' |
   'redirect' | 'discovery-error' | 'token-error' | 'broad-token' | 'mcp-error' | 'missing-tool' | 'hang' |
   'session' | 'cleanup-error' | 'chunked-oversize' | 'mcp-oversize' | 'mcp-hang' | 'sse' | 'bad-token-endpoint' | 'bad-registration-endpoint' |
-  'call-hang' | 'call-error' | 'call-oversize' | 'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
+  'call-hang' | 'call-error' | 'call-oversize' | 'token-aged' | 'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
 
 async function fixture(mode: Mode = 'ok') {
   const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
   let onInitialized = () => {};
   let onCall = () => {};
+  let onToken = () => {};
+  let onToolsList = () => {};
   let authorization: URL | undefined;
   let callback: string | undefined;
   let callbackClosed = false;
@@ -74,6 +76,7 @@ async function fixture(mode: Mode = 'ok') {
       expect(challenge).toBe(authorization?.searchParams.get('code_challenge'));
       expect(params.get('code')).toBe('fixture-code');
       if (mode === 'token-error') return send(res, { error: 'invalid_grant', error_description: 'private-body' }, 400);
+      if (mode === 'token-aged') { onToken(); return send(res, { access_token: 'fixture-secret-access-token', token_type: 'Bearer', expires_in: 1, scope: 'orchestration:read' }); }
       return send(res, { access_token: 'fixture-secret-access-token', token_type: 'Bearer', expires_in: 60,
         scope: mode === 'broad-token' ? 'orchestration:read orchestration:operate' : 'orchestration:read' });
     }
@@ -106,6 +109,7 @@ async function fixture(mode: Mode = 'ok') {
         } } });
       }
       if (message.method === 'tools/list') {
+        onToolsList();
         if (mode === 'mcp-empty') return res.writeHead(202).end();
         if (mode === 'server-timeout-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } });
         if (mode === 'background-oversize') { await new Promise(resolve => setTimeout(resolve, 150)); return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } }); }
@@ -131,6 +135,8 @@ async function fixture(mode: Mode = 'ok') {
     endpoint: `${origin}/mcp`, origin, requests,
     setOnInitialized(callback: () => void) { onInitialized = callback; },
     setOnCall(callback: () => void) { onCall = callback; },
+    setOnToken(callback: () => void) { onToken = callback; },
+    setOnToolsList(callback: () => void) { onToolsList = callback; },
     get callback() { return callback; },
     get callbackClosed() { return callbackClosed; },
     async authorize(url: string, alter?: (url: URL) => void) {
@@ -632,4 +638,44 @@ it('checks session deadline after all request options are prepared', async () =>
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(onExpiry).toHaveBeenCalledOnce();
   } finally { boundary.dispose(); clock?.mockRestore(); fetchSpy.mockRestore(); }
+});
+
+
+it('does not use a token whose lifetime elapsed while its response was delayed', async () => {
+  const f = await fixture('token-aged');
+  const later = Date.now() + 2000;
+  let clock: ReturnType<typeof vi.spyOn> | undefined;
+  f.setOnToken(() => { clock = vi.spyOn(Date, 'now').mockReturnValue(later); });
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 5000,
+      onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(f.requests.filter(r => r.path === '/mcp')).toHaveLength(0);
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { clock?.mockRestore(); fetchSpy.mockRestore(); }
+});
+
+it('reports a deadline that expires during setup failure cleanup', async () => {
+  const f = await fixture('server-timeout-error');
+  const OriginalHeaders = globalThis.Headers;
+  let serverErrorIssued = false;
+  f.setOnToolsList(() => { serverErrorIssued = true; });
+  let clock: ReturnType<typeof vi.spyOn> | undefined;
+  class CleanupHeaders extends OriginalHeaders {
+    constructor(init?: HeadersInit) {
+      super(init);
+      if (serverErrorIssued && init && !(init instanceof OriginalHeaders) && !Array.isArray(init) && Object.keys(init).includes('mcp-session-id')) {
+        const later = Date.now() + 60000;
+        clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+      }
+    }
+  }
+  vi.stubGlobal('Headers', CleanupHeaders);
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  try {
+    await expect(connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 5000,
+      onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline' });
+    expect(clock).toBeDefined();
+    expect(fetchSpy.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(0);
+  } finally { clock?.mockRestore(); fetchSpy.mockRestore(); vi.unstubAllGlobals(); }
 });

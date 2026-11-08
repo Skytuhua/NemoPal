@@ -104,17 +104,20 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
     authorizationCode = await callback.code;
     await callback.close(); callback = undefined;
     phase = 'token';
+    const tokenRequestStartedAt = Date.now();
     tokens = await exchangeAuthorization(endpoint.origin, { metadata, clientInformation: information, authorizationCode,
       codeVerifier, redirectUri: String(authorization.authorizationUrl.searchParams.get('redirect_uri')), resource: endpoint, fetchFn: network.fetch });
     codeVerifier = ''; authorization.codeVerifier = ''; authorizationCode = '';
     if (tokens.token_type.toLowerCase() !== 'bearer' || tokens.scope !== 'orchestration:read' ||
       !tokens.access_token || /[\x00-\x20\x7f]/.test(tokens.access_token) || (tokens.expires_in !== undefined && tokens.expires_in <= 0))
       throw new T3ConnectionError('oauth_error', phase);
-    const currentTokenDeadline = Date.now() + (tokens.expires_in === undefined ? sessionMs : Math.min(sessionMs, tokens.expires_in * 1000));
+    const currentTokenDeadline = Math.min(Date.now() + sessionMs, tokens.expires_in === undefined ? Infinity : tokenRequestStartedAt + tokens.expires_in * 1000);
     if (scoped) {
       tokenDeadline = currentTokenDeadline;
       network.setSessionDeadline({ expiresAt: currentTokenDeadline, onExpiry: () => deadline.abort('deadline') });
       sessionTimer = setTimeout(() => deadline.abort('deadline'), Math.max(0, currentTokenDeadline - Date.now()));
+      if (Date.now() >= currentTokenDeadline) deadline.abort('deadline');
+      signal.throwIfAborted();
     }
     network.setBearer(tokens.access_token);
     // Supplying a static memory-only bearer to the guarded fetch disables SDK re-auth, scope escalation and replay.
@@ -230,6 +233,8 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
     clearTimeout(timer); clearTimeout(sessionTimer);
     }
   }
+  if (tokenDeadline !== undefined && Date.now() >= tokenDeadline && !signal.aborted) deadline.abort('deadline');
+  if (error && signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', error.phase, error.delivery);
   if (error) throw error;
   if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'cleanup', 'uncertain');
   if (session) return session;
