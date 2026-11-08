@@ -53,3 +53,24 @@ test('configuration unavailable prevents linking and does not claim delivery', a
   expect(screen.getByRole('button', { name: 'Link phone' })).toBeDisabled();
   expect(screen.getByText(/not verified/i)).toBeVisible();
 });
+
+test('refreshes an externally revoked phone link after project update', async () => {
+  const project = snapshot().project;
+  const client = { getPhoneStatus: vi.fn().mockResolvedValueOnce({ state: 'configured', link: { id: crypto.randomUUID(), expiresAt: new Date(Date.now() + 100000).toISOString(), notifications: true } }).mockResolvedValue({ state: 'configured', link: null }) };
+  const { rerender } = render(<PhoneControls project={project} client={client as never} disabled={false} refresh={async () => {}} />);
+  await userEvent.click(screen.getByText('Phone messaging'));
+  await screen.findByText(/Phone linked/);
+  rerender(<PhoneControls project={{ ...project, revision: project.revision + 1 }} client={client as never} disabled={false} refresh={async () => {}} />);
+  await screen.findByText(/No phone linked/);
+});
+
+test('allows revocation while an archived project cannot add a phone link', async () => {
+  const project = { ...snapshot().project, status: 'archived' as const };
+  const client = { getPhoneStatus: vi.fn().mockResolvedValue({ state: 'configured', link: { id: crypto.randomUUID(), expiresAt: new Date(Date.now() + 100000).toISOString(), notifications: true } }), revokePhone: vi.fn().mockResolvedValue(undefined) };
+  render(<PhoneControls project={project} client={client as never} disabled revokeDisabled={false} refresh={async () => {}} />);
+  await userEvent.click(screen.getByText('Phone messaging'));
+  const revoke = await screen.findByRole('button', { name: 'Revoke phone access' });
+  expect(revoke).toBeEnabled();
+  await userEvent.click(revoke);
+  await waitFor(() => expect(client.revokePhone).toHaveBeenCalled());
+});
