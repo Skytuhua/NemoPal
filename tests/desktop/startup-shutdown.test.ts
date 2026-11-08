@@ -93,3 +93,15 @@ it.each(['unexpected load failure', 'ERR_ABORTED synthetic navigation'])('a wind
     expect(main.windows.pet.showInactive).not.toHaveBeenCalled();
   } finally { load.resolve(); await nextTurn(); await main.dispose(); }
 });
+
+
+it('startup can finish after a failed quit while window loading is pending', async () => {
+  const load = deferred<void>(); const main = await startSyntheticMain({ windowLoad: load.promise });
+  const { JournalStore } = await import('../../apps/desktop/src/main/local-store');
+  vi.spyOn(JournalStore.prototype, 'flush').mockRejectedValueOnce(Error('Synthetic journal failure'));
+  try {
+    quit(main, 'tray'); await vi.waitFor(() => expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)));
+    load.resolve(); await vi.waitFor(() => expect(main.windows.workspace.show).toHaveBeenCalled());
+    quit(main, 'tray'); await vi.waitFor(() => expect(main.app.exit).toHaveBeenCalledWith(0));
+  } finally { load.resolve(); await main.dispose(); }
+});

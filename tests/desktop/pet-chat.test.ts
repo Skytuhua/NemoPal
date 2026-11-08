@@ -38,7 +38,7 @@ test('manual Focus conversation reads a bounded real transcript and presents its
   expect(h.controller.current().expanded).toBe(false);
   await expect(h.controller.command({ type: 'expand', contextId, expanded: true })).rejects.toThrow();
 });
-test('expiry and subject revision fence question actions after presentation; owner replacement destroys before late send returns', async () => {
+test('expiry and subject revision fence question actions; owner replacement fences a late send', async () => {
   const h = harness(); await h.controller.open();
   const state = h.controller.current(); h.expire();
   await expect(h.controller.command({ type: 'answer', contextId: state.contextId, checkInId: ids.checkIn, presentationId: ids.presentation, command: { operationId: ids.manager, expectedRevision: 1, input: { kind: 'recorded' } } })).rejects.toThrow();
@@ -46,7 +46,10 @@ test('expiry and subject revision fence question actions after presentation; own
   const slow = deferred<Awaited<ReturnType<PlaybooksClient['sendMessage']>>>(); vi.mocked(h.client.sendMessage).mockReturnValueOnce(slow.promise);
   const sending = h.controller.command({ type: 'send', contextId: state.contextId, command: { operationId: ids.manager, expectedRevision: 0, input: { text: 'Original request' } } });
   const outcome = sending.catch(() => 'stale');
-  h.replaceOwner(); expect(h.port.destroy).toHaveBeenCalled(); expect(h.controller.current().conversation).toBeNull();
+  h.replaceOwner(); expect(h.port.destroy).not.toHaveBeenCalled(); expect(h.controller.current().visible).toBe(false);
+  const flush = h.controller.current();
+  await h.controller.command({ type: 'flushed', contextId: flush.contextId, flushId: flush.flushRequestId!, succeeded: true });
+  await vi.waitFor(() => expect(h.port.destroy).toHaveBeenCalledOnce());
   slow.resolve({ receipt: { operationId: ids.manager, requestHash: '0'.repeat(64), status: 'accepted', result: null, projectRevision: 1, eventSequence: 1 }, jobId: ids.owner, state: 'queued' });
   expect(await outcome).toBe('stale'); expect(h.controller.current().conversation).toBeNull();
 });
@@ -107,4 +110,69 @@ test('old context, stale project/question revision, foreign or expired presentat
   expect(h.client.sendMessage).toHaveBeenCalledWith(ids.project, send.command);
   h.controller.close(false);
   await expect(h.controller.command(answer)).rejects.toThrow();
+});
+
+test('owner replacement fences commands immediately and retains renderer until draft flush acknowledges', async () => {
+  const h = harness(); await h.controller.open(); const old = h.controller.current();
+  h.replaceOwner();
+  expect(h.port.hide).toHaveBeenCalled();
+  expect(h.port.destroy).not.toHaveBeenCalled();
+  await expect(h.controller.command({ type: 'expand', contextId: old.contextId, expanded: true })).rejects.toThrow();
+  const request = h.events.at(-1)!;
+  expect(request.flushRequestId).toBeTruthy();
+  const reopening = h.controller.open();
+  expect(h.port.show).toHaveBeenCalledTimes(1);
+  await h.controller.command({ type: 'flushed', contextId: request.contextId, flushId: request.flushRequestId!, succeeded: true });
+  await reopening;
+  expect(h.port.destroy).toHaveBeenCalledOnce();
+  expect(h.port.show).toHaveBeenCalledTimes(2);
+});
+
+test('failed and timed out flushes release the composer and permit a new acknowledgement', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = harness(); await h.controller.open();
+    const first = h.controller.flush(); const state = h.controller.current();
+    const failed = expect(first).rejects.toThrow();
+    await h.controller.command({ type: 'flushed', contextId: state.contextId, flushId: state.flushRequestId!, succeeded: false }); await failed;
+    expect(h.events.at(-1)!.flushRequestId).toBeUndefined();
+    const second = h.controller.flush(); const timedOut = expect(second).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(2000); await timedOut;
+    expect(h.events.at(-1)!.flushRequestId).toBeUndefined();
+    const third = h.controller.flush(); const retry = h.controller.current();
+    await h.controller.command({ type: 'flushed', contextId: retry.contextId, flushId: retry.flushRequestId!, succeeded: true }); await third;
+  } finally { vi.useRealTimers(); }
+});
+
+test('failed retirement retains the hidden old renderer and blocks replacement until retry succeeds', async () => {
+  const h = harness(); await h.controller.open(); h.replaceOwner();
+  let request = h.controller.current();
+  await h.controller.command({ type: 'flushed', contextId: request.contextId, flushId: request.flushRequestId!, succeeded: false });
+  await vi.waitFor(() => expect(h.controller.current().flushRequestId).toBeUndefined());
+  const opening = h.controller.open(); await vi.waitFor(() => expect(h.controller.current().flushRequestId).toBeTruthy());
+  expect(h.port.destroy).not.toHaveBeenCalled(); expect(h.port.show).toHaveBeenCalledTimes(1);
+  request = h.controller.current();
+  await h.controller.command({ type: 'flushed', contextId: request.contextId, flushId: request.flushRequestId!, succeeded: true });
+  await opening; expect(h.port.destroy).toHaveBeenCalledOnce(); expect(h.port.show).toHaveBeenCalledTimes(2);
+});
+
+
+test('a successful retry after failed popup loading participates in quit flush', async () => {
+  const h = harness(); h.port.show.mockRejectedValueOnce(Error('Synthetic load failure'));
+  await expect(h.controller.open()).rejects.toThrow();
+  await h.controller.open();
+  const flushing = h.controller.flush(); const request = h.controller.current();
+  expect(request.flushRequestId).toBeTruthy();
+  await h.controller.command({ type: 'flushed', contextId: request.contextId, flushId: request.flushRequestId!, succeeded: true }); await flushing;
+});
+
+
+test('successful quit acknowledgement keeps the renderer inert until shutdown succeeds or resumes', async () => {
+  const h = harness(); await h.controller.open();
+  const flushing = h.controller.flush(); const request = h.controller.current();
+  await h.controller.command({ type: 'flushed', contextId: request.contextId, flushId: request.flushRequestId!, succeeded: true });
+  await flushing;
+  await h.controller.refresh();
+  expect(h.events.at(-1)?.flushRequestId).toBe(request.flushRequestId);
+  h.controller.resumeAfterFlush(); expect(h.events.at(-1)?.flushRequestId).toBeUndefined();
 });
