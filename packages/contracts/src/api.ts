@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { boundedText, IdSchema as id, LIMITS, RevisionSchema as revision, TimestampSchema as timestamp, utf8Bytes } from './limits';
-import { CheckInAnswerSchema, CheckInSchema, DocumentDraftSchema, ExportPolicySchema, ObservationSchema, ProjectPhaseSchema, ProjectSchema, ProjectSnapshotSchema, ProjectStatusSchema, SourceBindingSchema, SourceCapabilitySchema, SourceStateSchema, TaskStatusSchema } from './domain';
+import { CheckInAnswerSchema, CheckInSchema, DocumentDraftSchema, ExportPolicySchema, ObservationSchema, ProjectPhaseSchema, ProjectSchema, ProjectSnapshotSchema, ProjectStatusSchema, SourceBindingSchema, SourceCapabilitySchema, SourceStateSchema, TaskSchema, TaskStatusSchema } from './domain';
 
 export const commandEnvelopeSchema = <T extends z.ZodType>(input: T) => z.strictObject({ operationId: id, expectedRevision: revision.optional(), input });
 export const revisionedCommandSchema = <T extends z.ZodType>(input: T) => z.strictObject({ operationId: id, expectedRevision: revision, input });
@@ -15,6 +15,8 @@ export const DocumentInputSchema = z.strictObject({ text: boundedText(LIMITS.bri
 export const OwnerActionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('accept_plan') }),
   z.strictObject({ type: z.literal('update_task'), taskId: id, status: TaskStatusSchema, title: boundedText(512, true).optional() }),
+  z.strictObject({ type: z.literal('update_task_details'), taskId: id, expectedTaskRevision: revision, description: TaskSchema.shape.description, dueAt: timestamp.nullable().optional(), checklist: TaskSchema.shape.checklist })
+    .refine(value => value.description !== undefined || value.dueAt !== undefined || value.checklist !== undefined, 'At least one task detail must be supplied'),
   z.strictObject({ type: z.literal('record_decision'), text: boundedText(2048, true) }),
   z.strictObject({ type: z.literal('set_project_status'), status: ProjectStatusSchema }),
   z.strictObject({ type: z.literal('set_project_phase'), phase: ProjectPhaseSchema }),
