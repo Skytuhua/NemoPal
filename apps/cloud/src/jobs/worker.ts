@@ -48,12 +48,15 @@ export function startManagerDispatcher(queue: JobQueue, adapter: c.NemotronAdapt
         const running = Promise.resolve().then(async () => {
             if (controller.signal.aborted) return;
             const job = await queue.claim();
-            if (job && !controller.signal.aborted) await runJob(queue, adapter, job, controller.signal);
+            if (job && controller.signal.aborted) {
+                try { if (!await queue.releaseUnstarted(job)) throw new Error(); }
+                catch { throw new Error('Manager claim release failed.'); }
+            } else if (job) await runJob(queue, adapter, job, controller.signal);
         });
         active = running;
         void running.catch(() => {}).finally(() => { if (active === running) active = null; });
     };
     const timer = setInterval(tick, 15000);
     tick();
-    return async () => { clearInterval(timer); controller.abort(); await active?.catch(() => {}); };
+    return async () => { clearInterval(timer); controller.abort(); await active; };
 }
