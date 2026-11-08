@@ -1,0 +1,218 @@
+{
+  "evidence": "Actual local PostgreSQL and loopback HTTP; synthetic source and scripted manager; no live inference.",
+  "accepted": {
+    "receipt": {
+      "operationId": "53d71a13-7ed8-4912-938d-8ed20ce24b17",
+      "requestHash": "ffeed79a4886a26964b8b0542ceb5b41122e16fbc00d6327046de6556a43fcb6",
+      "status": "accepted",
+      "result": null,
+      "projectRevision": 0,
+      "eventSequence": 1
+    },
+    "jobId": "2d669ed2-39c0-495f-a3fa-e8b4260cf858",
+    "state": "queued"
+  },
+  "projectSummary": {
+    "id": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+    "title": "J1 synthetic project",
+    "goal": "Capture a synthetic demo.",
+    "revision": 0,
+    "status": "active",
+    "phase": "planning",
+    "planState": "proposed",
+    "managerName": "Project manager",
+    "petPackId": "baseline",
+    "unreadCheckIns": 0,
+    "updatedAt": "2026-11-07T23:03:47.587Z"
+  },
+  "documentReceipt": {
+    "operationId": "40d07190-4d77-4f10-ae59-bfb772a7a46e",
+    "requestHash": "02447814f420acff80f48937b3f973f62ca996128a38223a60fbd1ee015cc69e",
+    "status": "completed",
+    "result": {
+      "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+      "id": "f0fff1ac-c4f4-4abe-8c25-d90cff683a12",
+      "revision": 1,
+      "text": "Owner draft preserved.",
+      "updatedBy": "owner"
+    },
+    "projectRevision": 1,
+    "eventSequence": 2
+  },
+  "sourceReceipt": {
+    "operationId": "f0486e61-df79-4683-97cb-93d4414b8786",
+    "requestHash": "c43c6b6a151af9881e06cbd2137e4a15a0ceb621a310b656cf1c0e76294012c9",
+    "status": "completed",
+    "result": {
+      "id": "013c5659-3102-44c0-9ba4-e91327b777cc",
+      "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+      "deviceId": "d857e2d9-cf09-440e-b2e7-0bbe44dd93d0",
+      "sourceKey": "j1-synthetic-source",
+      "adapterId": "synthetic",
+      "adapterVersion": "1",
+      "capability": "incremental_history",
+      "grantRevision": 0,
+      "exportPolicy": "metadata_only",
+      "state": "following",
+      "lastObservedAt": null
+    },
+    "projectRevision": 4,
+    "eventSequence": 6
+  },
+  "observation": {
+    "id": "31a92dda-1d4f-440e-84e5-360a59c60970",
+    "bindingId": "013c5659-3102-44c0-9ba4-e91327b777cc",
+    "grantRevision": 0,
+    "sourceItemId": "tool-1",
+    "sourceRevision": "v1",
+    "kind": "tool_result_metadata",
+    "occurredAt": "2026-11-07T23:03:47.801Z",
+    "observedAt": "2026-11-07T23:03:47.801Z",
+    "metadata": {
+      "type": "tool",
+      "exitCode": 0
+    },
+    "provenance": {
+      "adapterId": "synthetic",
+      "adapterVersion": "1",
+      "mode": "fixture",
+      "evidenceLevel": "source_tool_observed"
+    }
+  },
+  "snoozedReceipt": {
+    "operationId": "bc691158-18a9-42a0-b0df-da607a587e74",
+    "requestHash": "1450227068fd473b23329fe46d77e72138aff271cb6a8469cb629d8976cd2ab6",
+    "status": "completed",
+    "result": {
+      "id": "6ab9ff62-020e-4fc9-bd04-8762097e024c",
+      "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+      "taskId": "dc50581c-c22b-43c7-b5ad-2bfaca82b222",
+      "revision": 1,
+      "subjectRevision": 0,
+      "question": "Recorded?",
+      "dueAt": "2026-11-08T00:03:48.009Z",
+      "expiresAt": "2026-11-09T00:03:48.009Z",
+      "state": "snoozed",
+      "presentationId": "708c6871-155c-4026-91cc-891d961b5239",
+      "snoozedUntil": "2026-11-08T00:03:48.009Z",
+      "answer": null
+    },
+    "projectRevision": 8,
+    "eventSequence": 13
+  },
+  "snapshotAfterRevocation": {
+    "project": {
+      "id": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+      "ownerId": "a5357300-c6df-4440-969d-9d9ef2310f7c",
+      "title": "J1 synthetic project",
+      "goal": "Capture a synthetic demo.",
+      "revision": 10,
+      "epoch": 4,
+      "planState": "accepted",
+      "phase": "planning",
+      "status": "active",
+      "manager": {
+        "id": "ba0bae71-1371-4b23-a80f-81ba0f82ca7a",
+        "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+        "displayName": "Project manager",
+        "petPackId": "baseline",
+        "promptVersion": "1"
+      },
+      "tasks": [
+        {
+          "id": "dc50581c-c22b-43c7-b5ad-2bfaca82b222",
+          "title": "Source-derived task requires owner review.",
+          "status": "blocked",
+          "revision": 1,
+          "requirementOrigin": "brief",
+          "evidenceLevel": "none",
+          "evidenceIds": [],
+          "ownerOverride": false
+        }
+      ],
+      "decisions": [],
+      "workspace": {
+        "schemaVersion": 1,
+        "id": "ee919d14-73ea-4789-9544-fad10e05979f",
+        "revision": 0,
+        "panels": []
+      },
+      "updatedAt": "2026-11-07T23:03:48.133Z"
+    },
+    "brief": "Capture a synthetic demo.",
+    "documents": [
+      {
+        "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+        "id": "f0fff1ac-c4f4-4abe-8c25-d90cff683a12",
+        "revision": 1,
+        "text": "Owner draft preserved.",
+        "updatedBy": "owner"
+      }
+    ],
+    "messages": [
+      {
+        "id": "99254fa4-74d9-43ef-895a-469d94652ea6",
+        "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+        "role": "owner",
+        "text": "Synthetic follow-up.",
+        "createdAt": "2026-11-07T23:03:47.739Z",
+        "observationIds": [],
+        "operationId": "f3951642-793a-4fca-a12f-881f215d6fcf",
+        "jobId": "5e534202-7c55-46c8-b017-e118f12eed09"
+      },
+      {
+        "id": "53bb62d7-d07e-481b-866b-e29c5ef49a59",
+        "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+        "role": "manager",
+        "text": "Source-derived reply withdrawn.",
+        "createdAt": "2026-11-07T23:03:48.954Z",
+        "observationIds": [],
+        "jobId": "2d669ed2-39c0-495f-a3fa-e8b4260cf858"
+      }
+    ],
+    "sourceBindings": [
+      {
+        "id": "013c5659-3102-44c0-9ba4-e91327b777cc",
+        "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+        "deviceId": "d857e2d9-cf09-440e-b2e7-0bbe44dd93d0",
+        "sourceKey": "j1-synthetic-source",
+        "adapterId": "synthetic",
+        "adapterVersion": "1",
+        "capability": "incremental_history",
+        "grantRevision": 1,
+        "exportPolicy": "off",
+        "state": "revoked",
+        "lastObservedAt": "2026-11-07T23:03:47.801Z"
+      }
+    ],
+    "observations": [],
+    "checkIns": [
+      {
+        "id": "6ab9ff62-020e-4fc9-bd04-8762097e024c",
+        "projectId": "104c2e37-c3b3-4396-a0a0-4e0dd2a7f6fc",
+        "taskId": "dc50581c-c22b-43c7-b5ad-2bfaca82b222",
+        "revision": 3,
+        "subjectRevision": 0,
+        "question": "Source-derived question withdrawn.",
+        "dueAt": "2026-11-08T00:03:48.009Z",
+        "expiresAt": "2026-11-09T00:03:48.009Z",
+        "state": "answered",
+        "presentationId": "708c6871-155c-4026-91cc-891d961b5239",
+        "snoozedUntil": "2026-11-08T00:03:48.009Z",
+        "answer": {
+          "kind": "not_yet"
+        }
+      }
+    ],
+    "eventSequence": 15,
+    "connection": {
+      "mode": "live",
+      "inference": {
+        "available": false,
+        "reason": "Live Nemotron capability gate has not passed."
+      },
+      "sync": "current",
+      "demoTiming": false
+    }
+  }
+}
