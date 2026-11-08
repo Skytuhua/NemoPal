@@ -12,7 +12,7 @@ afterEach(async () => { await Promise.all(fixtures.splice(0).map(f => f.close())
 type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 'oversize' |
   'redirect' | 'discovery-error' | 'token-error' | 'broad-token' | 'mcp-error' | 'missing-tool' | 'hang' |
   'session' | 'cleanup-error' | 'chunked-oversize' | 'mcp-oversize' | 'mcp-hang' | 'sse' | 'bad-token-endpoint' | 'bad-registration-endpoint' |
-  'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
+  'call-hang' | 'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
 
 async function fixture(mode: Mode = 'ok') {
   const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
@@ -84,11 +84,23 @@ async function fixture(mode: Mode = 'ok') {
       if (message.method === 'initialize') {
         if (mode === 'init-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
         if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250));
-        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty', 'slow-init-notification', 'background-oversize'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
+        if (['session', 'call-hang', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty', 'slow-init-notification', 'background-oversize'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
         return send(res, { jsonrpc: '2.0', id: message.id,
           result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'private-server-name', version: '0.1.7' } } });
       }
       if (message.method === 'notifications/initialized') { onInitialized(); if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250)); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
+      if (message.method === 'tools/call') {
+        if (mode === 'call-hang') return;
+        if (message.params.name !== 't3_thread_read') return send(res, { jsonrpc: '2.0', id: message.id, result: { structuredContent: { requestIds: [] }, content: [] } });
+        const args = message.params.arguments;
+        expect(args.environmentId).toBe('env'); expect(args.threadId).toBe('thread');
+        return send(res, { jsonrpc: '2.0', id: message.id, result: { content: [], structuredContent: {
+          thread: { threadId: 'thread', projectId: 'source', activeRunId: 'run', latestRunId: 'run', status: 'running', updatedAt: '2026-11-08T04:00:00Z' },
+          recentRuns: [{ runId: 'run', ordinal: 1, status: 'running' }],
+          items: [{ itemId: 'item', position: 1, sourceThreadId: 'thread', visibility: 'local', runId: 'run', status: 'running', updatedAt: '2026-11-08T04:00:00Z', text: 'PRIVATE SOURCE' }],
+          nextPosition: 1, hasMore: false,
+        } } });
+      }
       if (message.method === 'tools/list') {
         if (mode === 'mcp-empty') return res.writeHead(202).end();
         if (mode === 'server-timeout-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } });
@@ -390,4 +402,80 @@ describe('dedicated local T3 OAuth and MCP connection', () => {
     expect(f.requests.filter(r => r.path === '/mcp' && r.body.includes('tools/list'))).toHaveLength(1);
     await f.checkCallbackClosed();
   });
+});
+
+it('opens a scoped read-only session usable by the observer and closes it', async () => {
+  const f = await fixture('session');
+  const now = Date.now();
+  const context = {
+    grant: { bindingId: 'binding', ownerId: 'owner', deviceId: 'device', environmentId: 'env', projectId: 'board', t3ProjectId: 'source', threadId: 'thread', revision: 1, expiresAt: now + 60000, revoked: false, startPosition: 0 },
+    mapping: { ownerId: 'owner', projectId: 'board', taskId: 'task', taskRevision: 1, mappingRevision: 1, grantRevision: 1, runId: 'run', runOrdinal: 1 },
+    completionPolicy: { enabled: false, revision: 1, criterionId: 'receipt' },
+  };
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread',
+    onAuthorization: async url => { await f.authorize(url); } });
+  const { T3Adapter, T3Observer } = await import('../../apps/cloud/src/integrations/t3');
+  const observer = new T3Observer(context, new T3Adapter(session, async () => context, Date.now), Date.now);
+  const state = await observer.poll();
+  expect(state.mode).toBe('current');
+  expect(state.items).toHaveLength(1);
+  expect(JSON.stringify(state)).not.toContain('PRIVATE SOURCE');
+  await session.close();
+  await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10 }, new AbortController().signal)).rejects.toThrow();
+  expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+});
+
+it('rejects other threads, write actions, and unbounded arguments before sending', async () => {
+  const f = await fixture();
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', onAuthorization: async url => { await f.authorize(url); } });
+  const signal = new AbortController().signal;
+  const before = f.requests.length;
+  await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'other', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10 }, signal)).rejects.toThrow();
+  await expect(session.callTool('t3_pending_request', { environmentId: 'env', threadId: 'thread', action: 'respond' }, signal)).rejects.toThrow();
+  await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 100000, maxCharsPerItem: 1, runLimit: 10 }, signal)).rejects.toThrow();
+  await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10, privatePayload: 'do not send' }, signal)).rejects.toThrow();
+  expect(f.requests.length).toBe(before);
+  await session.close();
+});
+
+it('close aborts an in-flight read and prevents later requests', async () => {
+  const f = await fixture('call-hang');
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', onAuthorization: async url => { await f.authorize(url); } });
+  const pending = session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10 }, new AbortController().signal);
+  const rejected = expect(pending).rejects.toThrow();
+  await vi.waitFor(() => expect(f.requests.some(r => r.body.includes('tools/call'))).toBe(true));
+  await expect(session.close()).rejects.toMatchObject({ code: 'cleanup_failed', delivery: 'uncertain' });
+  await rejected;
+  const count = f.requests.length;
+  await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10 }, new AbortController().signal)).rejects.toThrow();
+  expect(f.requests.length).toBe(count);
+  expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+});
+
+it('expires a session locally and sends no tool call afterward', async () => {
+  const f = await fixture();
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', sessionTimeoutMs: 30, onAuthorization: async url => { await f.authorize(url); } });
+  await vi.waitFor(async () => {
+    await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10 }, new AbortController().signal)).rejects.toThrow();
+  });
+  const count = f.requests.filter(r => r.body.includes('tools/call')).length;
+  await expect(session.callTool('t3_thread_read', { environmentId: 'env', threadId: 'thread', view: 'activity', limit: 25, maxCharsPerItem: 1, runLimit: 10 }, new AbortController().signal)).rejects.toThrow();
+  expect(f.requests.filter(r => r.body.includes('tools/call'))).toHaveLength(count);
+  await session.close();
+});
+
+it('revoked authority prevents the observer from sending a read', async () => {
+  const f = await fixture();
+  const now = Date.now();
+  const context = {
+    grant: { bindingId: 'binding', ownerId: 'owner', deviceId: 'device', environmentId: 'env', projectId: 'board', t3ProjectId: 'source', threadId: 'thread', revision: 1, expiresAt: now + 60000, revoked: false, startPosition: 0 },
+    mapping: { ownerId: 'owner', projectId: 'board', taskId: 'task', taskRevision: 1, mappingRevision: 1, grantRevision: 1, runId: 'run', runOrdinal: 1 },
+    completionPolicy: { enabled: false, revision: 1, criterionId: 'receipt' },
+  };
+  const session = await connector.openLocalT3Session({ endpoint: f.endpoint, environmentId: 'env', threadId: 'thread', onAuthorization: async url => { await f.authorize(url); } });
+  const { T3Adapter, T3Observer } = await import('../../apps/cloud/src/integrations/t3');
+  const observer = new T3Observer(context, new T3Adapter(session, async () => ({ ...context, grant: { ...context.grant, revoked: true } }), Date.now), Date.now);
+  expect((await observer.poll()).mode).toBe('revoked');
+  expect(f.requests.filter(r => r.body.includes('tools/call'))).toHaveLength(0);
+  await session.close();
 });

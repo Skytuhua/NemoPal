@@ -1,4 +1,6 @@
-export type ConnectionPhase = 'configuration' | 'discovery' | 'registration' | 'authorization' | 'token' | 'initialize' | 'tools_list' | 'cleanup';
+import { z } from 'zod';
+import { id } from '../model';
+export type ConnectionPhase = 'configuration' | 'discovery' | 'registration' | 'authorization' | 'token' | 'initialize' | 'tools_list' | 'tool_call' | 'cleanup';
 export type ConnectionCode = 'invalid_endpoint' | 'invalid_metadata' | 'invalid_registration' | 'invalid_callback' |
   'denied' | 'deadline' | 'cancelled' | 'response_too_large' | 'http_error' | 'oauth_error' | 'mcp_error' | 'missing_tools' | 'cleanup_failed';
 
@@ -43,6 +45,18 @@ export function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promi
   });
 }
 
+const scopeFields = { environmentId: id, threadId: id };
+const readArgs = z.object({ ...scopeFields, view: z.literal('activity'), limit: z.number().int().min(1).max(25),
+  maxCharsPerItem: z.literal(1), runLimit: z.number().int().min(1).max(10), afterPosition: z.number().int().nonnegative().optional(), itemId: id.optional() }).strict();
+const pendingArgs = z.union([
+  z.object({ ...scopeFields, action: z.literal('list') }).strict(),
+  z.object({ ...scopeFields, action: z.literal('read'), requestId: id }).strict(),
+]);
+export function permittedCall(name: string, args: unknown, scope: { environmentId: string; threadId: string }): boolean {
+  const parsed = (name === 't3_thread_read' ? readArgs : name === 't3_pending_request' ? pendingArgs : z.never()).safeParse(args);
+  return parsed.success && parsed.data.environmentId === scope.environmentId && parsed.data.threadId === scope.threadId;
+}
+
 /** One request per permitted action; no auth retries, redirects, replay or arbitrary network fetch. */
 export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: number,
   phase: () => ConnectionPhase, attempted: () => void) {
@@ -52,6 +66,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   let bearer = '';
   let sessionId = '';
   let deadlineExpired = false;
+  let scoped: { environmentId: string; threadId: string } | undefined;
   const fail = (code: ConnectionCode): never => {
     failure = new T3ConnectionError(code, phase()); throw failure;
   };
@@ -74,14 +89,23 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
     if (url.href === endpoint.href) {
       if (!['POST', 'GET', 'DELETE'].includes(method) || !bearer) return fail('mcp_error');
       if (method === 'POST') {
-        let message: { method?: string };
+        let message: { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
         try { message = JSON.parse(String(init.body)); } catch { return fail('mcp_error'); }
-        if (!['initialize', 'notifications/initialized', 'tools/list'].includes(message.method ?? '')) return fail('mcp_error');
-        action += ` ${message.method}`;
+        if (message.method === 'tools/call' && scoped) {
+          const args = message.params?.arguments;
+          const name = message.params?.name;
+          if (!name || !permittedCall(name, args, scoped)) return fail('mcp_error');
+          action += ' tools/call';
+        } else {
+          if (!['initialize', 'notifications/initialized', 'tools/list'].includes(message.method ?? '')) return fail('mcp_error');
+          action += ` ${message.method}`;
+        }
       }
     } else if (!publicActions.includes(action)) return fail('invalid_metadata');
-    if (used.has(action)) return failRequest('http_error');
-    used.add(action);
+    if (action !== 'POST /mcp tools/call') {
+      if (used.has(action)) return failRequest('http_error');
+      used.add(action);
+    }
     if (signal.aborted) return fail(signal.reason === 'deadline' ? 'deadline' : 'cancelled');
     if (deadlineExpired) return failRequest('deadline');
     if (method === 'POST' || method === 'DELETE') attempted();
@@ -141,10 +165,11 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
   return {
     fetch: guardedFetch,
     setBearer(value: string) { bearer = value; },
+    enableScopedCalls(value: { environmentId: string; threadId: string }) { scoped = value; },
     get sessionId() { return sessionId; },
     get deadlineExpired() { return deadlineExpired; },
     expireDeadline() { deadlineExpired = true; for (const request of active.keys()) request.abort('deadline'); },
     get failure() { return failure; },
-    dispose() { bearer = ''; sessionId = ''; for (const [request, timer] of active) { clearTimeout(timer); request.abort(); } active.clear(); },
+    dispose() { bearer = ''; sessionId = ''; scoped = undefined; for (const [request, timer] of active) { clearTimeout(timer); request.abort(); } active.clear(); },
   };
 }

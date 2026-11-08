@@ -3,9 +3,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { exchangeAuthorization, registerClient, startAuthorization } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema, type OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
-import { T3_TOOLS } from '../protocol';
+import { T3_TOOLS, type T3McpClient, type T3ToolName } from '../protocol';
+import { id } from '../model';
 import { callbackReceiver } from './callback';
-import { localEndpoint, networkBoundary, untilAborted, T3ConnectionError, type ConnectionPhase } from './boundary';
+import { localEndpoint, networkBoundary, permittedCall, untilAborted, T3ConnectionError, type ConnectionPhase } from './boundary';
 
 export { T3ConnectionError } from './boundary';
 
@@ -19,8 +20,21 @@ export interface ConnectionCheckOptions {
   requestTimeoutMs?: number;
 }
 
+export interface LocalT3Session extends T3McpClient { close(): Promise<void> }
+export interface LocalT3SessionOptions extends ConnectionCheckOptions { environmentId: string; threadId: string; sessionTimeoutMs?: number }
+
 /** Finite operator check. No tool calls, environment claims, credential store or application registration. */
 export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
+  return connect(options);
+}
+export async function openLocalT3Session(options: LocalT3SessionOptions): Promise<LocalT3Session> {
+  if (!id.safeParse(options.environmentId).success || !id.safeParse(options.threadId).success)
+    throw new T3ConnectionError('invalid_endpoint', 'configuration');
+  return connect(options, { ...options });
+}
+async function connect(options: ConnectionCheckOptions, scoped: LocalT3SessionOptions): Promise<LocalT3Session>;
+async function connect(options: ConnectionCheckOptions): Promise<{ status: 'connected'; transport: 'loopback_http'; permissions: string[]; expectedReadTools: string[]; toolCalls: 0; credentials: 'discarded'; checkedAt: string; session: 'closed' }>;
+async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionOptions) {
   const endpoint = localEndpoint(options.endpoint);
   const duration = (value: number | undefined, maximum: number) => {
     if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0 || value > maximum))
@@ -29,8 +43,9 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
   };
   const signInMs = duration(options.signInTimeoutMs, 180_000);
   const requestMs = duration(options.requestTimeoutMs, 5000);
+  const sessionMs = scoped ? duration(scoped.sessionTimeoutMs, 300_000) : 0;
   const deadline = new AbortController();
-  const timer = setTimeout(() => deadline.abort('deadline'), signInMs);
+  let timer = setTimeout(() => deadline.abort('deadline'), signInMs);
   const signal = AbortSignal.any([deadline.signal, ...(options.signal ? [options.signal] : [])]);
   let phase: ConnectionPhase = 'discovery';
   let attempted = false;
@@ -43,6 +58,8 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
   let authorizationCode = '';
   let cleanupFailed = false;
   let localRequestExpired = false;
+  let retained = false;
+  let session: LocalT3Session | undefined;
   const boundedMcp = async <T>(request: (requestSignal: AbortSignal) => Promise<T>): Promise<T> => {
     const controller = new AbortController();
     const requestTimer = setTimeout(() => { localRequestExpired = true; network.expireDeadline(); controller.abort('deadline'); }, requestMs);
@@ -91,6 +108,7 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
     if (tokens.token_type.toLowerCase() !== 'bearer' || tokens.scope !== 'orchestration:read' ||
       !tokens.access_token || /[\x00-\x20\x7f]/.test(tokens.access_token) || (tokens.expires_in !== undefined && tokens.expires_in <= 0))
       throw new T3ConnectionError('oauth_error', phase);
+    const tokenDeadline = Date.now() + (tokens.expires_in === undefined ? sessionMs : Math.min(sessionMs, tokens.expires_in * 1000));
     network.setBearer(tokens.access_token);
     // Supplying a static memory-only bearer to the guarded fetch disables SDK re-auth, scope escalation and replay.
     transport = new StreamableHTTPClientTransport(endpoint, { fetch: network.fetch,
@@ -103,6 +121,66 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
     if (tools.nextCursor || !T3_TOOLS.every(expected => tools.tools.some(tool => tool.name === expected)))
       throw new T3ConnectionError('missing_tools', phase);
     signal.throwIfAborted();
+    if (scoped) {
+      clearTimeout(timer);
+      const remainingMs = tokenDeadline - Date.now();
+      if (remainingMs <= 0) throw new T3ConnectionError('deadline', 'initialize');
+      timer = setTimeout(() => deadline.abort('deadline'), remainingMs);
+      network.enableScopedCalls({ environmentId: scoped.environmentId, threadId: scoped.threadId });
+      let closed = false;
+      let busy = false;
+      let calls = 0;
+      let closing: Promise<void> | undefined;
+      const close = () => {
+        if (closing) return closing;
+        closed = true;
+        signal.removeEventListener('abort', onAbort);
+        if (busy && !signal.aborted) deadline.abort('cancelled');
+        closing = (async () => {
+          phase = 'cleanup';
+          const sessionId = transport?.sessionId || network.sessionId;
+          let failed = Boolean(sessionId && (signal.aborted || localRequestExpired || network.deadlineExpired));
+          if (sessionId && !signal.aborted && !localRequestExpired && !network.deadlineExpired) {
+            try {
+              const headers = new Headers({ 'mcp-session-id': sessionId });
+              if (transport?.protocolVersion) headers.set('mcp-protocol-version', transport.protocolVersion);
+              const response = await network.fetch(endpoint, { method: 'DELETE', headers });
+              failed = !response.ok; await response.body?.cancel();
+            } catch { failed = true; }
+          }
+          network.dispose();
+          try { await client?.close(); await transport?.close(); } catch { failed = true; }
+          clearTimeout(timer); tokens = undefined;
+          if (failed) throw new T3ConnectionError('cleanup_failed', 'cleanup', 'uncertain');
+        })();
+        return closing;
+      };
+      const onAbort = () => { void close().catch(() => {}); };
+      signal.addEventListener('abort', onAbort, { once: true });
+      session = {
+        configuration: Object.freeze({ endpoint: endpoint.href, environmentId: scoped.environmentId }),
+        toolNames: Object.freeze([...T3_TOOLS]), permissions: Object.freeze(['orchestration:read']),
+        async callTool(name: T3ToolName, args: Record<string, unknown>, requestSignal: AbortSignal) {
+          if (closed || signal.aborted || requestSignal.aborted || busy || calls >= 300 ||
+            !permittedCall(name, args, scoped))
+            throw new T3ConnectionError('mcp_error', 'tool_call');
+          busy = true; calls++;
+          const cancel = () => deadline.abort('cancelled');
+          requestSignal.addEventListener('abort', cancel, { once: true });
+          if (requestSignal.aborted) cancel();
+          phase = 'tool_call';
+          try {
+            return await boundedMcp(inner => client!.callTool({ name, arguments: args }, undefined,
+              { signal: inner, timeout: requestMs + 1000, maxTotalTimeout: requestMs + 1000 }));
+          } catch {
+            deadline.abort(localRequestExpired || network.deadlineExpired ? 'deadline' : 'cancelled');
+            throw new T3ConnectionError(localRequestExpired || network.deadlineExpired ? 'deadline' : 'mcp_error', 'tool_call', 'uncertain');
+          } finally { busy = false; requestSignal.removeEventListener('abort', cancel); }
+        }, close,
+      };
+      if (signal.aborted) { await close(); throw new T3ConnectionError('cancelled', 'cleanup'); }
+      retained = true;
+    }
     result = { status: 'connected', transport: 'loopback_http', permissions: ['orchestration:read'],
       expectedReadTools: [...T3_TOOLS], toolCalls: 0, credentials: 'discarded', session: 'closed', checkedAt: new Date().toISOString() };
   } catch (caught) {
@@ -114,6 +192,7 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
         phase === 'discovery' ? 'invalid_metadata' : phase === 'initialize' || phase === 'tools_list' ? 'mcp_error' : 'oauth_error');
     error = new T3ConnectionError(code, phase, attempted ? 'uncertain' : 'known_unsent');
   } finally {
+    if (!retained) {
     phase = 'cleanup';
     if (callback) await callback.close();
     // On cancellation or any deadline no further HTTP is sent; remote closure remains unconfirmed.
@@ -130,9 +209,11 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
     try { await client?.close(); await transport?.close(); } catch { cleanupFailed = true; }
     network.dispose(); tokens = undefined; codeVerifier = ''; authorizationCode = '';
     clearTimeout(timer);
+    }
   }
   if (error) throw error;
   if (signal.aborted) throw new T3ConnectionError(signal.reason === 'deadline' ? 'deadline' : 'cancelled', 'cleanup', 'uncertain');
+  if (session) return session;
   if (cleanupFailed || !result) throw new T3ConnectionError('cleanup_failed', 'cleanup', 'uncertain');
   return result;
 }
