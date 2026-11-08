@@ -17,5 +17,11 @@ export class CompanionLifetime {
   constructor(private hide: () => void, private stop: () => Promise<void>, private flush: () => Promise<void>, private exit: () => void) {}
   acquire(lock: () => boolean): boolean { const acquired = lock(); if (!acquired) this.exit(); return acquired; }
   closeWorkspace(): void { if (!this.quitting) this.hide(); }
-  quit(): Promise<void> { return this.quitting ??= (async () => { await this.stop(); await this.flush(); this.exit(); })(); }
+  quit(): Promise<void> {
+    if (this.quitting) return this.quitting;
+    const attempt = (async () => { await this.stop(); await this.flush(); this.exit(); })();
+    this.quitting = attempt;
+    void attempt.catch(() => { if (this.quitting === attempt) this.quitting = undefined; });
+    return attempt;
+  }
 }

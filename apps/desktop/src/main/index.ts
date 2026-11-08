@@ -90,6 +90,7 @@ async function start() {
   let connected = false;
   let suspended = false;
   let quitting = false;
+  let startupCancelled = false;
   let syncing: Promise<void> | undefined;
   let eventsAbort: AbortController | undefined;
   let eventSequence = 0;
@@ -135,10 +136,25 @@ async function start() {
     tray.rebuild();
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
-    quitting = true; ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
-    await sources.stop(); await sync.stop(); await pairingCompletion;
-    await chat.flush(); chat.stop(); vault.clearMemory();
-  }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
+    quitting = true; startupCancelled = true;
+    let stopped = false, sourcesStopped = false;
+    try {
+      // Keep the live session recoverable until the renderer has safely flushed.
+      await chat.flush(); await store.flush();
+      stopped = true; ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
+      await sources.stop(); sourcesStopped = true; await sync.stop(); await pairingCompletion; await store.flush();
+      chat.stop(); vault.clearMemory();
+    } catch (error) {
+      if (stopped && sourcesStopped) {
+        ++ownerGeneration; chat.contextChanged(true); ownerAbort = new AbortController(); eventsAbort = undefined; syncing = undefined;
+        client = makeClient(); observer = makeObserver(); sources = makeController();
+        sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId()); presentation = makePresentation();
+        timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
+      }
+      if (!stopped || sourcesStopped) { quitting = false; chat.resumeAfterFlush(); if (stopped) void cycle(); }
+      throw error;
+    }
+  }, async () => {}, () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
   const reportWithdrawalFailure = () => dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
   async function withdrawSources(action: 'pause' | 'revoke') {
     if (quitting) return;
@@ -356,7 +372,7 @@ async function start() {
     })().finally(() => { if (syncing === run) syncing = undefined; });
     syncing = run; return run;
   }
-  const timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
+  let timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
   app.on('second-instance', open);
   app.on('window-all-closed', () => {});
   app.on('activate', open);
@@ -365,7 +381,7 @@ async function start() {
   powerMonitor.on('resume', () => { const owner = ownerGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
   windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); sendPet(event ?? { type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() }); });
   try { await windows.load(); }
-  catch (error) { if (quitting) return; throw error; }
+  catch (error) { if (startupCancelled) return; throw error; }
   if (quitting) return;
   windows.workspace.show(); if (!store.preference().hidden) windows.pet.showInactive();
   await cycle();

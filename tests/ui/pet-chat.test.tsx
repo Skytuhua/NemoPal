@@ -150,3 +150,40 @@ test('quit flush reports only a bounded acknowledgement through the restricted b
   h.emit({ ...h.initial, version: 2, flushRequestId: snapshot().project.ownerId });
   await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
 });
+
+test('explicitly resolving an uncertain stale request preserves the draft and never resends it', async () => {
+  const store = memoryDrafts(), h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Possibly sent' } });
+  h.invoke.mockRejectedValueOnce(Error('Lost receipt'));
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByText(/not confirmed/i);
+  await store.flush(); h.unmount();
+  const newer = state(); newer.conversation!.projectRevision = 1;
+  const next = harness(newer, store); const draft = await screen.findByRole('textbox', { name: 'Message' });
+  await waitFor(() => expect(draft).toHaveValue('Possibly sent'));
+  expect(screen.getByRole('button', { name: 'Retry same request' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve unconfirmed request' }));
+  expect(await screen.findByText(/may already have been sent/i)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Keep draft and resolve' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
+  expect(draft).toHaveValue('Possibly sent'); expect(next.invoke).not.toHaveBeenCalled();
+  next.unmount(); const again = harness(newer, store);
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue('Possibly sent'));
+  expect(screen.queryByRole('button', { name: 'Retry same request' })).not.toBeInTheDocument(); expect(again.invoke).not.toHaveBeenCalled();
+});
+
+
+test('flush acknowledgement waits for an in-flight send and its local draft writes', async () => {
+  const store = memoryDrafts(), h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Queued message' } });
+  const result = deferred<AcceptedJob>(); h.invoke.mockReturnValueOnce(result.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); await waitFor(() => expect(h.invoke).toHaveBeenCalledOnce());
+  const command = h.invoke.mock.calls[0]![0]; if (command.type !== 'send') throw Error('Expected send');
+  h.emit({ ...h.initial, version: 2, flushRequestId: snapshot().project.ownerId });
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(h.invoke).toHaveBeenCalledTimes(1);
+  await act(async () => result.resolve(receipt(command.command.operationId)));
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
+  expect(await store.read('pet-chat:synthetic-owner-project:draft:pending')).toBeUndefined();
+});

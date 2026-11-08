@@ -20,6 +20,8 @@ export class PetChatController {
   private closeTimer?: ReturnType<typeof setTimeout>;
   private contextKey: string;
   private rendered = false;
+  private retiring = false;
+  private retirement?: Promise<void>;
   private flushing?: { id: string; contextId: string; owner: number; promise: Promise<void>; resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
   private now: () => number;
   launchId = randomUUID();
@@ -44,8 +46,11 @@ export class PetChatController {
   }
   async open(): Promise<void> {
     if (this.stopped || this.options.preference().hidden) throw Error('Conversation hidden');
+    const activation = this.generation;
+    if (this.retiring) await this.retire();
+    if (activation !== this.generation || this.stopped || this.options.preference().hidden) throw Error('Conversation context changed');
     clearTimeout(this.closeTimer);
-    if (this.state.visible && this.valid(this.generation)) { const generation = this.generation; await this.options.port.show(() => this.valid(generation)); return; }
+    if (this.state.visible && this.valid(this.generation)) { const generation = this.generation; await this.options.port.show(() => this.valid(generation)); if (this.valid(generation)) this.rendered = true; return; }
     const project = this.options.project();
     this.binding = project ? { project, owner: this.options.owner() } : undefined;
     const generation = ++this.generation;
@@ -53,8 +58,7 @@ export class PetChatController {
     this.options.port.resize(false);
     this.publish(); this.options.port.visible(true);
     // Focus belongs to this activation, never to a later service completion.
-    await Promise.all([this.options.port.show(() => generation === this.generation && this.state.visible && !this.stopped && !this.options.preference().hidden), this.refresh()]);
-    if (generation === this.generation && this.state.visible) this.rendered = true;
+    await Promise.all([this.options.port.show(() => generation === this.generation && this.state.visible && !this.stopped && !this.options.preference().hidden).then(() => { if (generation === this.generation && this.state.visible) this.rendered = true; }), this.refresh()]);
   }
   async read(): Promise<PetChatState> { await this.refresh(); return this.current(); }
   async refresh(): Promise<void> {
@@ -102,14 +106,29 @@ export class PetChatController {
     this.contextKey = key;
     ++this.generation; ++this.readGeneration; clearTimeout(this.closeTimer); this.pending = false; this.launchId = randomUUID();
     this.binding = undefined; this.snapshot = undefined;
-    this.rendered = false;
-    if (this.flushing) { clearTimeout(this.flushing.timer); this.flushing.reject(Error('Draft context changed')); this.flushing = undefined; }
+    this.options.port.hide(false); this.options.port.visible(false);
+    if (this.retiring) return;
+    if (!this.rendered) { this.resetContext(); return; }
+    this.retiring = true;
+    this.state.visible = false;
+    // Keep only the old renderer alive, hidden and command-fenced, until its writes are durable.
+    void this.retire().catch(() => {});
+  }
+  private resetContext() {
+    this.rendered = false; this.retiring = false;
     this.state = { ...this.state, contextId: randomUUID(), visible: false, expanded: false, conversation: null, loading: false };
     delete this.state.flushRequestId;
-    // Destroy the old renderer before any new owner's context is read or emitted.
-    this.options.port.destroy(); this.options.port.visible(false);
+    this.options.port.destroy();
+  }
+  private retire(): Promise<void> {
+    if (this.retirement) return this.retirement;
+    const task = this.requestFlush().then(() => { this.resetContext(); });
+    this.retirement = task;
+    void task.finally(() => { if (this.retirement === task) this.retirement = undefined; }).catch(() => {});
+    return task;
   }
   close(restoreFocus = true) {
+    if (this.retiring) return;
     ++this.generation; ++this.readGeneration; this.pending = false;
     this.state = { ...this.state, contextId: randomUUID(), visible: false };
     this.publish(); this.options.port.visible(false);
@@ -118,14 +137,16 @@ export class PetChatController {
     const hide = () => { if (generation === this.generation) this.options.port.hide(restoreFocus && !this.options.preference().hidden); };
     if (this.options.preference().reducedMotion || !restoreFocus) hide(); else this.closeTimer = setTimeout(hide, 130);
   }
-  stop() { this.stopped = true; this.contextChanged(true); }
-  flush(): Promise<void> {
+  stop() { this.stopped = true; ++this.generation; ++this.readGeneration; clearTimeout(this.closeTimer); this.resetContext(); this.options.port.visible(false); }
+  flush(): Promise<void> { return this.retiring ? this.retire() : this.requestFlush(); }
+  resumeAfterFlush() { if (!this.retiring && !this.flushing) { delete this.state.flushRequestId; this.publish(); } }
+  private requestFlush(): Promise<void> {
     if (!this.rendered) return Promise.resolve();
     if (this.flushing) return this.flushing.promise;
     let resolve!: () => void, reject!: (error: Error) => void;
     const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
     const id = randomUUID();
-    const timer = setTimeout(() => { if (this.flushing?.id === id) { this.flushing = undefined; reject(Error('Draft flush unavailable')); } }, 2000);
+    const timer = setTimeout(() => { if (this.flushing?.id === id) { this.flushing = undefined; delete this.state.flushRequestId; this.publish(); reject(Error('Draft flush unavailable')); } }, 2000);
     this.flushing = { id, contextId: this.state.contextId, owner: this.options.owner(), promise, resolve, reject, timer };
     this.state.flushRequestId = id; this.publish();
     return promise;
@@ -134,9 +155,9 @@ export class PetChatController {
     const input = PetChatCommandSchema.parse(raw), generation = this.generation;
     if (input.type === 'flushed') {
       const flush = this.flushing;
-      if (!flush || input.flushId !== flush.id || input.contextId !== flush.contextId || this.state.contextId !== flush.contextId || flush.owner !== this.options.owner() || this.stopped) throw Error('Draft flush context changed');
-      clearTimeout(flush.timer); this.flushing = undefined; delete this.state.flushRequestId;
-      if (input.succeeded) flush.resolve(); else flush.reject(Error('Draft storage unavailable'));
+      if (!flush || input.flushId !== flush.id || input.contextId !== flush.contextId || this.state.contextId !== flush.contextId || (!this.retiring && flush.owner !== this.options.owner()) || this.stopped) throw Error('Draft flush context changed');
+      clearTimeout(flush.timer); this.flushing = undefined;
+      if (input.succeeded) flush.resolve(); else { delete this.state.flushRequestId; this.publish(); flush.reject(Error('Draft storage unavailable')); }
       return;
     }
     if (this.stopped || !this.state.visible || this.options.preference().hidden || input.contextId !== this.state.contextId) throw Error('Conversation context changed');

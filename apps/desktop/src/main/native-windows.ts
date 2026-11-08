@@ -42,7 +42,7 @@ export function createNativeWindows(options: { renderer: string; preloadDirector
     }
     const window = petChat;
     placeChat();
-    await loading;
+    try { await loading; } catch (error) { if (petChat === window) destroyChat(); throw error; }
     if (!current() || petChat !== window || window.isDestroyed()) return;
     window.show(); window.focus();
   };

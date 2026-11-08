@@ -9,6 +9,10 @@ import './pet-chat.css';
 
 export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBridge; store?: DraftStore }) {
   const store = useMemo(() => suppliedStore ?? createDraftStore(), [suppliedStore]);
+  const operations = useMemo(() => {
+    const pending = new Set<Promise<unknown>>();
+    return { track<T>(run: () => Promise<T>): Promise<T> { const task = run(); pending.add(task); void task.finally(() => pending.delete(task)).catch(() => {}); return task; }, async settle() { await Promise.allSettled([...pending]); } };
+  }, []);
   const [state, setState] = useState<PetChatState>(), [error, setError] = useState('');
   const latest = useRef<PetChatState | undefined>(undefined);
   useEffect(() => {
@@ -32,11 +36,11 @@ export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBrid
     let active = true;
     void (async () => {
       let succeeded = true;
-      try { await store.flush(); } catch { succeeded = false; }
+      try { await operations.settle(); await store.flush(); } catch { succeeded = false; }
       if (active && latest.current?.contextId === contextId) await bridge.invoke({ type: 'flushed', contextId, flushId, succeeded }).catch(() => {});
     })();
     return () => { active = false; };
-  }, [bridge, state?.flushRequestId, state?.contextId, store]);
+  }, [bridge, state?.flushRequestId, state?.contextId, store, operations]);
   const refresh = async () => {
     if (!bridge) return;
     const next = PetChatStateSchema.parse(await bridge.read());
@@ -44,15 +48,16 @@ export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBrid
   };
   if (!bridge) return <main className="pet-chat-unavailable" role="status">Restricted desktop conversation bridge required.</main>;
   if (!state) return <main className="pet-chat-unavailable" role="status">{error || 'Opening conversation…'}</main>;
-  return <Conversation key={state.conversation?.draftScope ?? 'unavailable'} bridge={bridge} store={store} state={state} current={() => latest.current} refresh={refresh} bridgeError={error} />;
+  return <Conversation key={state.conversation?.draftScope ?? 'unavailable'} bridge={bridge} store={store} operations={operations} state={state} current={() => latest.current} refresh={refresh} bridgeError={error} />;
 }
 
-function Conversation({ bridge, store, state, current, refresh, bridgeError }: { bridge: PetChatBridge; store: DraftStore; state: PetChatState; current(): PetChatState | undefined; refresh(): Promise<void>; bridgeError: string }) {
+function Conversation({ bridge, store, operations, state, current, refresh, bridgeError }: { bridge: PetChatBridge; store: DraftStore; operations: { track<T>(run: () => Promise<T>): Promise<T> }; state: PetChatState; current(): PetChatState | undefined; refresh(): Promise<void>; bridgeError: string }) {
   const composerId = useId();
   const conversation = state.conversation;
   const session = useMemo(() => new PetChatSession(store, conversation?.draftScope ?? 'unavailable'), [store, conversation?.draftScope]);
   const local = useDraft(store, session.draftKey, '', 0);
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setError] = useState(''), [pending, setPending] = useState<PendingPetMessage>();
+  const [resolving, setResolving] = useState(false);
   const [phase, setPhase] = useState('open'), [closing, setClosing] = useState(false);
   const [systemReducedMotion, setSystemReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
   const composer = useRef<HTMLTextAreaElement>(null), closeButton = useRef<HTMLButtonElement>(null), composing = useRef(false), lifetime = useRef(true), sending = useRef(false);
@@ -92,10 +97,11 @@ function Conversation({ bridge, store, state, current, refresh, bridgeError }: {
     if (!ready || !local.ready || !pending || !active || sending.current) return;
     if (conversation?.messages.some(message => message.role === 'owner' && message.operationId === pending.command.operationId)) {
       sending.current = true;
-      void acknowledge(pending).catch(() => setError('Draft could not be persisted. Copy your work before leaving.')).finally(() => { sending.current = false; });
+      void operations.track(() => acknowledge(pending)).catch(() => setError('Draft could not be persisted. Copy your work before leaving.')).finally(() => { sending.current = false; });
     }
   }, [ready, local.ready, pending, active, conversation?.messages]);
-  async function send(retry = false) {
+  function send(retry = false) { return operations.track(() => performSend(retry)); }
+  async function performSend(retry = false) {
     const context = current();
     if (sending.current || !active || !context?.conversation || !context.visible || context.contextId !== state.contextId || !context.conversation.connected || !context.conversation.inference.available) return;
     sending.current = true; setBusy(true); setError(''); setStatus('');
@@ -116,6 +122,13 @@ function Conversation({ bridge, store, state, current, refresh, bridgeError }: {
         else setError('Draft could not be persisted. Copy your work before leaving.');
       }
     } finally { sending.current = false; if (lifetime.current) { setBusy(false); setPending(session.pending); } }
+  }
+  async function resolvePending() {
+    if (!pending || sending.current || !active) return;
+    sending.current = true; setBusy(true);
+    try { await operations.track(() => session.complete(pending)); if (lifetime.current) { setPending(session.pending); setResolving(false); setStatus('Unconfirmed request resolved. Your draft is still here.'); } }
+    catch { if (lifetime.current) setError('Draft could not be persisted. Copy your work before leaving.'); }
+    finally { sending.current = false; if (lifetime.current) setBusy(false); }
   }
   const canSend = !!conversation?.connected && conversation.inference.available && ready && local.ready && !busy && !pending && !error && !local.error && !bridgeError && !!local.draft.text.trim() && utf8Bytes(local.draft.text) <= 16384;
   const question = conversation?.checkIn;
@@ -154,7 +167,8 @@ function Conversation({ bridge, store, state, current, refresh, bridgeError }: {
       {(!conversation.connected || !conversation.inference.available) && <p className="pet-chat-caption" role="status">{!conversation.connected ? 'Connection unavailable. Draft kept locally.' : 'Replies unavailable. Draft kept locally.'}</p>}
       {utf8Bytes(local.draft.text) > 16384 && <p role="alert">Message is too long to send. Shorten it; your draft is kept.</p>}
       {status && <p role="status">{status}</p>}
-      {pending && <div className="pet-chat-recovery"><Button type="button" variant="outline" disabled={busy} onClick={() => void refresh().catch(() => setStatus('Status unavailable. The original request is still kept.'))}>Refresh status</Button><Button type="button" variant="outline" disabled={busy || !conversation.connected || !conversation.inference.available || pending.command.expectedRevision !== conversation.projectRevision} onClick={() => void send(true)}>Retry same request</Button></div>}
+      {pending && <div className="pet-chat-recovery"><Button type="button" variant="outline" disabled={busy} onClick={() => void refresh().catch(() => setStatus('Status unavailable. The original request is still kept.'))}>Refresh status</Button><Button type="button" variant="outline" disabled={busy || !conversation.connected || !conversation.inference.available || pending.command.expectedRevision !== conversation.projectRevision} onClick={() => void send(true)}>Retry same request</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setResolving(true)}>Resolve unconfirmed request</Button></div>}
+      {pending && resolving && <div><p role="status">This message may already have been sent. Check the transcript before sending it again. Resolving keeps your draft and does not resend it.</p><Button type="button" variant="outline" disabled={busy} onClick={() => void resolvePending()}>Keep draft and resolve</Button><Button type="button" variant="ghost" onClick={() => setResolving(false)}>Cancel</Button></div>}
     </form>}
     {(error || local.error || bridgeError) && <p className="pet-chat-error" role="alert">{error || local.error || bridgeError}</p>}
   </main>;
