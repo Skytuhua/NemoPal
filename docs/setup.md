@@ -27,10 +27,16 @@ checkout. It takes no arguments and scans only `apps/{cloud,web,desktop}/dist`.
 It reports relative paths, exact byte counts, file SHA-256 hashes and a canonical
 manifest hash, with `secretAbsenceProven: false`. It rejects missing entries/assets,
 unexpected files/directories, links, forbidden names, excessive inventory/size,
-invalid UTF-8 and selected credential formats. Exit 0 is a bounded output audit
+invalid UTF-8 text and selected credential formats. The one approved pixel-mouse
+PNG is opaque: its exact size and SHA-256 must match the reviewed asset before
+it can bypass text decoding. Other PNGs or altered bytes are rejected.
+Exit 0 is a bounded output audit
 pass; exit 1 is blocked.
 No root script or packaging command was added. This top-level Node test is **not
 selected by the existing Vitest projects**; run its explicit command above.
+CI runs that command separately and audits the completed build. The positive
+sprite fixture reads its pinned public Git blob; retain full Git history when
+running this fixture, as configured in CI, rather than duplicating the binary.
 
 The pattern and inventory scan is **not proof that no possible secret exists**.
 Encoded, unfamiliar, split or arbitrary secrets can evade it. Source maps include
