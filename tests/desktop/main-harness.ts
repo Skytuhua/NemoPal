@@ -8,6 +8,7 @@ import { ProjectSnapshotSchema, type CodexObserver, type PlaybooksClient, type S
 import { goldenSnapshot, fixtureIds } from '../../fixtures/contracts/golden';
 import { JournalStore } from '../../apps/desktop/src/main/local-store';
 import { CredentialVault } from '../../apps/desktop/src/main/credentials';
+import type { HttpClientOptions } from '@living-playbooks/api-client';
 
 export function projectSnapshot(which: 'A' | 'B') {
   const text = JSON.stringify(goldenSnapshot);
@@ -39,7 +40,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
     ...options.client,
   };
   const observer = { probe: vi.fn(async () => ({ available: false, adapterId: 'codex-app-server', adapterVersion: '0.166.0', installedVersion: null, capability: 'unavailable', reason: 'Synthetic OS port; no real source', coverage: 'Synthetic only' })),
-    readDelta: vi.fn<CodexObserver['readDelta']>(async local => ({ observations: [], nextCursor: { adapterId: 'codex-app-server', identity: local.selectedSource, offset: 0, fingerprint: 'synthetic-main-port' }, mode: 'incremental_history', lastObservedAt: null, coverage: 'Synthetic only' })), stop: vi.fn(async () => {}) };
+    readDelta: vi.fn<CodexObserver['readDelta']>(async local => ({ observations: [], nextCursor: { adapterId: 'codex-app-server', identity: local.selectedSource, offset: 0, fingerprint: 'synthetic-main-port' }, mode: 'incremental_history', lastObservedAt: null, coverage: 'Synthetic only' })), stop: vi.fn<CodexObserver['stop']>(async () => {}) };
   const handlers = new Map<string, (event: unknown, operation: string, input?: unknown) => Promise<unknown>>();
   const desktopEvents: SafeDesktopEvent[] = []; const petEvents: SafePetEvent[] = [];
   const windowPort = (id: number, url: string) => {
@@ -58,9 +59,10 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   const Menu = { buildFromTemplate: (items: MenuItemConstructorOptions[]) => { trayItems = items; return { getMenuItemById: (id: string) => items.find(item => item.id === id) }; } };
   class Tray extends EventEmitter { private destroyed = false; setToolTip() {} setContextMenu() { if (this.destroyed) throw Error('Destroyed tray'); } isDestroyed() { return this.destroyed; } destroy() { this.destroyed = true; } }
   const tick = vi.spyOn(globalThis, 'setInterval').mockImplementation(() => ({ unref() {} }) as NodeJS.Timeout);
+  let transport: typeof fetch | undefined;
   vi.doMock('electron', () => ({ app, dialog, Menu, Tray, nativeImage: { createFromBitmap: () => ({}) }, ipcMain: { handle: (channel: string, handler: typeof handlers extends Map<string, infer H> ? H : never) => handlers.set(channel, handler) }, powerMonitor: new EventEmitter(), safeStorage: { isAsyncEncryptionAvailable: async () => true, encryptStringAsync: async (value: string) => Buffer.from(value), decryptStringAsync: async (value: Buffer) => ({ result: value.toString(), shouldReEncrypt: false }) } }));
   vi.doMock('../../apps/desktop/src/main/native-windows', () => ({ createNativeWindows: () => windows }));
-  vi.doMock('@living-playbooks/api-client', async () => ({ ...await vi.importActual('@living-playbooks/api-client'), createHttpClient: () => client }));
+  vi.doMock('@living-playbooks/api-client', async () => ({ ...await vi.importActual('@living-playbooks/api-client'), createHttpClient: (configuration: HttpClientOptions) => { transport = configuration.fetch; return client; } }));
   vi.doMock('@living-playbooks/codex-observer', () => ({ ADAPTER: 'codex-app-server', VERSION: '0.166.0', createInstalledObserver: () => observer }));
   await import('../../apps/desktop/src/main/index');
   await vi.waitFor(() => { expect(dialog.showErrorBox).not.toHaveBeenCalled(); expect(windows.load).toHaveBeenCalled(); expect((vi.isMockFunction(client.subscribe) && client.subscribe.mock.calls.length > 0) || desktopEvents.some(e => e.type === 'connection' && !e.connected)).toBe(true); });
@@ -68,7 +70,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   const petInvoke = (input: unknown) => handlers.get('lp:pet')!({ sender: pet.webContents, senderFrame: pet.webContents.mainFrame }, 'petInvoke', input);
   const trayItem = (id: string) => { const item = trayItems.find(item => item.id === id); expect(item, `Native tray item ${id} must be reachable`).toBeDefined(); return item!; };
   const clickTray = (id: string) => { Reflect.apply(trayItem(id).click!, undefined, []); };
-  return { path, client, observer, desktopEvents, petEvents, invoke, petInvoke, dialog, windows, trayItem, clickTray, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
+  return { path, client, observer, desktopEvents, petEvents, invoke, petInvoke, dialog, windows, trayItem, clickTray, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
     clickTray('quit'); await vi.waitFor(() => { if (quitBlocked) expect(dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)); else expect(app.exit).toHaveBeenCalledWith(0); });
     vi.doUnmock('electron'); vi.doUnmock('../../apps/desktop/src/main/native-windows'); vi.doUnmock('@living-playbooks/api-client'); vi.doUnmock('@living-playbooks/codex-observer');
     vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(directory, { recursive: true, force: true });
