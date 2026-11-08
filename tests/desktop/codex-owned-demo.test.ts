@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { createDemoSession } from '../../apps/desktop/src/main/codex-demo';
 import { resolve } from 'node:path';
-import { Readable, Writable } from 'node:stream';
+import { PassThrough, Readable, Writable } from 'node:stream';
 import { runDemo } from '../../apps/desktop/src/main/codex-demo-cli';
 
 const fixture = resolve('tests/desktop/fixtures/demo-app-server.cjs');
@@ -40,4 +40,20 @@ it('does not start a process when the user declines the demo', async () => {
   const writable = new Writable({ write(chunk, _encoding, done) { output += chunk.toString(); done(); } });
   await runDemo({ workspace: process.cwd(), executable: 'does-not-exist', args: [], input: Readable.from(['no\n']), output: writable });
   expect(output).toContain('Demo cancelled');
+});
+
+it('reports uncertain delivery if the server exits after receiving a send', async () => {
+  const demo = await createDemoSession({ executable: process.execPath, args: [fixture], workspace: process.cwd(), onReply: () => {} });
+  try { await expect(demo.send('lost')).rejects.toThrow('may have been accepted'); }
+  finally { demo.close(); }
+});
+
+it('reports an idle server exit without waiting for another input', async () => {
+  const input = new PassThrough();
+  const output = new Writable({ write(_chunk, _encoding, done) { done(); } });
+  input.write('START\n');
+  try {
+    const result = runDemo({ workspace: process.cwd(), executable: process.execPath, args: [fixture, 'exit-idle'], input, output });
+    await expect(Promise.race([result, new Promise((_, reject) => setTimeout(() => reject(Error('idle exit not reported')), 1500))])).rejects.toThrow('App-server exited');
+  } finally { input.destroy(); }
 });

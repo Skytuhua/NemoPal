@@ -12,10 +12,13 @@ export async function createDemoSession(options: { executable: string; args: str
   let active: ActiveTurn | undefined;
   let nextId = 0;
   let partial = '';
+  let resolveEnded!: (error: Error) => void;
+  const ended = new Promise<Error>(resolve => { resolveEnded = resolve; });
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   function stop(error: Error) {
     if (!alive) return;
     alive = false;
+    resolveEnded(error);
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
     pending.clear();
     if (active) { clearTimeout(active.timer); active.reject(error); active = undefined; }
@@ -85,6 +88,7 @@ export async function createDemoSession(options: { executable: string; args: str
   } catch (error) { stop(Error('Demo startup failed')); throw error; }
   return {
     threadId,
+    ended,
     async send(text: string): Promise<TurnResult> {
       if (!alive) throw Error('Demo session stopped');
       if (active) throw Error('A turn is already running');
@@ -101,7 +105,11 @@ export async function createDemoSession(options: { executable: string; args: str
         const events = active.events; active.events = [];
         for (const event of events) deliver(event);
         return await completion;
-      } catch (error) { stop(Error('Turn could not be completed')); throw error; }
+      } catch (error) {
+        stop(Error('Turn could not be completed'));
+        if (error instanceof Error && error.message === 'App-server rejected request') throw error;
+        throw Error(`${error instanceof Error ? error.message : 'Turn failed'}. Message may have been accepted; do not resend until checked.`);
+      }
     },
     close() { stop(Error('Demo session closed')); },
   };

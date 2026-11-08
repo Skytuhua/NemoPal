@@ -9,10 +9,12 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (!initialized) process.exit(2);
   if (request.method === 'thread/start') {
     if (!request.params.cwd || request.params.sandbox !== 'read-only' || request.params.approvalPolicy !== 'never') process.exit(3);
+    if (process.argv[2] === 'exit-idle') setTimeout(() => process.exit(0), 40);
     return send({ id: request.id, result: { thread: { id: 'demo-owned' } } });
   }
   if (request.method !== 'turn/start' || request.params.threadId !== 'demo-owned') process.exit(4);
   const text = request.params.input[0].text;
+  if (text === 'lost') process.exit(0);
   const turnId = `turn-${++count}`;
   if (text === 'approval') return send({ id: 100, method: 'item/commandExecution/requestApproval', params: { threadId: 'demo-owned' } });
   send({ method: 'item/completed', params: { threadId: 'foreign', turnId, item: { type: 'agentMessage', id: 'foreign', text: 'foreign secret' } } });

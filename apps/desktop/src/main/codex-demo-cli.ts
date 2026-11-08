@@ -18,7 +18,9 @@ export async function runDemo(options: { workspace: string; executable: string; 
     write(`\nNew demo thread: ${session.threadId}\nType a message, /history, or /quit.\n`);
     while (true) {
       write('You: ');
-      const line = await iterator.next();
+      const next = await Promise.race([iterator.next().then(line => ({ line })), session.ended.then(error => ({ error }))]);
+      if ('error' in next) throw next.error;
+      const line = next.line;
       if (line.done || line.value === '/quit') break;
       if (line.value === '/history') { write(`\nConversation\n${history.join('\n')}\n`); continue; }
       if (!line.value.trim()) continue;
