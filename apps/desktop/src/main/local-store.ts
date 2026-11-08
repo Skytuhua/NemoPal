@@ -60,13 +60,19 @@ export class JournalStore implements LocalStore {
   binding(id: string): LocalBinding | undefined { const value = this.data.entries.find(entry => entry.local.binding.id === id)?.local; return value ? structuredClone(value) : undefined; }
   cursor(id: string): SourceCursor | null { return structuredClone(this.data.entries.find(entry => entry.local.binding.id === id)?.cursor ?? null); }
   isFollowing(id: string): boolean { return !this.fenced.has(id) && this.binding(id)?.binding.state === 'following'; }
-  async putBinding(input: LocalBinding, cloud: boolean, receiving: ReceivingIdentity | null = null): Promise<void> {
+  async putBinding(input: LocalBinding, cloud: boolean, receiving: ReceivingIdentity | null = null, withdrawal?: 'pause' | 'revoke'): Promise<void> {
     const local = LocalBindingSchema.parse(input);
+    const grantRevision = local.binding.grantRevision;
+    if (withdrawal) {
+      this.fence(local.binding.id);
+      local.binding = withdrawal === 'revoke' ? { ...local.binding, state: 'revoked', grantRevision: grantRevision + 1, exportPolicy: 'off' } : { ...local.binding, state: 'paused' };
+    }
     const receivingConsent = cloud && local.binding.exportPolicy !== 'off' && receiving ? { grantRevision: local.binding.grantRevision, identity: ReceivingIdentitySchema.parse(receiving) } : undefined;
     await this.mutate(data => {
       if (data.entries.some(entry => entry.local.binding.id === local.binding.id)) throw Error('Source already enrolled');
-      if (data.entries.some(entry => entry.local.binding.state !== 'revoked')) throw Error('Only one selected source is supported');
+      if (local.binding.state !== 'revoked' && data.entries.some(entry => entry.local.binding.state !== 'revoked')) throw Error('Only one selected source is supported');
       data.entries.push({ local, cursor: null, cloud, ...(receivingConsent ? { receivingConsent } : {}) });
+      if (cloud && withdrawal) data.sourceCommands.push({ id: randomUUID(), operationId: randomUUID(), bindingId: local.binding.id, grantRevision, kind: withdrawal });
     });
   }
   canExport(bindingId: string, grantRevision: number, current: ReceivingIdentity | null): boolean {
