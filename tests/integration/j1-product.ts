@@ -12,6 +12,7 @@ import { _electron, expect, type ElectronApplication, type Page } from '@playwri
 import { Pool } from 'pg';
 import { issueGrant } from '../../apps/cloud/src/auth/credentials';
 import type { Project } from '@living-playbooks/contracts';
+import { assertSchedulerIsolation, Blocked, bounded } from './j1-safety';
 
 // Catches broken trusted pairing, saved snapshot rendering, owner writes and native credential recovery.
 // Run only after the parent releases the dedicated DB; never import cloud/helpers (it truncates).
@@ -22,21 +23,13 @@ let cloud: ChildProcess | undefined;
 let desktop: ElectronApplication | undefined;
 let directory: string | undefined;
 let failure: 'BLOCKED' | 'FAIL' | undefined;
+let ownerGrantAttempted = false;
 const ownerId = randomUUID();
 const title = `Synthetic J1 ${randomUUID()}`;
 const brief = 'Build a harmless local acceptance demonstration. No source history or model access.';
 const mainEntry = resolve('apps/desktop/dist/main/index.js');
 const rendererEntry = pathToFileURL(resolve('apps/web/dist/index.html')).href;
 
-class Blocked extends Error {}
-async function bounded<T>(operation: Promise<T>, milliseconds = 10000): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([operation, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Bound exceeded')), milliseconds);
-    })]);
-  } finally { clearTimeout(timer); }
-}
 function systemEnvironment(): Record<string, string> {
   // No inherited model keys, renderer override, temporary pairing or selected source identity.
   return Object.fromEntries(Object.entries(process.env).filter(([key, value]) => value !== undefined &&
@@ -69,7 +62,7 @@ async function closeDesktop() {
   desktop = undefined;
 }
 async function cleanupOwner() {
-  if (!pool) return;
+  if (!pool || !ownerGrantAttempted) return;
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
@@ -114,7 +107,10 @@ try {
   stage = 'database';
   pool = new Pool({ connectionString: url.href, max: 2, connectionTimeoutMillis: 5000, query_timeout: 5000, statement_timeout: 5000 });
   pool.on('error', () => { receipt.databasePoolError = true; });
+  stage = 'database-isolation';
+  await assertSchedulerIsolation(pool, ownerId);
   // The parent has already migrated. migrate() updates legacy owner defaults globally, so do not run it here.
+  ownerGrantAttempted = true;
   let grant = await issueGrant(pool, { ownerId, timezone: 'America/Chicago', reminders: false });
   const modelUsageBefore = (await pool.query('SELECT calls,reserved_tokens FROM model_usage')).rows;
   receipt.uniqueSyntheticOwner = grant.ownerId === ownerId;
@@ -148,9 +144,9 @@ try {
   async function launch(): Promise<Page> {
     desktop = await _electron.launch({ args: [launcher], cwd: process.cwd(), timeout: 20000,
       env: { ...systemEnvironment(), LP_API_ORIGIN: origin } });
-    const isolated = await desktop.evaluate(({ app }, paths) => app.getPath('appData') === paths.appData &&
+    const isolated = await bounded(desktop.evaluate(({ app }, paths) => app.getPath('appData') === paths.appData &&
       app.getPath('userData') === paths.userData && app.getPath('sessionData') === paths.sessionData,
-      { appData, userData: join(appData, 'LivingPlaybooks'), sessionData });
+      { appData, userData: join(appData, 'LivingPlaybooks'), sessionData }));
     assert(isolated); receipt.actualMainProfileIsolated = true;
     const workspace = desktop.windows().find(page => page.url() === rendererEntry) ??
       await desktop.waitForEvent('window', { predicate: page => page.url() === rendererEntry, timeout: 10000 });
@@ -189,7 +185,7 @@ try {
 
   stage = 'native-storage';
   let page = await launch();
-  if (!await desktop!.evaluate(async ({ safeStorage }) => safeStorage.isAsyncEncryptionAvailable()))
+  if (!await bounded(desktop!.evaluate(async ({ safeStorage }) => safeStorage.isAsyncEncryptionAvailable())))
     throw new Blocked('Actual Windows safeStorage unavailable');
   receipt.nativeProtectedStorageAvailable = true;
 
