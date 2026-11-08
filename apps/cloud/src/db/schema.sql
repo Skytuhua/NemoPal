@@ -77,3 +77,31 @@ CREATE TABLE IF NOT EXISTS generated_dependencies (
  kind text NOT NULL CHECK(kind IN ('task','task_title','workspace')),
  observation_id uuid NOT NULL, PRIMARY KEY(project_id,resource_id,kind,observation_id)
 );
+-- Sendblue is a transport over canonical messages/jobs, never another project store.
+CREATE TABLE IF NOT EXISTS sendblue_links (
+ id uuid PRIMARY KEY, owner_id uuid NOT NULL REFERENCES owners(id), project_id uuid NOT NULL REFERENCES projects(id),
+ account text NOT NULL, receiving_line text NOT NULL, sender text NOT NULL,
+ actions text[] NOT NULL, revision integer NOT NULL DEFAULT 0, active boolean NOT NULL DEFAULT true,
+ expires_at timestamptz NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sendblue_active_sender ON sendblue_links(account,receiving_line,sender) WHERE active;
+CREATE UNIQUE INDEX IF NOT EXISTS sendblue_active_project ON sendblue_links(owner_id,project_id) WHERE active;
+CREATE TABLE IF NOT EXISTS sendblue_receipts (
+ account text NOT NULL, handle text NOT NULL, outbound boolean NOT NULL, status text NOT NULL,
+ payload_hash text NOT NULL, link_id uuid NOT NULL REFERENCES sendblue_links(id),
+ owner_message_id uuid, job_id uuid, created_at timestamptz NOT NULL,
+ PRIMARY KEY(account,handle,outbound,status)
+);
+CREATE INDEX IF NOT EXISTS sendblue_receipts_rate ON sendblue_receipts(link_id,created_at);
+CREATE TABLE IF NOT EXISTS sendblue_outbox (
+ id uuid PRIMARY KEY, operation_id uuid NOT NULL UNIQUE, request_hash text NOT NULL,
+ link_id uuid NOT NULL REFERENCES sendblue_links(id), authority jsonb NOT NULL,
+ owner_id uuid NOT NULL REFERENCES owners(id), project_id uuid NOT NULL REFERENCES projects(id),
+ account text NOT NULL, kind text NOT NULL, request_key text, input_message_id uuid, message_id uuid,
+ text text, project_epoch bigint NOT NULL, expires_at timestamptz NOT NULL, state text NOT NULL DEFAULT 'pending'
+ CHECK(state IN ('pending','leased','sending','accepted','delivered','failed','uncertain','cancelled')),
+ generation integer NOT NULL DEFAULT 0, lease_expires_at timestamptz,
+ provider_handle text, provider_status text,
+ UNIQUE(link_id,input_message_id), UNIQUE(link_id,kind,request_key), UNIQUE(account,provider_handle)
+);
+CREATE INDEX IF NOT EXISTS sendblue_outbox_due ON sendblue_outbox(state,expires_at);
