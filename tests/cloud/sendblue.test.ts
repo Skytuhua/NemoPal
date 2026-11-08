@@ -9,6 +9,7 @@ import { JobQueue } from '../../apps/cloud/src/jobs/queue';
 import { SendblueDelivery } from '../../apps/cloud/src/jobs/sendblue-delivery';
 import { enqueueNotification } from '../../apps/cloud/src/integrations/sendblue/outbox';
 import { capability } from '../../apps/cloud/src/integrations/sendblue/config';
+import { createHttpClient } from '@living-playbooks/api-client';
 
 const config = { enabled: true, account: 'synthetic@example.invalid', line: '+15550000001', keyId: 'synthetic-id', apiSecret: 'synthetic-api-secret', signingSecret: 'synthetic-signing-secret' };
 const sender = '+15550000002';
@@ -17,7 +18,38 @@ const projectId = goldenSnapshot.project.id;
 const ownerId = goldenSnapshot.project.ownerId;
 const principal = { credentialId: randomUUID(), ownerId, deviceId: randomUUID() };
 const payload = (overrides: Record<string, unknown> = {}) => ({ accountEmail: config.account, message_handle: 'opaque-not-a-uuid', from_number: sender, to_number: config.line, sendblue_number: config.line, number: sender, content: 'What remains?', is_outbound: false, status: 'RECEIVED', message_type: 'message', group_id: '', media_url: '', ...overrides });
-const command = (input: unknown, expectedRevision = 0) => ({ operationId: randomUUID(), expectedRevision, input });
+const command = <T>(input: T, expectedRevision = 0) => ({ operationId: randomUUID(), expectedRevision, input });
+
+test('phone status is authenticated, project scoped, and survives a fresh read through revocation', async () => {
+  const h = await harness();
+  const path = `/v1/projects/${projectId}/sendblue`;
+  const read = (url = path) => h.app.inject({ method: 'GET', url, headers: { authorization: 'Bearer synthetic' } });
+  try {
+    expect((await h.app.inject({ method: 'GET', url: path })).statusCode).toBe(401);
+    expect((await read(`/v1/projects/${randomUUID()}/sendblue`)).statusCode).toBe(404);
+    expect((await read()).json()).toEqual({ state: 'configured', link: null });
+    await h.link(true);
+    expect((await read()).json()).toEqual({ state: 'configured', link: { id: h.db.links[0].id, expiresAt: '2026-11-08T13:00:00.000Z', notifications: true } });
+    await h.request(`${path}/revoke`, command({ linkId: h.db.links[0].id }, h.db.project.revision), { authorization: 'Bearer synthetic' });
+    expect((await read()).json()).toEqual({ state: 'configured', link: null });
+  } finally { await h.app.close(); }
+});
+
+test('HTTP client links and revokes through authenticated real routes with checked receipts', async () => {
+  const h = await harness();
+  const client = createHttpClient({ origin: 'https://synthetic.invalid', getAuthorization: () => 'Bearer synthetic', fetch: async (url, init) => {
+    const response = await h.app.inject({ method: init!.method as 'GET' | 'POST', url: new URL(String(url)).pathname, headers: Object.fromEntries(new Headers(init!.headers)), ...(init!.body ? { payload: JSON.parse(String(init!.body)) } : {}) });
+    return new Response(response.body, { status: response.statusCode, headers: { 'content-type': 'application/json' } });
+  } });
+  try {
+    expect((await client.getPhoneStatus(projectId)).link).toBeNull();
+    const linked = await client.linkPhone(projectId, command({ sender, expiresAt: '2026-11-08T13:00:00.000Z', notifications: true }, 0));
+    expect(linked.result.actions).toContain('notify');
+    expect((await client.getPhoneStatus(projectId)).link?.id).toBe(linked.result.id);
+    await client.revokePhone(projectId, command({ linkId: linked.result.id }, linked.projectRevision));
+    expect((await client.getPhoneStatus(projectId)).link).toBeNull();
+  } finally { await h.app.close(); }
+});
 
 async function harness() {
   const db = new MemoryQueries();

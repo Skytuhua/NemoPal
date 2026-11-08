@@ -149,6 +149,9 @@ export function createHttpClient(options: HttpClientOptions): c.PlaybooksClient 
       if (result.project.id !== projectId) throw new ClientError('invalid_response', 'The API returned another project snapshot.');
       return result;
     },
+    getPhoneStatus: projectId => request(`/v1/projects/${id(projectId)}/sendblue`, 'GET', c.PhoneStatusSchema),
+    linkPhone: (projectId, input) => command(`/v1/projects/${id(projectId)}/sendblue/link`, 'POST', input, c.revisionedCommandSchema(c.PhoneLinkInputSchema), c.commandReceiptSchema(c.PhoneLinkSchema)),
+    revokePhone: (projectId, input) => command(`/v1/projects/${id(projectId)}/sendblue/revoke`, 'POST', input, c.revisionedCommandSchema(c.PhoneLinkIdInputSchema), c.commandReceiptSchema(c.AcceptedJobSchema.shape.receipt.shape.result)),
     sendMessage: (projectId, input) => command(`/v1/projects/${id(projectId)}/messages`, 'POST', input, c.revisionedCommandSchema(c.MessageInputSchema), c.AcceptedJobSchema),
     applyAction: (projectId, input) => command(`/v1/projects/${id(projectId)}/actions`, 'POST', input, c.revisionedCommandSchema(c.OwnerActionSchema), c.commandReceiptSchema(c.ProjectSchema), output => output.result.id === projectId),
     saveDocument: (projectId, documentId, input) => command(`/v1/projects/${id(projectId)}/documents/${id(documentId)}`, 'PUT', input, c.revisionedCommandSchema(c.DocumentInputSchema), c.commandReceiptSchema(c.DocumentDraftSchema), output => output.result.id === documentId && output.result.projectId === projectId),

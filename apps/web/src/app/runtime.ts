@@ -11,6 +11,9 @@ function desktopClient(bridge: DesktopBridge): PlaybooksClient {
   return {
     listProjects: () => invoke({ type: 'listProjects' }),
     getSnapshot: projectId => invoke({ type: 'getSnapshot', projectId }),
+    getPhoneStatus: projectId => invoke({ type: 'getPhoneStatus', projectId }),
+    linkPhone: (projectId, command) => invoke({ type: 'linkPhone', projectId, command }),
+    revokePhone: (projectId, command) => invoke({ type: 'revokePhone', projectId, command }),
     createProject: command => invoke({ type: 'createProject', command }),
     sendMessage: (projectId, command) => invoke({ type: 'sendMessage', projectId, command }),
     applyAction: (projectId, command) => invoke({ type: 'applyAction', projectId, command }),

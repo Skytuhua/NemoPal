@@ -19,3 +19,17 @@ test('desktop client forwards only validated allowed commands, never source gran
   expect(invoke).toHaveBeenCalledTimes(1);
   await expect(result.client?.enrollSource(crypto.randomUUID(), { operationId: crypto.randomUUID(), expectedRevision: 0, input: { sourceKey: 'x', adapterId: 'x', adapterVersion: '1', capability: 'history_only', exportPolicy: 'off' } })).rejects.toThrow(/desktop consent/);
 });
+
+test('desktop phone enrollment passes the selected project and explicit grant through the validated bridge', async () => {
+  const invoke = vi.fn().mockResolvedValue({ state: 'configured', link: null });
+  const bridge = { invoke, onEvent: () => () => {} } as unknown as DesktopBridge;
+  const client = runtime(bridge, false, false).client!;
+  const projectId = crypto.randomUUID();
+  await client.getPhoneStatus(projectId);
+  const command = { operationId: crypto.randomUUID(), expectedRevision: 4, input: { sender: '+15550000002', expiresAt: '2026-11-09T12:00:00.000Z', notifications: true } };
+  await client.linkPhone(projectId, command);
+  expect(invoke).toHaveBeenCalledWith({ type: 'getPhoneStatus', projectId });
+  expect(invoke).toHaveBeenCalledWith({ type: 'linkPhone', projectId, command });
+  await expect(client.linkPhone(projectId, { ...command, input: { ...command.input, sender: 'invalid' } })).rejects.toThrow();
+  expect(invoke).toHaveBeenCalledTimes(2);
+});

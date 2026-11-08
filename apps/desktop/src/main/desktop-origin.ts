@@ -18,6 +18,7 @@ export function unavailableDesktopClient(): PlaybooksClient {
   const unavailable = async (): Promise<never> => { throw Error('Desktop API origin unavailable'); };
   return {
     listProjects: unavailable, createProject: unavailable, getSnapshot: unavailable,
+    getPhoneStatus: unavailable, linkPhone: unavailable, revokePhone: unavailable,
     sendMessage: unavailable, applyAction: unavailable, saveDocument: unavailable,
     answerCheckIn: unavailable, snoozeCheckIn: unavailable, cancelCheckIn: unavailable,
     presentCheckIn: unavailable, enrollSource: unavailable, setSourceState: unavailable,

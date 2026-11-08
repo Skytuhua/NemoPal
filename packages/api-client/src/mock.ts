@@ -92,6 +92,7 @@ export function createFixtureClient(options: FixtureClientOptions = {}): c.Playb
     });
   }
   return {
+    getPhoneStatus: unavailable, linkPhone: unavailable, revokePhone: unavailable,
     async listProjects(signal) {
       if (signal?.aborted) throw new DOMException('Request aborted.', 'AbortError');
       return [...snapshots.values()].map(({ project, checkIns }) => parseContract(c.ProjectSummarySchema, {

@@ -22,6 +22,7 @@ export function registerSendblue(app: FastifyInstance, messaging: Messaging, pri
     return messaging.accept(r.body);
   });
   app.get('/v1/integrations/sendblue', () => capability(messaging.store.phoneConfig));
+  app.get('/v1/projects/:id/sendblue', r => messaging.status(principal(r), z.object({ id: c.IdSchema }).parse(r.params).id));
   app.post('/v1/projects/:id/sendblue/link', r => messaging.link(principal(r), r.url.split('?')[0]!, z.object({ id: c.IdSchema }).parse(r.params).id, c.revisionedCommandSchema(LinkInput).parse(r.body)));
   app.post('/v1/projects/:id/sendblue/revoke', r => messaging.revoke(principal(r), r.url.split('?')[0]!, z.object({ id: c.IdSchema }).parse(r.params).id, c.revisionedCommandSchema(z.object({ linkId: c.IdSchema }).strict()).parse(r.body)));
 }

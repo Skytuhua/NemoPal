@@ -1,16 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import * as c from '@living-playbooks/contracts';
-import type { Principal } from '../auth/credentials';
-import { Store, appendOwnerMessage, saveProject } from './store';
+import { reauthorize, type Principal } from '../auth/credentials';
+import { transaction } from '../db/transaction';
+import { Store, appendOwnerMessage, lockProject, saveProject } from './store';
 import { reject, revision } from './errors';
-import { phoneNumber, requireSendblue } from '../integrations/sendblue/config';
+import { capability, requireSendblue } from '../integrations/sendblue/config';
 import { disableLink, phoneAuthority } from '../integrations/sendblue/authority';
 import { parseMessage, messageOperation } from '../integrations/sendblue/payload';
 
-export const LinkInput = z.object({ sender: z.string().regex(phoneNumber), expiresAt: c.TimestampSchema, notifications: z.boolean().default(false) }).strict();
+export const LinkInput = c.PhoneLinkInputSchema.extend({ notifications: z.boolean().default(false) });
 export class Messaging {
   constructor(public store: Store) {}
+  async status(principal: Principal, projectId: string) {
+    return transaction(this.store.pool, async db => {
+      await reauthorize(db, principal, this.store.now());
+      await lockProject(db, projectId, principal.ownerId);
+      const row = (await db.query('SELECT * FROM sendblue_links WHERE owner_id=$1 AND project_id=$2 AND active FOR UPDATE', [principal.ownerId, projectId])).rows[0];
+      return c.PhoneStatusSchema.parse({ state: capability(this.store.phoneConfig).state, link: row ? { id: row.id, expiresAt: new Date(row.expires_at).toISOString(), notifications: row.actions.includes('notify') } : null });
+    });
+  }
   async link(principal: Principal, path: string, projectId: string, envelope: c.RevisionedCommandEnvelope<z.infer<typeof LinkInput>>) {
     requireSendblue(this.store.phoneConfig);
     return this.store.command(principal, path, envelope, projectId, async (db, project) => {

@@ -11,6 +11,7 @@ import { Chat } from '../features/chat/Chat';
 import { CodexDemo } from '../features/chat/CodexDemo';
 import { Question } from '../features/checkins/Question';
 import { SourceControls } from '../features/sources/SourceControls';
+import { PhoneControls } from '../features/phone/PhoneControls';
 import { validateSnapshot } from './snapshots';
 import { useDraft } from '../features/documents/useDraft';
 
@@ -216,6 +217,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
         <div className="project-controls"><label>Project status<select value={snapshot.project.status} disabled={disabled} onChange={event => void action({ type: 'set_project_status', status: event.target.value as 'active' | 'paused' | 'archived' })}><option value="active">Active</option><option value="paused">Paused</option><option value="archived">Archived</option></select></label><label>Phase<select value={snapshot.project.phase} disabled={disabled} onChange={event => void action({ type: 'set_project_phase', phase: event.target.value as 'planning' | 'building' | 'demo' | 'review' })}>{['planning', 'building', 'demo', 'review'].map(phase => <option key={phase}>{phase}</option>)}</select></label></div>
         <div className="connection-status"><p>Cloud {offline ? 'offline · writes unavailable' : snapshot.connection.sync === 'stale' ? 'stale · refresh recommended' : snapshot.connection.sync === 'updating' || updating ? 'updating…' : fixtureMode ? 'connection simulated' : 'snapshot current'}</p><p>Nemotron {snapshot.connection.inference.available ? 'available' : `unavailable · ${snapshot.connection.inference.reason}`}</p><p>Source freshness: {snapshot.sourceBindings.length ? snapshot.sourceBindings.map(source => `${source.state}${source.lastObservedAt && Date.now() - Date.parse(source.lastObservedAt) > 120000 ? ' · observation old' : ''}`).join(', ') : 'No source linked'}</p>{snapshot.connection.demoTiming && <p>Demo reminder timing</p>}</div>
         <SourceControls key={snapshot.project.id} bridge={bridge} snapshot={snapshot} refresh={() => refresh(snapshot.project.id)} />
+        {settingsOpen && <PhoneControls key={snapshot.project.id} client={client} project={snapshot.project} disabled={disabled} refresh={() => refresh(snapshot.project.id)} />}
       </section>}
       <div className="workspace-content" hidden={settingsOpen}>
         {loading && <div role="status" className="loading"><h1>Loading workspace…</h1></div>}

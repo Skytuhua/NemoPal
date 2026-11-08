@@ -247,6 +247,15 @@ async function start() {
         const result = sourceStopFailed ? { connected: false } : await sync.run(); assertOwner(owner); connected = result.connected;
         return refresh(input.projectId, generation);
       }
+      case 'getPhoneStatus':
+      case 'linkPhone':
+      case 'revokePhone': {
+        if (selectedProject !== input.projectId || !authority.projects.has(input.projectId)) throw Error('Select the project first');
+        const result = input.type === 'getPhoneStatus' ? await client.getPhoneStatus(input.projectId) : input.type === 'linkPhone' ? await client.linkPhone(input.projectId, input.command) : await client.revokePhone(input.projectId, input.command);
+        assertOwner(owner);
+        if (selectedProject !== input.projectId) throw Error('Project selection changed');
+        return result;
+      }
       case 'sendMessage': { const job = await client.sendMessage(input.projectId, input.command); assertOwner(owner); authority.jobs.set(job.jobId, input.projectId); return job; }
       case 'applyAction': return client.applyAction(input.projectId, input.command);
       case 'saveDocument': return client.saveDocument(input.projectId, input.documentId, input.command);

@@ -23,6 +23,10 @@ export const OwnerActionSchema = z.discriminatedUnion('type', [
 ]);
 export const SnoozeInputSchema = z.strictObject({ until: timestamp, timezone: boundedText(100, true).refine(value => { if (/^[+-]/.test(value)) return false; try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; } }, 'Invalid IANA timezone') });
 export const EmptyInputSchema = z.strictObject({});
+export const PhoneLinkInputSchema = z.strictObject({ sender: z.string().regex(/^\+[1-9]\d{7,14}$/), expiresAt: timestamp, notifications: z.boolean() });
+export const PhoneLinkIdInputSchema = z.strictObject({ linkId: id });
+export const PhoneLinkSchema = z.strictObject({ id, revision, expiresAt: timestamp, actions: z.array(z.enum(['message', 'manager', 'reply', 'notify'])).max(4) });
+export const PhoneStatusSchema = z.strictObject({ state: z.enum(['disabled', 'unconfigured', 'configured']), link: z.strictObject({ id, expiresAt: timestamp, notifications: z.boolean() }).nullable() });
 export const EnrollSourceInputSchema = z.strictObject({ sourceKey: boundedText(128, true), adapterId: boundedText(80, true), adapterVersion: boundedText(40, true), capability: SourceCapabilitySchema, exportPolicy: ExportPolicySchema });
 export const SourceStateInputSchema = z.strictObject({ state: z.enum(['paused', 'following']), grantRevision: revision });
 export const RevokeSourceInputSchema = z.strictObject({ grantRevision: revision, removeExcerpts: z.boolean() });
@@ -61,6 +65,9 @@ export interface PlaybooksClient {
   listProjects(signal?: AbortSignal): Promise<ProjectSummary[]>;
   createProject(input: CommandEnvelope<CreateProjectInput>): Promise<AcceptedJob>;
   getSnapshot(projectId: string, signal?: AbortSignal): Promise<z.infer<typeof ProjectSnapshotSchema>>;
+  getPhoneStatus(projectId: string): Promise<z.infer<typeof PhoneStatusSchema>>;
+  linkPhone(projectId: string, input: RevisionedCommandEnvelope<z.infer<typeof PhoneLinkInputSchema>>): Promise<CommandReceipt<z.infer<typeof PhoneLinkSchema>>>;
+  revokePhone(projectId: string, input: RevisionedCommandEnvelope<{ linkId: string }>): Promise<CommandReceipt<null>>;
   sendMessage(projectId: string, input: RevisionedCommandEnvelope<MessageInput>): Promise<AcceptedJob>;
   applyAction(projectId: string, input: RevisionedCommandEnvelope<OwnerAction>): Promise<CommandReceipt<z.infer<typeof ProjectSchema>>>;
   saveDocument(projectId: string, documentId: string, input: RevisionedCommandEnvelope<DocumentInput>): Promise<CommandReceipt<z.infer<typeof DocumentDraftSchema>>>;

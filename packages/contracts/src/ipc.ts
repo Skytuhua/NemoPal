@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { boundedText, IdSchema as id, RevisionSchema as revision, TimestampSchema as timestamp } from './limits';
 import { CapabilitySchema, CheckInAnswerSchema, CheckInSchema, ObservationSchema, PetStateSchema, ProjectSnapshotSchema, SourceBindingSchema, SourceCapabilitySchema, ExportPolicySchema } from './domain';
-import { commandEnvelopeSchema, revisionedCommandSchema, CreateProjectInputSchema, MessageInputSchema, OwnerActionSchema, DocumentInputSchema, SnoozeInputSchema, EmptyInputSchema, ProjectEventSchema, PairingInputSchema, PairingResultSchema } from './api';
+import { commandEnvelopeSchema, revisionedCommandSchema, CreateProjectInputSchema, MessageInputSchema, OwnerActionSchema, DocumentInputSchema, SnoozeInputSchema, EmptyInputSchema, ProjectEventSchema, PairingInputSchema, PairingResultSchema, PhoneLinkInputSchema } from './api';
 import type { CommandEnvelope, PairingInput, PairingResult, PlaybooksClient, ProjectEvent } from './api';
 import type { CheckIn, ProjectSnapshot, SourceBinding } from './domain';
 
@@ -28,6 +28,9 @@ export const AllowedClientCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('listProjects') }),
   z.strictObject({ type: z.literal('createProject'), command: commandEnvelopeSchema(CreateProjectInputSchema) }),
   z.strictObject({ type: z.literal('getSnapshot'), projectId: id }),
+  z.strictObject({ type: z.literal('getPhoneStatus'), projectId: id }),
+  z.strictObject({ type: z.literal('linkPhone'), projectId: id, command: revisionedCommandSchema(PhoneLinkInputSchema) }),
+  z.strictObject({ type: z.literal('revokePhone'), projectId: id, command: revisionedCommandSchema(z.strictObject({ linkId: id })) }),
   z.strictObject({ type: z.literal('sendMessage'), projectId: id, command: revisionedCommandSchema(MessageInputSchema) }),
   z.strictObject({ type: z.literal('applyAction'), projectId: id, command: revisionedCommandSchema(OwnerActionSchema) }),
   z.strictObject({ type: z.literal('saveDocument'), projectId: id, documentId: id, command: revisionedCommandSchema(DocumentInputSchema) }),
