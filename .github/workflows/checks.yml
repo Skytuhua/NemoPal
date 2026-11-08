@@ -17,3 +17,37 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: pnpm test:contracts
       - run: pnpm typecheck
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: playbooks_test
+          POSTGRES_USER: playbooks
+          POSTGRES_PASSWORD: synthetic-ci-only
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U playbooks -d playbooks_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://playbooks:synthetic-ci-only@127.0.0.1:55432/playbooks_test
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      LP_MODEL_LIVE_OPT_IN: 'false'
+      LP_DEMO_TIMING: 'false'
+      LP_REMINDERS_CONSENT: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --maxWorkers=1 --no-file-parallelism
+      - run: pnpm build
+      - run: pnpm evidence:check
