@@ -88,7 +88,40 @@ async function start() {
     quitting = true; clearInterval(timer); eventsAbort?.abort();
     await sources.stop(); await sync.stop(); vault.clearMemory();
   }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), quit: () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); }, error: () => sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' }) });
+  async function withdrawSources(action: 'pause' | 'revoke') {
+    if (quitting) return;
+    const deviceId = vault.localDeviceId();
+    if (!deviceId) { dialog.showErrorBox('Local source custody unavailable', 'Protected device custody could not be verified. No source access was changed. Restore protected storage or explicitly re-pair this device.'); return; }
+    const local = store.bindings().filter(entry => entry.binding.deviceId === deviceId && (action === 'revoke' || entry.binding.state !== 'revoked'));
+    if (!local.length) { await dialog.showMessageBox(windows.workspace, { type: 'info', message: 'No local source access on this device', detail: 'No matching sources were changed. Access belonging to other devices is unaffected.' }); return; }
+    const revoke = action === 'revoke';
+    const choice = await dialog.showMessageBox(windows.workspace, {
+      type: 'question', buttons: [revoke ? 'Revoke local access' : 'Pause local sources', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
+      message: revoke ? 'Revoke all local source access on this device?' : 'Pause all local sources on this device?',
+      detail: revoke
+        ? 'Stops local monitoring and removes queued exports. Cloud revocation and removal of retained excerpts remain pending until acknowledged by the cloud. Following again requires new consent.'
+        : 'Stops local monitoring. Queued exports are retained but held. Cloud pause remains pending until acknowledged by the cloud. Previously sent data is retained.',
+    });
+    if (choice.response !== 0 || quitting) return;
+    // Pairing can change while the native confirmation is open.
+    if (vault.localDeviceId() !== deviceId) throw Error('Local device custody changed');
+    const outcomes = await Promise.allSettled(local.map(async entry => {
+      if (revoke) await sources.revoke(entry.binding.id); else await sources.pause(entry.binding.id);
+      sourceState(entry.binding.id);
+    }));
+    await store.flush();
+    if (outcomes.some(result => result.status === 'rejected')) throw Error('Local source withdrawal incomplete');
+    const pending = store.pendingSourceCommands().some(command => local.some(entry => entry.binding.id === command.bindingId));
+    await dialog.showMessageBox(windows.workspace, {
+      type: 'info', message: revoke ? 'Local source access revoked on this device' : 'Local sources paused on this device',
+      detail: `${revoke ? 'Local monitoring stopped; queued exports removed.' : 'Local monitoring stopped; queued exports retained but held.'} ${pending ? `Cloud ${revoke ? 'revocation and excerpt removal' : 'pause'} pending; it has not been acknowledged. Reconnect with valid pairing to retry.` : 'No cloud command is pending for these sources.'}`,
+    });
+    void cycle();
+  }
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit: () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); }, error: action => {
+    if (action) dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
+    else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
+  } });
   const requirePaired = () => { if (!origin || !vault.authorization()) throw Error('Configure an API origin and explicitly pair this device.'); };
   const remember = (snapshot: c.ProjectSnapshot) => {
     eventSequence = Math.max(eventSequence, snapshot.eventSequence);
