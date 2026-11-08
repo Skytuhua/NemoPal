@@ -10,6 +10,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (request.method === 'thread/start') {
     if (!request.params.cwd || request.params.sandbox !== 'read-only' || request.params.approvalPolicy !== 'never') process.exit(3);
     if (process.argv[2] === 'exit-idle') setTimeout(() => process.exit(0), 40);
+    if (process.argv.includes('--delay-start')) return setTimeout(() => send({ id: request.id, result: { thread: { id: 'demo-owned' } } }), 100);
     return send({ id: request.id, result: { thread: { id: 'demo-owned' } } });
   }
   if (request.method !== 'turn/start' || request.params.threadId !== 'demo-owned') process.exit(4);

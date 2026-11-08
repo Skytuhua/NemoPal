@@ -4,7 +4,7 @@ import { dirname, resolve, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createHttpClient } from '@living-playbooks/api-client';
-import { createInstalledObserver, ADAPTER, VERSION } from '@living-playbooks/codex-observer';
+import { createInstalledObserver, resolveCodexExecutable, ADAPTER, VERSION } from '@living-playbooks/codex-observer';
 import * as c from '@living-playbooks/contracts';
 import { CredentialVault } from './credentials';
 import { readPairingResponse } from './pairing';
@@ -18,6 +18,7 @@ import { createNativeWindows } from './native-windows';
 import { createCompanionTray } from './tray';
 import { CompanionLifetime } from './windows';
 import { desktopOrigin, unavailableDesktopClient } from './desktop-origin';
+import { CodexDesktopSession } from './codex-desktop-session';
 type SourceEnrollment = { operationId: string; deviceId: string; cloud: boolean; bindingId?: string; withdrawal?: 'pause' | 'revoke'; completion: Promise<void>; failed: boolean };
 
 app.setName('Living Playbooks');
@@ -85,6 +86,9 @@ async function start() {
   const enrollments = new Set<SourceEnrollment>();
   const authority: Authority = { projects: new Set(), checkIns: new Map(), documents: new Map(), jobs: new Map() };
   let selectedProject: string | undefined;
+  const codexDemo = new CodexDesktopSession(() => ({ executable: resolveCodexExecutable(), args: ['app-server', '--listen', 'stdio://', '-c', 'analytics.enabled=false'] }));
+  let demoActivation = 0;
+  const stopDemo = () => { demoActivation++; codexDemo.close(); };
   let pinnedProject = store.preference().pinnedProjectId;
   let selectionGeneration = 0;
   const petProject = () => pinnedProject ?? selectedProject;
@@ -129,7 +133,7 @@ async function start() {
     tray.rebuild();
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
-    quitting = true; ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
+    quitting = true; stopDemo(); ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
     await sources.stop(); await sync.stop(); await pairingCompletion; vault.clearMemory();
   }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
   const reportWithdrawalFailure = () => dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
@@ -206,6 +210,7 @@ async function start() {
       case 'listProjects': { const result = await client.listProjects(); assertOwner(owner); const ids = new Set(result.map(project => project.id)); for (const id of authority.projects) if (!ids.has(id)) authority.projects.delete(id); for (const id of ids) authority.projects.add(id); return result; }
       case 'createProject': return client.createProject(input.command);
       case 'getSnapshot': {
+        if (selectedProject !== input.projectId) stopDemo();
         selectedProject = input.projectId;
         const generation = fenceSelection();
         const result = await sync.run(); assertOwner(owner); connected = result.connected;
@@ -217,7 +222,7 @@ async function start() {
       case 'answerCheckIn': return client.answerCheckIn(input.checkInId, input.command);
       case 'snoozeCheckIn': return client.snoozeCheckIn(input.checkInId, input.command);
       case 'cancelCheckIn': return client.cancelCheckIn(input.checkInId, input.command);
-      case 'deleteProject': { const result = await client.deleteProject(input.projectId, input.command); assertOwner(owner); authority.projects.delete(input.projectId); const controller = sources; for (const entry of store.bindings().filter(e => e.binding.deviceId === vault.localDeviceId() && e.binding.projectId === input.projectId)) await controller.revoke(entry.binding.id); return result; }
+      case 'deleteProject': { const result = await client.deleteProject(input.projectId, input.command); assertOwner(owner); authority.projects.delete(input.projectId); if (selectedProject === input.projectId) stopDemo(); const controller = sources; for (const entry of store.bindings().filter(e => e.binding.deviceId === vault.localDeviceId() && e.binding.projectId === input.projectId)) await controller.revoke(entry.binding.id); return result; }
       case 'cancelJob': return client.cancelJob(input.jobId, input.command);
     }
   }
@@ -245,7 +250,7 @@ async function start() {
           presentation.reset(); ++ownerGeneration; ++selectionGeneration; ownerReady = false;
           const owner = ownerGeneration;
           ownerAbort.abort(); eventsAbort?.abort(); eventsAbort = undefined; syncing = undefined;
-          connected = false; eventSequence = 0; selectedProject = undefined; pinnedProject = null;
+          stopDemo(); connected = false; eventSequence = 0; selectedProject = undefined; pinnedProject = null;
           authority.projects.clear(); authority.checkIns.clear(); authority.documents.clear(); authority.jobs.clear();
           consent = new ConsentSelections(origin, currentReceiving());
           credentialBlocker = 'Pairing transition incomplete; explicitly re-pair. Local source custody remains retained.';
@@ -299,6 +304,26 @@ async function start() {
         if (!local || local.binding.deviceId !== vault.localDeviceId()) throw Error('Local source is not in this device custody');
         if (operation === 'pauseSource') await sources.pause(id); else await sources.revoke(id); sourceState(id); void cycle(); return;
       }
+      case 'startCodexDemo': {
+        const projectId = raw as string;
+        if (projectId !== selectedProject || suspended) throw Error('Select the project first');
+        stopDemo(); const activation = demoActivation;
+        const choice = await dialog.showOpenDialog(windows.workspace, { title: 'Choose the Codex demo workspace', properties: ['openDirectory'] });
+        if (choice.canceled || !choice.filePaths[0]) return 'cancelled';
+        if (activation !== demoActivation || selectedProject !== projectId || quitting || suspended) throw Error('Selection changed');
+        const confirm = await dialog.showMessageBox(windows.workspace, { type: 'warning', buttons: ['Start new demo thread', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true, message: 'Start a new local Codex demo thread?', detail: `Workspace: ${choice.filePaths[0]}\nThis creates a new thread; it does not attach an existing conversation. Codex uses a read-only sandbox and approval policy never, but may read outside this folder and configured tools can have their own permissions. Provider usage may incur costs. Approval requests will not be accepted.` });
+        if (confirm.response !== 0) return 'cancelled';
+        if (activation !== demoActivation || selectedProject !== projectId || quitting || suspended) throw Error('Selection changed');
+        await codexDemo.start(projectId, choice.filePaths[0]);
+        if (activation !== demoActivation || selectedProject !== projectId || quitting || suspended) { codexDemo.close(); throw Error('Selection changed'); }
+        return 'started';
+      }
+      case 'sendCodexDemo': {
+        const input = raw as { projectId: string; text: string };
+        if (input.projectId !== selectedProject || suspended) throw Error('Select the project first');
+        return codexDemo.send(input.projectId, input.text);
+      }
+      case 'stopCodexDemo': if (raw === selectedProject) stopDemo(); return;
       case 'invoke': return execute(c.AllowedClientCommandSchema.parse(raw));
       case 'setPetPreference': return preference(c.PetPreferenceSchema.parse(raw));
       case 'petInvoke': { const input = c.PetCommandSchema.parse(raw); if (input.type === 'setPreference') return preference(input.preference); return presentation.command(input); }
@@ -347,9 +372,10 @@ async function start() {
   app.on('window-all-closed', () => {});
   app.on('activate', open);
   app.on('before-quit', event => { event.preventDefault(); quit(); });
-  powerMonitor.on('suspend', () => { suspended = true; eventsAbort?.abort(); void sources.stop(); disconnect(); });
+  powerMonitor.on('suspend', () => { suspended = true; stopDemo(); eventsAbort?.abort(); void sources.stop(); disconnect(); });
   powerMonitor.on('resume', () => { const owner = ownerGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
   windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); if (event) windows.pet.webContents.send('lp:pet-event', event); else windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse({ type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() })); });
+  windows.workspace.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) stopDemo(); });
   try { await windows.load(); }
   catch (error) { if (quitting) return; throw error; }
   if (quitting) return;

@@ -5,7 +5,8 @@ type TurnResult = { status: 'completed' | 'failed' | 'interrupted'; error?: stri
 type Event = { method: string; params: Record<string, unknown> };
 type ActiveTurn = { id?: string; events: Event[]; eventBytes: number; resolve(result: TurnResult): void; reject(error: Error): void; timer: NodeJS.Timeout; seen: Set<string> };
 
-export async function createDemoSession(options: { executable: string; args: string[]; workspace: string; onReply(text: string): void }) {
+export async function createDemoSession(options: { executable: string; args: string[]; workspace: string; onReply(text: string): void; signal?: AbortSignal }) {
+  if (options.signal?.aborted) throw Error('Demo session closed');
   const child: ChildProcessWithoutNullStreams = spawn(options.executable, options.args, { stdio: 'pipe', windowsHide: true });
   let alive = true;
   let threadId = '';
@@ -19,11 +20,14 @@ export async function createDemoSession(options: { executable: string; args: str
     if (!alive) return;
     alive = false;
     resolveEnded(error);
+    options.signal?.removeEventListener('abort', abort);
     for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
     pending.clear();
     if (active) { clearTimeout(active.timer); active.reject(error); active = undefined; }
     child.kill();
   }
+  const abort = () => stop(Error('Demo session closed'));
+  options.signal?.addEventListener('abort', abort, { once: true });
   function request(method: string, params: unknown): Promise<unknown> {
     if (!alive) return Promise.reject(Error('Demo session stopped'));
     return new Promise((resolve, reject) => {

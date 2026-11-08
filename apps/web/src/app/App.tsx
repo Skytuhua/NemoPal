@@ -8,6 +8,7 @@ import { TaskBoard } from '../features/board/TaskBoard';
 import type { BoardColumnView } from '../features/board/board-view';
 import { createPreviewBoard, reconcilePreviewBoard } from './preview-board';
 import { Chat } from '../features/chat/Chat';
+import { CodexDemo } from '../features/chat/CodexDemo';
 import { Question } from '../features/checkins/Question';
 import { SourceControls } from '../features/sources/SourceControls';
 import { validateSnapshot } from './snapshots';
@@ -19,6 +20,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const [loading, setLoading] = useState(true), [updating, setUpdating] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [rejected, setRejected] = useState(false), [connected, setConnected] = useState<boolean>();
   const [filter, setFilter] = useState(''), [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatMode, setChatMode] = useState<'manager' | 'codex'>('manager');
   const shell = useRef<DesktopShellHandle>(null);
   const [inspectedTask, setInspectedTask] = useState<string>();
   const [previewBoards, setPreviewBoards] = useState<Record<string, BoardColumnView[]>>({});
@@ -223,6 +225,10 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
         </>}
       </div>
     </main>}
-    manager={<div className="chat-surface">{snapshot ? <Chat key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} renderCheckIn={renderQuestion} /> : <div className="empty"><h2>Manager chat</h2><p>{loading ? 'Loading…' : 'Choose a project to open its conversation.'}</p></div>}</div>}
+    manager={<div className="chat-surface">{snapshot ? <>
+      {bridge?.startCodexDemo && bridge.sendCodexDemo && bridge.stopCodexDemo && <nav className="chat-mode" aria-label="Conversation"><Button variant="ghost" aria-pressed={chatMode === 'manager'} onClick={() => setChatMode('manager')}>Manager</Button><Button variant="ghost" aria-pressed={chatMode === 'codex'} onClick={() => setChatMode('codex')}>Codex demo</Button></nav>}
+      <div className="chat-mode-content" hidden={chatMode !== 'manager'}><Chat key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} renderCheckIn={renderQuestion} /></div>
+      {bridge?.startCodexDemo && bridge.sendCodexDemo && bridge.stopCodexDemo && <div className="chat-mode-content" hidden={chatMode !== 'codex'}><CodexDemo key={snapshot.project.id} projectId={snapshot.project.id} start={bridge.startCodexDemo} send={bridge.sendCodexDemo} stop={bridge.stopCodexDemo} /></div>}
+    </> : <div className="empty"><h2>Manager chat</h2><p>{loading ? 'Loading…' : 'Choose a project to open its conversation.'}</p></div>}</div>}
   />;
 }

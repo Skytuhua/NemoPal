@@ -108,6 +108,11 @@
 .desktop-shell .empty { display: grid; gap: 15px; padding-block: 25px; color: #a4a4a4; font-size: 13px; }
 .desktop-shell .empty button { justify-self: start; }
 .desktop-shell .chat-surface { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.chat-mode { display: flex; justify-content: center; flex: none; }
+.chat-mode-content { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.chat-mode-content[hidden] { display: none; }
+.codex-demo-content { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.codex-demo-content p { overflow-wrap: anywhere; }
 .manager-heading { position: absolute; inset: 0 18px auto; z-index: 1; display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 12px 0 14px; pointer-events: none; text-shadow: 0 1px 4px #000, 0 0 8px #000; }
 .manager-avatar { display: block; flex: none; width: 76px; height: 76px; }
 .manager-mouse { background: url('../../../../assets/pet/pixel-mouse-idle-v1.png') 0 0 / 400% 400% no-repeat; image-rendering: pixelated; }
