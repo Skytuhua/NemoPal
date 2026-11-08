@@ -1,1 +1,10 @@
 export { WorkspaceCatalog, evidenceLabel, taskLabel } from './WorkspaceCatalog';
+export { Button, buttonVariants } from './ui/button';
+export { Input } from './ui/input';
+export { Textarea } from './ui/textarea';
+export { Avatar, AvatarImage, AvatarFallback, AvatarBadge, AvatarGroup, AvatarGroupCount } from './ui/avatar';
+export { Separator } from './ui/separator';
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './ui/tooltip';
+export { Sheet, SheetTrigger, SheetClose, SheetPortal, SheetOverlay, SheetContent, SheetHeader, SheetFooter, SheetTitle, SheetDescription } from './ui/sheet';
+export { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInput, SidebarInset, SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from './ui/sidebar';
+export { ResizablePanelGroup, ResizablePanel, ResizableHandle } from './ui/resizable';
