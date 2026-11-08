@@ -1,5 +1,7 @@
 # Dice Kanban interface foundation
 
+The original author receipts below describe `2aad4be75a0f397763c92a46bde2b20daa2ceeb9`. The parent correction receipts at the end supersede the adapted-source hash and consumer behavior where stated. This primitive has not yet been composed into the product board.
+
 ## Checkout and ownership receipt
 
 - Prepared checkout only: `C:/Users/user/.t3/worktrees/NemoPlaybook/t3-6a9469b3`.
@@ -66,3 +68,21 @@ Bounded artifact manifest SHA-256: `537ed9dadb3bae503ffae9d07b4383ea93c2d61fe571
 Two user-requested parallel read-only agents advised on behavior and validation; neither edited files. The behavior agent reran the focused tests and found no blocking issues after the bounded fixes. That advisory review is separate from the parent's required fresh independent review. Native collaboration supplied no T3 task ID/child thread ID for the requested task-status/archive handshake, so completed native children remain visible; no self-archive or bulk cleanup occurred.
 
 No full/cloud/DB/native/live suite, live entrypoint contract tests, provider calls, `.env`/secret reads, source enrollment, deployment, app launch or browser preview was run. The production command compiled the existing targets; it did not launch them. Parent integration and user visual approval are still required. Draft PR only; no watch or merge.
+
+
+## Parent corrections after independent review
+
+The exact-head independent review requested four P2 fixes. Parent reproduced them with eight new failing cases (the original 16 remained green), then corrected:
+
+1. Offered and controlled-acknowledged preview records are distinct. Declining a later candidate no longer removes cancellation/drop authority over an earlier accepted preview. Escape offers the exact pickup record; the controlled consumer still decides whether to accept that rollback. Tests explicitly acknowledge rollback and cover both intercolumn and intracolumn cases.
+2. Internal hover/drop notifications finish before forwarded consumer callbacks, on every return path. A consumer replacement in onDragEnd therefore has final authority. The same adjacent overwrite was reproduced separately for onDragOver (one RED) and corrected with the same ordering rule. onDragCancel already forwards after rollback.
+3. Item/column handles and asHandle roots compose consumer handlers with sensors. A slotted child executes through Radix composition; consumer handlers run before the sensor and preventDefault blocks activation. Keyboard and secondary-mouse callback tests cover separate, asChild and asHandle paths, plus real sensor activation once.
+4. Nullable IDs use explicit checks. Numeric zero retains overlay content/variant, collision and announcement handling; record column keys are normalized to strings. Numeric-zero item/column pickup and cancellation are covered.
+
+Focused GREEN: 25/25 tests. The complete UI run in this isolated foundation checkout passed 166 tests across 16 files (81.63 seconds). Typecheck and whitespace checks pass. The tests use real dnd-kit sensors with synthetic jsdom geometry; they do not establish browser/native or visual acceptance.
+
+Current adapted source: 38,122 bytes; SHA-256 `5544981a66505e03e9fc608d7e9a6bc1bdcd6309766846bcf1cc60a1fb6e58b4`. The upstream and license bytes are unchanged; provenance records the current adapted digest and all corrections.
+
+Parent production build and 64 artifact fixtures pass. The bounded output audit remains 12 files / 6,673,838 bytes, manifest `537ed9dadb3bae503ffae9d07b4383ea93c2d61fe571639581ca7fb8fa5402b4`, secretAbsenceProven false. Its unchanged output is expected: the unused Kanban export is tree-shaken from the current product renderer. This is not a composed Dice UI board or browser interaction proof.
+
+Parent changes are limited to primitive, focused tests, provenance and this evidence record in the completed author's isolated checkout. No coordinator/held-root/source/model/DB/native/phone/T3/deployment resource was changed. Fresh correction review and user visual approval remain required; no acceptance gate is promoted here.

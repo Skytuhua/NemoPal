@@ -26,8 +26,8 @@
   },
   "adapted": {
     "path": "packages/project-ui/src/ui/kanban.tsx",
-    "bytes": 35476,
-    "sha256": "9621d0ae8831f3a41986d3c803fb10dc6a76d71f7b43ef3f1e3f885f690170b2"
+    "bytes": 38122,
+    "sha256": "5544981a66505e03e9fc608d7e9a6bc1bdcd6309766846bcf1cc60a1fb6e58b4"
   },
   "modifications": [
     "Add upstream attribution and links to this provenance and verbatim MIT license.",
@@ -39,7 +39,11 @@
     "Keep disabled parents authoritative even when a child handle explicitly passes disabled=false.",
     "Suppress board click capture while dragging; retain upstream real mouse sensor post-drag click suppression.",
     "Wrap portal overlay in scoped workspace-ui display:contents element with inert, aria-hidden and pointer-events:none; no global CSS or pet changes.",
-    "Announce valid one-based empty-column insertion position and total."
+    "Announce valid one-based empty-column insertion position and total.",
+    "Track offered and controlled-acknowledged previews separately so declining a later offer retains prior rollback and final-move authority.",
+    "Forward hover and terminal consumer callbacks after internal notifications so a synchronous consumer replacement has final authority.",
+    "Compose consumer sensor handlers before dnd-kit listeners; preventDefault prevents activation. Preserve Slot child composition and asHandle roots.",
+    "Use explicit nullable-ID checks and canonical string record keys; valid numeric-zero IDs retain overlay and collision/announcement behavior."
   ],
   "dependencies": {
     "@dnd-kit/core": "6.3.1",
