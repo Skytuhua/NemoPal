@@ -61,3 +61,32 @@ Exact SHA-256 byte receipts for this implementation:
 2. Run the existing `pnpm test:live:observer` entry only under that authorization. After its safe `enrolled` event, the caller performs ordinary authorized source work elsewhere that independently persists two distinct completed permitted items before the configured deadline. The observer never creates the work or starts/resumes/injects/interrupts/approves a harness turn/tool. No manager/model launch is authorized by this document.
 3. Retain the safe installed-source receipt with both distinct item hashes, actual source/detection timing, observed provenance, pinned adapter version, and confirmed stop. Independently verify installed-process noninterference and cleanup. Unsupported versions, source/schema gaps, no two items, and failed cleanup remain blocked.
 4. Separately complete the authorized real delta -> durable journal -> ingest -> manager interpretation -> evidence-card flow to establish J3, and the remaining native/model/persistence workflow for T10. This test-gate PR alone cannot establish either.
+
+## Parent correction after independent review
+
+The original PR28 head `48f32bc199722ec3db6acc3dd9c0ec55de1e48a7`
+had three independently reproduced defects: injected observed-mode mocks could
+self-select live evidence; an awaited result could win a deadline/timer race;
+and a previously unseen lower same-turn cursor could rewind the next read.
+The parent reproduced all three as assertion failures before editing the gate.
+The hashes and 42-case results above describe that original implementation.
+
+The public injected entry now always returns `synthetic_guard` and
+`liveAcceptance: false`, ignoring attempted extra evidence properties. Only the
+private CLI path selects the installed factory, real clock and live evidence.
+Elapsed bounds use a monotonic clock; wall time is separate and used only for
+source timestamps and detection latency. The exclusive deadline is rechecked
+after awaited probe/baseline/poll reads, during acceptance and before success.
+Cleanup has its own monotonic grace check. A separate cleanup-boundary regression
+first failed, then passed; a forward wall-clock change does not consume the
+elapsed allowance. Same-turn lower offsets and baseline re-entry after progress
+leave the accepted anchor intact. Ordering between opaque different turn IDs
+still relies on the pinned production adapter's sequential anchor validation;
+this gate does not independently order arbitrary turn identifiers.
+
+Parent verification: 48 gate cases; together with the existing consent CLI,
+read-only, cursor, privacy and terminal-turn suites, **6 files / 63 tests PASS**.
+`pnpm typecheck` and `git diff --check` PASS. These are mocked/synthetic checks;
+no database, native GUI, installed Codex process, real source, model, provider or
+J2 execution occurred. No root checkout or local J2 files/processes were changed.
+Fresh correction review remains required before merging this fix into PR28.

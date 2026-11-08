@@ -19,6 +19,7 @@ const batch = (offset: number, observations: Observation[] = [], baseline = fals
 });
 const clock: GateClock = {
   now: () => Date.now(),
+  monotonic: () => performance.now(),
   sleep: (ms, signal) => new Promise<void>((resolve, reject) => {
     if (signal.aborted) { reject(Error('cancelled')); return; }
     const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(Error('cancelled')); };
@@ -42,7 +43,7 @@ function rig() {
   const createObserver = vi.fn(() => observer);
   const abort = new AbortController();
   const run = (settings = env, evidence: 'synthetic_guard' | 'installed_source_observation' = 'synthetic_guard') => runObserverGate(settings, {
-    createObserver, clock, cwd: 'C:\\synthetic-project', signal: abort.signal, evidence,
+    createObserver, clock, cwd: 'C:\\synthetic-project', signal: abort.signal, ...{ evidence },
   });
   return { observation, probe, readDelta, stop, createObserver, abort, run, binding: () => binding };
 }
@@ -50,6 +51,63 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(start); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('SYNTHETIC observer gate; never live acceptance', () => {
+  it('cannot attest a mocked observed payload as an installed live source', async () => {
+    const r = rig(); const result = r.run(env, 'installed_source_observation'); await vi.advanceTimersByTimeAsync(0);
+    const one = r.observation('turn/one', 500), two = r.observation('turn/two', 600);
+    one.provenance.mode = 'observed'; two.provenance.mode = 'observed';
+    r.readDelta.mockResolvedValue(batch(2, [one, two])); await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toMatchObject({ status: 'passed', evidence: 'synthetic_guard', liveAcceptance: false });
+  });
+
+  it('keeps the current anchor when an unseen lower same-turn offset arrives', async () => {
+    const r = rig(); const result = r.run(); await vi.advanceTimersByTimeAsync(0);
+    r.readDelta.mockResolvedValue(batch(5, [r.observation('turn/one', 500)])); await vi.advanceTimersByTimeAsync(1000);
+    r.readDelta.mockResolvedValue(batch(3)); await vi.advanceTimersByTimeAsync(1000);
+    r.readDelta.mockResolvedValue(batch(6, [r.observation('turn/two', 2500)])); await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toMatchObject({ status: 'passed', freshItems: 2 });
+    expect(r.readDelta.mock.calls.at(-1)?.[1]).toEqual(cursor(5));
+  });
+
+  it.each([5000, 5001])('rejects a read at elapsed %i before the deadline timer callback runs', async elapsed => {
+    const tick = clock.monotonic();
+    const r = rig(); const result = r.run(); await vi.advanceTimersByTimeAsync(0);
+    r.readDelta.mockImplementation(async () => {
+      vi.spyOn(clock, 'monotonic').mockReturnValue(tick + elapsed);
+      return batch(2, [r.observation('turn/one', 500), r.observation('turn/two', 600)]);
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toMatchObject({ status: 'blocked', reason: 'no_two_fresh_items', freshItems: 0 });
+  });
+
+  it('keeps elapsed time independent of a forward wall-clock change', async () => {
+    const r = rig(); const result = r.run(); await vi.advanceTimersByTimeAsync(0);
+    r.readDelta.mockImplementation(async () => {
+      vi.setSystemTime(start + 60000);
+      return batch(2, [r.observation('turn/one', 500), r.observation('turn/two', 600)]);
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toMatchObject({ status: 'passed', elapsedMs: 1000, liveAcceptance: false });
+  });
+
+  it('does not re-enter baseline after accepted progress', async () => {
+    const r = rig(); const result = r.run(); await vi.advanceTimersByTimeAsync(0);
+    r.readDelta.mockResolvedValue(batch(5, [r.observation('turn/one', 500)])); await vi.advanceTimersByTimeAsync(1000);
+    r.readDelta.mockResolvedValue(batch(6, [], true)); await vi.advanceTimersByTimeAsync(1000);
+    r.readDelta.mockResolvedValue(batch(7, [r.observation('turn/two', 2500)])); await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toMatchObject({ status: 'passed', freshItems: 2 });
+    expect(r.readDelta.mock.calls.at(-1)?.[1]).toEqual(cursor(5));
+  });
+
+  it('rejects stop settling at the cleanup boundary before its timer callback runs', async () => {
+    const r = rig(); const result = r.run(); await vi.advanceTimersByTimeAsync(0);
+    r.readDelta.mockResolvedValue(batch(2, [r.observation('turn/one', 500), r.observation('turn/two', 600)]));
+    r.stop.mockImplementation(async () => {
+      vi.spyOn(clock, 'monotonic').mockReturnValue(clock.monotonic() + 2000);
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await result).toMatchObject({ status: 'blocked', reason: 'cleanup_failed', cleanup: 'timeout', liveAcceptance: false });
+  });
+
   it('waits for future work after enrollment instead of exhausting immediate reads', async () => {
     const r = rig(); const result = r.run(); await vi.advanceTimersByTimeAsync(0);
     expect(r.readDelta).toHaveBeenCalledTimes(1);
@@ -184,10 +242,10 @@ describe('SYNTHETIC observer gate; never live acceptance', () => {
     expect(await result).toMatchObject({ status: 'blocked', reason: 'cleanup_failed', freshItems: 2, cleanup: 'failed', liveAcceptance: false });
   });
 
-  it.each(['baseline-content', 'foreign-grant', 'wrong-adapter', 'fixture-live', 'import', 'excerpt', 'cursor-identity', 'cursor-birth'] as const)('blocks incompatible %s without leaking content', async mode => {
+  it.each(['baseline-content', 'foreign-grant', 'wrong-adapter', 'import', 'excerpt', 'cursor-identity', 'cursor-birth'] as const)('blocks incompatible %s without leaking content', async mode => {
     const r = rig();
     if (mode === 'baseline-content') r.readDelta.mockImplementation(async input => batch(0, [{ ...r.observation('turn/one', 500), bindingId: input.binding.id }], true));
-    const result = r.run(env, mode === 'fixture-live' ? 'installed_source_observation' : 'synthetic_guard'); await vi.advanceTimersByTimeAsync(0);
+    const result = r.run(); await vi.advanceTimersByTimeAsync(0);
     if (mode !== 'baseline-content') {
       let o = r.observation('turn/one', 500);
       if (mode === 'foreign-grant') o = { ...o, grantRevision: 99 };
