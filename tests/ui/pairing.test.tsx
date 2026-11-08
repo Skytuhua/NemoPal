@@ -260,7 +260,9 @@ test('unmount during pairing ignores late success and never opens workspace', as
 
 test.each([{ development: false, fixture: true }, { development: true, fixture: false }])('missing bridge retains unavailable screen without implicit fixtures: %j', async options => {
   await start(undefined, options);
-  expect(screen.getByRole('heading', { name: 'Desktop capability unavailable' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Open your project workspace' })).toBeVisible();
+  expect(screen.getByText(/This browser window isn’t connected/)).toBeVisible();
+  await userEvent.click(screen.getByText('Connection details'));
   expect(screen.queryByLabelText('Pairing code')).not.toBeInTheDocument();
   if (options.development) expect(screen.getByText(/VITE_DEV_FIXTURES=true/)).toBeVisible();
 });

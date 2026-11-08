@@ -1,38 +1,30 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-07T22:03:00.000Z",
   "title": "Design System: Living Playbooks",
   "extensions": {
-    "motion": [{ "name": "control-transition", "value": "150ms ease-out", "purpose": "Control background feedback; disabled under reduced motion." }],
-    "breakpoints": [{ "name": "compact-desktop", "value": "1100px" }, { "name": "single-surface", "value": "900px" }]
+    "motion": [{ "name": "control-transition", "value": "160ms ease-out", "purpose": "Control feedback only; disabled with reduced motion." }],
+    "breakpoints": [{ "name": "compact-desktop", "value": "1200px" }, { "name": "single-surface", "value": "1000px" }],
+    "focus": [{ "name": "keyboard-focus", "value": "3px solid var(--focus)", "purpose": "Visible focus with 3px offset." }]
   },
   "components": [{
-    "name": "Owner action", "kind": "button", "refersTo": "button", "description": "Native button for explicit owner actions.",
-    "html": "<button class=\"ds-owner-action\">Save document</button>",
-    "css": ".ds-owner-action{font:600 14px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:9px 12px;border:1px solid #a5ada6;border-radius:5px;background:var(--surface);color:var(--ink)}.ds-owner-action:hover{background:#e7ebe6}.ds-owner-action:active{background:#d9e1d8}.ds-owner-action:focus-visible{outline:3px solid var(--focus);outline-offset:3px}"
+    "name": "Primary action", "kind": "button", "refersTo": "button-primary", "description": "The current explicit project action.",
+    "html": "<button class=\"ds-primary\">Accept plan</button>",
+    "css": ".ds-primary{font:600 16px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:10px 12px;border:1px solid #286cde;border-radius:8px;background:#286cde;color:white}.ds-primary:hover{background:#2266d2}.ds-primary:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
   }, {
-    "name": "Project input", "kind": "input", "description": "Native labeled owner text entry.",
-    "html": "<label class=\"ds-input\">Project title<input value=\"Hackathon demo\"></label>",
-    "css": ".ds-input{display:grid;gap:6px;font:600 14px 'Segoe UI',system-ui,sans-serif;color:var(--ink)}.ds-input input{font:inherit;font-weight:400;min-height:44px;padding:9px 12px;border:1px solid #a5ada6;border-radius:5px;background:var(--surface);color:var(--ink)}.ds-input input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}"
+    "name": "Project input", "kind": "input", "description": "Persistent label and native text input.",
+    "html": "<label class=\"ds-input\">Project title<input placeholder=\"e.g. Launch my website\"></label>",
+    "css": ".ds-input{display:grid;gap:8px;font:600 16px 'Segoe UI',system-ui,sans-serif;color:#f1f2f4}.ds-input input{font:inherit;font-weight:400;min-height:44px;padding:10px 12px;border:1px solid #626b79;border-radius:8px;background:#1b1d21;color:#f1f2f4}.ds-input input::placeholder{color:#b0b6c0}.ds-input input:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
   }, {
-    "name": "Narrow navigation", "kind": "nav", "description": "One visible main surface below 900px.",
+    "name": "Narrow navigation", "kind": "nav", "description": "Projects, workspace or manager conversation below 1000px.",
     "html": "<nav class=\"ds-nav\"><button>Projects</button><button aria-pressed=\"true\">Workspace</button><button>Chat</button></nav>",
-    "css": ".ds-nav{display:flex;gap:8px;background:var(--chrome);padding:8px 16px}.ds-nav button{flex:1;font:600 14px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:9px 12px;border:1px solid #a5ada6;border-radius:5px;background:var(--surface);color:var(--ink)}.ds-nav button[aria-pressed=true]{background:var(--ink);color:white}.ds-nav button:hover{background:#e7ebe6;color:var(--ink)}.ds-nav button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}"
-  }, {
-    "name": "Document draft", "kind": "input", "description": "Plain local draft with explicit save.",
-    "html": "<textarea class=\"ds-editor\" aria-label=\"Document draft\" rows=\"4\">Explain the project, then show one real loop.</textarea>",
-    "css": ".ds-editor{display:block;width:100%;font:14px/1.6 'Segoe UI',system-ui,sans-serif;resize:vertical;border:1px solid #a5ada6;border-radius:5px;padding:9px 12px;background:var(--surface);color:var(--ink);caret-color:var(--focus)}.ds-editor:focus-visible{outline:3px solid var(--focus);outline-offset:3px}"
-  }, {
-    "name": "Evidence disclosure", "kind": "custom", "description": "Native expandable provenance and source excerpt.",
-    "html": "<details class=\"ds-evidence\"><summary>Agent reported · Synthetic fixture</summary><p>Source report remains distinct from owner confirmation.</p></details>",
-    "css": ".ds-evidence{font:14px/1.6 'Segoe UI',system-ui,sans-serif;color:var(--ink)}.ds-evidence summary{font-weight:600;min-height:44px;padding:10px 0;cursor:pointer}.ds-evidence summary:hover{background:#e7ebe6}.ds-evidence summary:focus-visible{outline:3px solid var(--focus);outline-offset:3px}"
+    "css": ".ds-nav{display:flex;gap:8px;background:#151619;padding:12px 20px}.ds-nav button{flex:1;min-width:0;overflow-wrap:anywhere;font:600 14px 'Segoe UI',system-ui,sans-serif;min-height:44px;padding:10px 8px;border:1px solid #626b79;border-radius:8px;background:#1b1d21;color:#f1f2f4}.ds-nav button[aria-pressed=true]{background:#2b3442;border-color:#93c2ff}.ds-nav button:focus-visible{outline:3px solid #93c2ff;outline-offset:3px}"
   }],
   "narrative": {
     "northStar": "The project desk",
-    "overview": "Familiar controls and quiet surfaces keep owner work visible. Pet warmth remains local and separate from canonical project evidence.",
-    "keyCharacteristics": ["Majority-width workspace", "Flat neutral chrome", "Native controls", "Explicit capability truth"],
-    "rules": [{ "name": "Capability truth", "body": "Source freshness, cloud connection and Nemotron availability are distinct.", "section": "colors" }],
-    "dos": ["Preserve drafts and focused editors", "Label fixtures", "Keep focus visible"],
-    "donts": ["No decorative colored rails", "No fabricated progress", "No automatic fixture fallback"]
+    "overview": "Calm charcoal surfaces, direct actions and plain language help a first-time project owner find the next useful step.",
+    "keyCharacteristics": ["Readable task-first workspace", "Recognizable project navigation", "Progressive disclosure", "Unchanged approved mouse"],
+    "rules": [{ "name": "Recorded progress", "body": "Green and progress counts describe real task records; unknown stays unknown.", "section": "colors" }, { "name": "Capability truth", "body": "Source permissions, cloud connection and model availability remain distinct.", "section": "components" }],
+    "dos": ["Preserve drafts and focused editors", "Label synthetic mode", "Keep privacy controls directly reachable"],
+    "donts": ["No fabricated metrics or integrations", "No automatic fixture fallback", "No copied board composition"]
   }
 }

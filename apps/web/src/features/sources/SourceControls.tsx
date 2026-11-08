@@ -18,7 +18,7 @@ export function SourceControls({ bridge, snapshot, refresh }: { bridge?: Desktop
     try { await action(); await refresh(); } catch { setStatus('Source operation not confirmed. Inspect source status before retrying.'); } finally { setBusy(false); }
   }
   const observer = capabilities?.sourceObservation;
-  return <details className="source-controls"><summary>Sources & privacy</summary>
+  return <details className="source-controls" id="source-privacy"><summary>Sources & privacy</summary>
     <p>Only an explicitly selected source can be read. Source text and model replies cannot grant consent.</p>
     {!bridge && <p>Source observation unavailable: desktop bridge required.</p>}
     {bridge && <p>{observer?.available ? observer.coverage : observer?.reason ?? 'Checking desktop capability…'}</p>}

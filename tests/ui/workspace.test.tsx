@@ -16,6 +16,8 @@ test('owner accepts the proposed plan and corrects task status without chat', as
   expect(await screen.findByText(/Owner reported/)).toBeVisible();
   expect((await client.getSnapshot(snapshot().project.id)).project.tasks[0]?.ownerOverride).toBe(true);
   expect(screen.getByText(/synthetic data · no live model/)).toBeVisible();
+  expect(screen.getByText('Your manager can’t reply yet')).toBeVisible();
+  await userEvent.click(screen.getByText('Connection details'));
   expect(screen.getByText(/Nemotron unavailable/)).toBeVisible();
 });
 test('a new project has unknown progress and unavailable inference rather than green readiness', async () => {
