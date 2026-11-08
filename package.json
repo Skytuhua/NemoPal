@@ -24,6 +24,7 @@
     "dev:cloud": "tsx apps/cloud/src/main.ts",
     "dev:web": "vite --config apps/web/vite.config.ts",
     "dev:desktop": "tsx scripts/run-desktop.ts",
+    "demo:codex": "tsx scripts/nemopal-codex-demo.ts",
     "build": "tsx scripts/build.ts",
     "package:win": "tsx scripts/verify-live.ts package",
     "package:win:experimental": "tsx scripts/package-desktop-experimental.ts",
