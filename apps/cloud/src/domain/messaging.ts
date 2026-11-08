@@ -21,7 +21,7 @@ export class Messaging {
       const old = (await db.query('SELECT * FROM sendblue_links WHERE owner_id=$1 AND project_id=$2 AND active FOR UPDATE', [principal.ownerId, projectId])).rows;
       for (const row of old) await disableLink(db, row.id);
       const id = randomUUID(), actions = ['message', 'manager', 'reply', ...(envelope.input.notifications ? ['notify'] : [])];
-      await db.query('INSERT INTO sendblue_links(id,owner_id,project_id,account,receiving_line,sender,actions,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [id, principal.ownerId, projectId, config.account, config.line, envelope.input.sender, actions, envelope.input.expiresAt]);
+      await db.query('INSERT INTO sendblue_links(id,owner_id,project_id,account,receiving_line,sender,actions,expires_at,linked_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)', [id, principal.ownerId, projectId, config.account, config.line, envelope.input.sender, actions, envelope.input.expiresAt, this.store.now()]);
       await saveProject(db, project!, this.store.now());
       return { result: { id, revision: 0, expiresAt: envelope.input.expiresAt, actions }, kind: 'project_updated', resourceId: projectId };
     });
@@ -36,7 +36,7 @@ export class Messaging {
       return { result: null, kind: 'project_updated', resourceId: projectId };
     });
   }
-  async accept(body: unknown) {
+  async accept(body: unknown, expectedLinkId?: string) {
     const config = this.store.phoneConfig;
     requireSendblue(config);
     const { message, hash, sender } = parseMessage(body, config);
@@ -47,7 +47,7 @@ export class Messaging {
       return { accepted: true, duplicate: true };
     }
     const row = (await this.store.pool.query('SELECT * FROM sendblue_links WHERE account=$1 AND receiving_line=$2 AND sender=$3 AND active', [config.account, config.line, sender])).rows[0];
-    if (!row) reject(403, 'sendblue_scope', 'Message scope is unavailable.');
+    if (!row || expectedLinkId && row.id !== expectedLinkId) reject(403, 'sendblue_scope', 'Message scope is unavailable.');
     const authority = phoneAuthority(row);
     const operationId = messageOperation(config.account!, `${message.is_outbound}:${message.message_handle}:${message.status}`);
     await this.store.command(authority, '/webhooks/sendblue', { operationId, input: { hash } }, row.project_id, async (db, project) => {

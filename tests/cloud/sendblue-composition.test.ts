@@ -11,6 +11,7 @@ function setup(env: NodeJS.ProcessEnv = {}) {
   const pool = { end: vi.fn(async () => { order.push('pool'); }) } as unknown as Pool;
   const app = { listen: vi.fn(async () => {}), close: vi.fn(async () => { order.push('app'); }) };
   const delivery = { tick: vi.fn(async (_signal: AbortSignal) => {}) };
+  const poll = { tick: vi.fn(async (_signal: AbortSignal) => {}) };
   const stopManager = vi.fn(async () => { order.push('manager'); });
   const stopCheckins = vi.fn(async () => { order.push('checkins'); });
   const dependencies = {
@@ -20,12 +21,34 @@ function setup(env: NodeJS.ProcessEnv = {}) {
     startManager: vi.fn(() => stopManager),
     startCheckins: vi.fn(() => stopCheckins),
     createDelivery: vi.fn((_pool: Pool, _config: SendblueConfig) => delivery),
+    createPoll: vi.fn((_pool: Pool, _config: SendblueConfig) => poll),
     reportError: vi.fn(),
   };
   const start = () => startCloudApplication({ pool, env, listen: { host: 'fixture', port: 1 }, dependencies: dependencies as unknown as CloudDependencies });
-  return { start, env, pool, app, delivery, dependencies, stopManager, stopCheckins, order };
+  return { start, env, pool, app, delivery, poll, dependencies, stopManager, stopCheckins, order };
 }
 afterEach(() => vi.useRealTimers());
+
+it('starts inbound polling only with its explicit opt-in and stops it on shutdown', async () => {
+  const disabled = setup({ ...configured });
+  const one = await disabled.start(); await flush();
+  expect(disabled.dependencies.createPoll).not.toHaveBeenCalled();
+  await one.close();
+  const enabled = setup({ ...configured, NEMOPAL_SENDBLUE_POLL_ENABLED: 'true' });
+  const two = await enabled.start(); await flush();
+  expect(enabled.poll.tick).toHaveBeenCalledOnce();
+  await two.close();
+});
+
+it('does not start delivery when the inbound scan is uncertain', async () => {
+  const s = setup({ ...configured, NEMOPAL_SENDBLUE_POLL_ENABLED: 'true' });
+  s.poll.tick.mockRejectedValueOnce(new Error('synthetic partial page'));
+  const running = await s.start(); await flush();
+  expect(s.poll.tick).toHaveBeenCalledOnce();
+  expect(s.delivery.tick).not.toHaveBeenCalled();
+  expect(s.dependencies.reportError).toHaveBeenCalledOnce();
+  await running.close();
+});
 
 it('captures one disabled configuration for server and manager, and never starts delivery', async () => {
   vi.useFakeTimers();
