@@ -4,7 +4,7 @@ export type SendblueFetch = typeof fetch;
 // Called synchronously immediately after the final database authority guard.
 export function beginSend(config: SendblueConfig, sender: string, text: string, fetcher: SendblueFetch, signal: AbortSignal) {
   signal.throwIfAborted();
-  return fetcher('https://api.sendblue.com/api/send-message', { method: 'POST', redirect: 'error', signal,
+  return fetcher('https://api.sendblue.co/api/send-message', { method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'sb-api-key-id': config.keyId!, 'sb-api-secret-key': config.apiSecret! },
     body: JSON.stringify({ number: sender, from_number: config.line, content: text }) });
 }

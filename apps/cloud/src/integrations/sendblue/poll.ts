@@ -31,8 +31,9 @@ export class SendbluePoll {
     let offset = 0, total: number | undefined;
     while (true) {
       signal.throwIfAborted();
-      const url = new URL('https://api.sendblue.com/api/v2/messages');
-      url.search = new URLSearchParams({ account_email: link.account, sendblue_number: link.receiving_line, from_number: link.sender,
+      const url = new URL('https://api.sendblue.co/api/v2/messages');
+      // Account identity is validated locally; the optional provider account filter fails live requests.
+      url.search = new URLSearchParams({ sendblue_number: link.receiving_line, from_number: link.sender,
         is_outbound: 'false', message_type: 'message', created_at_gte: new Date(link.linked_at).toISOString(), created_at_lte: until.toISOString(),
         order_by: 'createdAt', order_direction: 'asc', limit: '50', offset: String(offset) }).toString();
       const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]);

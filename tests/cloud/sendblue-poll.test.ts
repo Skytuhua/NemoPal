@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { SendbluePoll } from '../../apps/cloud/src/integrations/sendblue/poll';
+import { beginSend } from '../../apps/cloud/src/integrations/sendblue/transport';
 
 const config = { enabled: true, account: 'synthetic@example.invalid', line: '+15550000001', keyId: 'synthetic-key', apiSecret: 'synthetic-secret', signingSecret: 'synthetic-hook' };
 const link = { id: 'link-a', account: config.account, receiving_line: config.line, sender: '+15550000002', linked_at: new Date('2026-11-08T12:00:00Z'), expires_at: new Date('2026-11-08T13:00:00Z') };
@@ -16,8 +17,10 @@ function setup(fetcher: typeof fetch, timeoutMs = 10000) {
 test('polls only the linked conversation, rejects pre-consent messages, and replays through canonical acceptance', async () => {
   const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = new URL(String(url));
-    expect(u.origin + u.pathname).toBe('https://api.sendblue.com/api/v2/messages');
-    expect(Object.fromEntries(u.searchParams)).toMatchObject({ account_email: config.account, sendblue_number: config.line, from_number: link.sender, is_outbound: 'false', created_at_gte: '2026-11-08T12:00:00.000Z' });
+    expect(u.origin + u.pathname).toBe('https://api.sendblue.co/api/v2/messages');
+    expect(Object.fromEntries(u.searchParams)).toMatchObject({ sendblue_number: config.line, from_number: link.sender, is_outbound: 'false', created_at_gte: '2026-11-08T12:00:00.000Z' });
+    expect(u.searchParams.has('account_email')).toBe(false);
+    expect(u.searchParams.get('message_type')).toBe('message');
     expect(new Headers(init?.headers).get('sb-api-key-id')).toBe(config.keyId);
     expect(init?.redirect).toBe('error');
     return response([message('old', 'old', '2026-11-08T11:59:00Z'), message('new')]);
@@ -26,6 +29,13 @@ test('polls only the linked conversation, rejects pre-consent messages, and repl
   await h.poll.tick(new AbortController().signal);
   expect(h.accept).toHaveBeenCalledTimes(1);
   expect(h.accept).toHaveBeenCalledWith(expect.objectContaining({ message_handle: 'new' }), link.id);
+});
+
+test('sends only to the documented Sendblue API host without following redirects', async () => {
+  const fetcher = vi.fn(async () => new Response('{}'));
+  const signal = new AbortController().signal;
+  await beginSend(config, link.sender, 'Synthetic local demo reply', fetcher, signal);
+  expect(fetcher).toHaveBeenCalledWith('https://api.sendblue.co/api/send-message', expect.objectContaining({ method: 'POST', redirect: 'error', signal }));
 });
 
 test('unsupported attachment does not hide a later STOP', async () => {
