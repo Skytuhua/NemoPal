@@ -11,9 +11,15 @@
 .task-board-column[data-column-kind=deferred] .task-board-column-dot { border-style: dashed; }
 .task-board-column-heading > [data-task-count] { color: #b6b6b6; font-size: 13px; font-variant-numeric: tabular-nums; }
 .task-board-column-scroll { flex: 0 1 auto; min-height: 0; padding: 0 7px 7px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #484848 transparent; }
-.task-board .task-board-card { min-width: 0; margin-bottom: 7px; padding: 9px 8px 7px; background: #1b1b1b; border: 1px solid #353535; border-radius: 7px; }
+.task-board .task-board-card { --task-accent: #8eb5f8; min-width: 0; margin-bottom: 7px; padding: 9px 8px 7px; background: #202124; border: 1px solid #414349; border-radius: 7px; }
+.task-board-card[data-task-status=in_progress] { --task-accent: #75c7e8; }
+.task-board-card[data-task-status=blocked] { --task-accent: #f18a7e; }
+.task-board-card[data-task-status=done] { --task-accent: #9bd477; }
+.task-board-card[data-task-status=skipped] { --task-accent: #b4a8c5; }
+.task-board-card::before { content: ''; display: block; width: 36px; height: 5px; margin-bottom: 7px; border-radius: 999px; background: var(--task-accent); }
 .task-board-card:last-child { margin-bottom: 0; }
-.task-board-card:has(.task-board-open[aria-expanded=true]) { border-color: #a4a4a4; background: #242424; }
+.task-board .task-board-card:focus-within, .task-board .task-board-card:has(.task-board-open[aria-expanded=true]) { border-color: #a8c8ff; box-shadow: inset 0 0 0 1px #a8c8ff; }
+@media (hover: hover) { .task-board .task-board-card:hover { border-color: #a8c8ff; box-shadow: inset 0 0 0 1px #a8c8ff; } }
 .task-board-card-heading { display: flex; align-items: flex-start; gap: 6px; }
 .task-board-open { display: block; flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #f1f1f1; text-align: left; font: inherit; font-size: 15px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; cursor: pointer; user-select: text; }
 .task-board-open:hover { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
@@ -24,7 +30,9 @@
 .task-board .task-board-drag-handle:active:not(:disabled) { cursor: grabbing; }
 .task-board .task-board-drag-handle:disabled { color: #656565; cursor: default; }
 .task-board-card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 5px; color: #b9b9b9; font-size: 13px; line-height: 1.5; }
-.task-board-card-meta time { display: inline-flex; align-items: center; gap: 4px; color: #d1c4ad; }
+.task-board-card-meta time { display: inline-flex; align-items: center; gap: 4px; padding: 1px 5px; border-radius: 4px; background: #59431b; color: #ffdd94; }
+.task-board-card[data-task-status=done] .task-board-card-meta time { background: #31522f; color: #c8f2ae; }
+.task-board-card[data-task-status=skipped] .task-board-card-meta time { background: #443c50; color: #e0d5ee; }
 .task-board-card-meta time svg { width: 14px; height: 14px; }
 .task-board-description-icon, .task-board-checklist-count { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .task-board-description-icon svg, .task-board-checklist-count svg { width: 14px; height: 14px; }
@@ -33,8 +41,11 @@
 .task-board-status-trigger:hover:not(:disabled), .task-board-status-trigger[aria-expanded=true] { border-color: #494949; background: #292929; }
 .task-board-status-trigger:disabled { opacity: .55; cursor: default; }
 .task-board-status-icon { width: 17px; height: 17px; flex: none; color: #b5b5b5; }
-.task-board-status-icon[data-status=blocked] { color: #f58a8a; }
-.task-board-status-icon[data-status=done] { color: #b8c9b1; }
+.task-board-status-icon[data-status=todo] { color: #a8c8ff; }
+.task-board-status-icon[data-status=in_progress] { color: #83d6f3; }
+.task-board-status-icon[data-status=blocked] { color: #ff9c91; }
+.task-board-status-icon[data-status=done] { color: #a8e58a; }
+.task-board-status-icon[data-status=skipped] { color: #cfc0e1; }
 .task-board-status-track { opacity: .35; }
 .task-board-status-ring { transform-origin: center; animation: task-board-status-spin 1.1s linear infinite; }
 @keyframes task-board-status-spin { to { transform: rotate(360deg); } }

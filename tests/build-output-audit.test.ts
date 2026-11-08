@@ -246,6 +246,26 @@ for (const change of ['changed', 'appended', 'other-name'] as const) test(`a ${c
   assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
 }));
 
+const boardBackgroundPath = 'apps/web/dist/assets/nemopal-board-background-Test_123.png';
+const approvedBoardBackground = () => readFileSync(new URL('../apps/web/src/app/assets/nemopal-board-background.png', import.meta.url));
+
+test('only the exact approved board background is inventoried as opaque bytes', () => fixture(root => {
+  writeFileSync(join(root, boardBackgroundPath), approvedBoardBackground());
+  const result = auditBuildOutput(root);
+  assert.deepEqual(result.files.find(file => file.path === boardBackgroundPath), {
+    path: boardBackgroundPath, bytes: 1884163,
+    sha256: '04f56117d40fd88e6e7e1650488616b43c73517f5f27302904b841aab3dc4a2f',
+  });
+}));
+
+for (const change of ['changed', 'appended', 'other-name'] as const) test(`a ${change} board background is rejected`, () => fixture(root => {
+  const bytes = Buffer.from(approvedBoardBackground());
+  if (change === 'changed') bytes[100] = bytes[100]! ^ 1;
+  writeFileSync(join(root, change === 'other-name' ? 'apps/web/dist/assets/other-board-Test.png' : boardBackgroundPath),
+    change === 'appended' ? Buffer.concat([bytes, Buffer.from('extra')]) : bytes);
+  assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
+}));
+
 const fontPath = 'apps/web/dist/assets/geist-variable-Test_123.woff2';
 const approvedFont = () => readFileSync(new URL('../apps/web/src/app/fonts/geist-variable.woff2', import.meta.url));
 
