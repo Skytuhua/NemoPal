@@ -1,12 +1,14 @@
 import type { ApiError } from '@living-playbooks/contracts';
 
 export class ClientError extends Error {
+  readonly apiCode?: ApiError['code'];
   readonly retryable?: boolean;
   readonly currentRevision?: number;
   readonly capability?: ApiError['capability'];
-  constructor(public readonly code: string, message: string, public readonly status?: number, metadata?: Pick<ApiError, 'retryable' | 'currentRevision' | 'capability'>) {
+  constructor(public readonly code: string, message: string, public readonly status?: number, metadata?: Pick<ApiError, 'retryable' | 'currentRevision' | 'capability'> & Partial<Pick<ApiError, 'code'>>) {
     super(message);
     this.name = 'ClientError';
+    this.apiCode = metadata?.code;
     this.retryable = metadata?.retryable;
     this.currentRevision = metadata?.currentRevision;
     this.capability = metadata?.capability;
