@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DesktopCapabilitiesSchema, SafeDesktopEventSchema, SourceSelectionPreviewSchema, type DesktopBridge, type DesktopCapabilities, type ExportPolicy, type ProjectSnapshot, type SourceSelectionPreview } from '@living-playbooks/contracts';
+import { DetailIcon, DetailSurface } from '../details/DetailSurface';
+import '../compact-details.css';
 export function SourceControls({ bridge, snapshot, refresh }: { bridge?: DesktopBridge; snapshot: ProjectSnapshot; refresh(): Promise<void> }) {
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(false);
   const [capabilities, setCapabilities] = useState<DesktopCapabilities>(), [preview, setPreview] = useState<SourceSelectionPreview>();
   const [read, setRead] = useState(false), [acknowledge, setAcknowledge] = useState(false), [sharing, setSharing] = useState(false);
   const [policy, setPolicy] = useState<ExportPolicy>('off'), [busy, setBusy] = useState(false), [status, setStatus] = useState('');
@@ -18,7 +22,8 @@ export function SourceControls({ bridge, snapshot, refresh }: { bridge?: Desktop
     try { await action(); await refresh(); } catch { setStatus('Source operation not confirmed. Inspect source status before retrying.'); } finally { setBusy(false); }
   }
   const observer = capabilities?.sourceObservation;
-  return <details className="source-controls"><summary>Sources & privacy</summary>
+  return <details ref={disclosure} className="source-controls" id="source-privacy" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}><summary><DetailIcon kind="shield" />Sources & privacy</summary>
+    <DetailSurface open={open} title="Sources & privacy" closeLabel="Close sources & privacy" onClose={() => { if (disclosure.current) disclosure.current.open = false; setOpen(false); }} className="privacy-detail">
     <p>Only an explicitly selected source can be read. Source text and model replies cannot grant consent.</p>
     {!bridge && <p>Source observation unavailable: desktop bridge required.</p>}
     {bridge && <p>{observer?.available ? observer.coverage : observer?.reason ?? 'Checking desktop capability…'}</p>}
@@ -41,7 +46,7 @@ export function SourceControls({ bridge, snapshot, refresh }: { bridge?: Desktop
       })}>Confirm source consent</button><button disabled={busy} onClick={() => setPreview(undefined)}>Cancel selection</button>
     </fieldset>)}
     {status && <p role="status">{status}</p>}
-    {bridge && <fieldset><legend>Set local pet preferences</legend>
+    {bridge && <details className="pet-preferences"><summary>Desktop pet preferences</summary><fieldset><legend>Set local pet preferences</legend>
       {capabilities?.nativePet.available === false && <p>Pet unavailable: {capabilities.nativePet.reason}</p>}
       <p>Apply replaces the local visibility, focus, motion, and pin settings.</p>
       <label><input type="checkbox" checked={pet.hidden} onChange={event => setPet({ ...pet, hidden: event.target.checked })} />Hide desktop pet</label>
@@ -52,6 +57,7 @@ export function SourceControls({ bridge, snapshot, refresh }: { bridge?: Desktop
         await bridge.setPetPreference({ hidden: pet.hidden, focus: pet.focus, reducedMotion: pet.reducedMotion, pinnedProjectId: pet.pin ? snapshot.project.id : null });
         setStatus('Pet preferences sent to desktop.');
       })}>Apply pet preferences</button>
-    </fieldset>}
+    </fieldset></details>}
+    </DetailSurface>
   </details>;
 }

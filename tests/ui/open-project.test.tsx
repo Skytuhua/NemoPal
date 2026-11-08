@@ -22,10 +22,11 @@ test('pet open-project event selects the requested project and preserves the cur
   const a = snapshot(), b = snapshot(100), client = createFixtureClient({ snapshots: [a, b] });
   const drafts = memoryDrafts(), desktop = events();
   render(<App client={client} drafts={drafts} bridge={desktop.bridge} fixture />);
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), ' Local unsaved text');
   desktop.emit({ type: 'open_project', projectId: b.project.id });
-  await screen.findByRole('heading', { name: 'Second project' });
+  await screen.findByRole('heading', { name: 'Second project', level: 1 });
   expect((await drafts.read(`${a.project.id}:document:${a.documents[0]!.id}`))?.text).toContain('Local unsaved text');
 });
 
@@ -33,12 +34,13 @@ test('pet open-project event cannot discard a draft when storage flush fails', a
   const a = snapshot(), b = snapshot(100), client = createFixtureClient({ snapshots: [a, b] });
   const drafts = memoryDrafts(), desktop = events();
   render(<App client={client} drafts={drafts} bridge={desktop.bridge} fixture />);
+  if (!screen.queryByRole('button', { name: 'Close notes' })) await userEvent.click(await screen.findByRole('button', { name: 'Open notes' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
   await userEvent.type(screen.getByLabelText('Document: Demo notes'), ' Keep this text');
   drafts.flush = async () => { throw new Error('Storage failed'); };
   desktop.emit({ type: 'open_project', projectId: b.project.id });
   await screen.findByText('Draft storage failed. Copy your work before switching projects.');
-  expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Hackathon demo', level: 1 })).toBeVisible();
   expect((screen.getByLabelText('Document: Demo notes') as HTMLTextAreaElement).value).toContain('Keep this text');
 });
 
@@ -46,11 +48,11 @@ test('malformed or unknown-project native events do not fetch or switch projects
   const a = snapshot(), client = createFixtureClient(), desktop = events();
   const read = vi.spyOn(client, 'getSnapshot');
   render(<App client={client} drafts={memoryDrafts()} bridge={desktop.bridge} fixture />);
-  await screen.findByRole('heading', { name: 'Hackathon demo' });
+  await screen.findByRole('heading', { name: 'Hackathon demo', level: 1 });
   const initialReads = read.mock.calls.length;
   desktop.emit({ type: 'open_project', projectId: crypto.randomUUID() });
   desktop.emit({ type: 'open_project', projectId: a.project.id, command: 'execute' });
   await act(async () => {});
   expect(read).toHaveBeenCalledTimes(initialReads);
-  expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Hackathon demo', level: 1 })).toBeVisible();
 });
