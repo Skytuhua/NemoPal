@@ -101,10 +101,14 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
         }
         try {
             const raw = JSON.parse(text) as {
+                model?: string;
                 choices?: {
+                    finish_reason?: string;
                     message?: {
+                        role?: string;
                         tool_calls?: {
                             id: string;
+                            type?: string;
                             function: {
                                 name: string;
                                 arguments: string;
@@ -116,15 +120,18 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
                 }[];
                 id?: string;
             };
-            if (raw.choices?.length !== 1)
+            if (raw.model !== this.settings.model || raw.choices?.length !== 1)
                 throw new Error();
             const message = raw.choices[0]!.message;
-            if (!message || message.refusal)
+            if (!message || message.role !== 'assistant' || message.refusal)
                 throw new Error();
             const requestId = typeof raw.id === 'string' && raw.id.length <= 256 ? { requestId: raw.id } : {};
-            if (message.tool_calls?.length)
+            if (message.tool_calls?.length) {
+                if (raw.choices[0]!.finish_reason !== 'tool_calls' || message.tool_calls.some(call => call.type !== 'function'))
+                    throw new Error();
                 return c.ModelTurnResultSchema.parse({ type: 'tool_calls', calls: message.tool_calls.map(call => ({ id: call.id, name: call.function.name, arguments: JSON.parse(call.function.arguments) })), ...requestId });
-            if (typeof message.content !== 'string')
+            }
+            if (raw.choices[0]!.finish_reason !== 'stop' || typeof message.content !== 'string')
                 throw new Error();
             let proposal:unknown;
             try{proposal=JSON.parse(message.content);}catch{throw new InvalidProposalError();}

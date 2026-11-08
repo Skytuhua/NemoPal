@@ -5,13 +5,40 @@ import type { ManagerProposal } from '@living-playbooks/contracts';
 const settings={baseUrl:'https://synthetic-nemotron.example/v1',model:'owner-selected-nemotron',apiKey:'synthetic-only',callBudget:8,tokenBudget:1000000};
 type Body={tool_choice:unknown;messages:{role:string;content:string}[];response_format?:unknown};
 function requested(body:Body):ManagerProposal{return JSON.parse(body.messages.find(message=>message.role==='user')!.content).requiredProposal;}
-const tool=()=>Response.json({choices:[{message:{tool_calls:[{id:'auto-state',type:'function',function:{name:'read_project_state',arguments:'{}'}}]}}]});
+const tool=()=>Response.json({model:settings.model,choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'auto-state',type:'function',function:{name:'read_project_state',arguments:'{}'}}]}}]});
 function proposal(body:Body){
     const p=requested(body);const result=body.messages.find(message=>message.role==='tool');
     const goal=result?JSON.parse(result.content).project?.goal:undefined;
     return {...p,reply:{text:goal??p.reply.text,observationIds:[]}};
 }
-const content=(value:string)=>Response.json({choices:[{message:{content:value}}]});
+const content=(value:string)=>Response.json({model:settings.model,choices:[{finish_reason:'stop',message:{role:'assistant',content:value}}]});
+
+test.each([
+    ['tool','custom-type'], ['tool','missing-type'], ['tool','user-role'], ['tool','missing-role'],
+    ['tool','filtered'], ['tool','wrong-model'], ['tool','missing-model'],
+    ['proposal','user-role'], ['proposal','truncated'], ['proposal','wrong-model'], ['proposal','missing-model'],
+])('capability probe rejects %s envelope with %s',async(stage,variant)=>{
+    let calls=0;
+    const adapter=new HttpNemotronAdapter(settings,async(_url,init)=>{
+        const body=JSON.parse(init!.body as string) as Body;calls++;
+        const response=calls===1?tool():content(JSON.stringify(proposal(body)));
+        const raw=await response.json() as {model?:string;choices:{finish_reason:string;message:{role?:string;tool_calls?:{type?:string}[]}}[]};
+        if((stage==='tool')===(calls===1)){
+            const choice=raw.choices[0]!;
+            if(variant==='custom-type')choice.message.tool_calls![0]!.type='custom';
+            if(variant==='missing-type')delete choice.message.tool_calls![0]!.type;
+            if(variant==='user-role')choice.message.role='user';
+            if(variant==='missing-role')delete choice.message.role;
+            if(variant==='filtered')choice.finish_reason='content_filter';
+            if(variant==='truncated')choice.finish_reason='length';
+            if(variant==='wrong-model')raw.model='unrequested-model';
+            if(variant==='missing-model')delete raw.model;
+        }
+        return Response.json(raw);
+    });
+    expect((await adapter.probe(new AbortController().signal)).available).toBe(false);
+    expect(calls).toBe(stage==='tool'?1:2);
+});
 
 test('forced-tool success with no automatic tool selection cannot enable inference',async()=>{
     let calls=0;

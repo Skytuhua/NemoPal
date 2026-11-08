@@ -4,10 +4,10 @@ import { HttpNemotronAdapter } from '@living-playbooks/nemotron';
 import type { ModelTurnInput } from '@living-playbooks/contracts';
 const settings = { baseUrl: 'https://synthetic-nemotron.example/v1', model: 'owner-selected-nemotron', apiKey: 'synthetic-test-only', callBudget: 8, tokenBudget: 100000 };
 const input: ModelTurnInput = { projectId: randomUUID(), messages: [{ role: 'user', content: 'Synthetic tool test.' }], remainingModelCalls: 4, remainingToolCalls: 6 };
-const toolMessage = { tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'read_project_state', arguments: '{}' } }] };
+const toolMessage = { role: 'assistant', tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'read_project_state', arguments: '{}' } }] };
 test('HTTP adapter translates an actual function call and tool-result continuation without leaking native formatting', async () => {
     const bodies: Record<string, unknown>[] = [];
-    const fetcher: typeof fetch = async (_url, init) => { bodies.push(JSON.parse(init!.body as string)); return Response.json({ choices: [{ message: toolMessage }] }); };
+    const fetcher: typeof fetch = async (_url, init) => { bodies.push(JSON.parse(init!.body as string)); return Response.json({ model: settings.model, choices: [{ finish_reason: 'tool_calls', message: toolMessage }] }); };
     const adapter = new HttpNemotronAdapter(settings, fetcher);
     const result = await adapter.next(input, new AbortController().signal);
     expect(result).toMatchObject({ type: 'tool_calls', calls: [{ id: 'call-1', name: 'read_project_state', arguments: {} }] });
