@@ -50,10 +50,14 @@ export class T3Service {
     const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new T3Error('pending')), this.timeoutMs); });
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
-  private store<T>(active: Active, operation: () => Promise<T>): Promise<T> {
+  private track<T>(active: Active, operation: () => Promise<T>): Promise<T> {
     const pending = Promise.resolve().then(operation);
     active.operations.add(pending);
     void pending.then(() => active.operations.delete(pending), () => active.operations.delete(pending));
+    return pending;
+  }
+  private store<T>(active: Active, operation: () => Promise<T>): Promise<T> {
+    const pending = this.track(active, operation);
     return this.bounded(pending).catch(error => {
       if (error instanceof T3Error && error.code === 'pending') { active.pending = true; this.close(active); }
       throw error;
@@ -85,8 +89,8 @@ export class T3Service {
       const session = active.session;
       const adapter = new T3Adapter({ ...session, callTool: async (...args) => {
         active.inCall = true;
-        try { return await session.callTool(...args); } finally { active.inCall = false; }
-      } }, () => this.authority(active), this.now);
+        try { return await this.track(active, () => session.callTool(...args)); } finally { active.inCall = false; }
+      } }, () => this.authority(active), this.now, Math.max(5000, this.timeoutMs + 1000));
       if (!adapter.capabilities().observation) throw new T3Error('capability_unavailable');
       active.observer = new T3Observer(context, adapter, this.now, loaded.checkpoint);
       if (active.stopping) throw new T3Error('cancelled');
@@ -109,6 +113,9 @@ export class T3Service {
     if (active.polling) return active.polling;
     const polling = (async () => {
       const observation = await active.observer!.poll(active.stop.signal);
+      // The adapter deadline may abandon an authority or connector read. Keep
+      // it fenced even when the observer converted the error to offline.
+      if (active.operations.size) { active.pending = true; this.close(active); }
       if (active.pending) throw new T3Error('pending');
       if (active.stopping) return undefined;
       if (active.session?.closed) {

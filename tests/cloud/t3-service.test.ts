@@ -58,11 +58,14 @@ it('rejects a selection that does not match the authoritative binding before ope
 it('does not persist an observation when revocation wins during the read', async () => {
   const h = fixture(); let release!: () => void; let entered!: () => void;
   const barrier = new Promise<void>(r => { release = r; }); const readStarted = new Promise<void>(r => { entered = r; });
+  let revoked!: () => void; const revocationDone = new Promise<void>(resolve => { revoked = resolve; });
+  const store = { ...h.store, async revoke(...args: Parameters<T3ServiceStore['revoke']>) { await h.store.revoke(...args); revoked(); } };
   const openSession = async () => { const session = await h.openSession(); const call = session.callTool;
     return { ...session, async callTool(...args: Parameters<typeof call>) { entered(); await barrier; return call(...args); } }; };
-  const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now, intervalMs: 60000 });
+  const service = new T3Service({ enabled: true, store, openSession, now: () => now, intervalMs: 60000 });
   await service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} });
-  const poll = service.poll(); await readStarted; await service.revoke(); release(); await poll;
+  const poll = service.poll().catch(() => undefined); await readStarted; const revoking = service.revoke();
+  await revocationDone; release(); await revoking; await poll;
   expect(h.checkpoint()).toBeUndefined(); expect(h.current().grant.revoked).toBe(true); expect(h.closes()).toBe(1);
 });
 
@@ -200,6 +203,81 @@ it('surfaces a timed out authority read and fences the still-running load', asyn
   expect(service.status()).toBe('pending');
   await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
   release(); await service.stop();
+});
+
+it('fences an authority read abandoned by the adapter deadline before the store deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = fixture(); let hold = false; let reads = 0; let release!: () => void; let entered!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    const store = { ...h.store, async load(...args: Parameters<T3ServiceStore['load']>) {
+      if (hold) { reads++; entered(); await barrier; }
+      return h.store.load(...args);
+    } };
+    const service = new T3Service({ enabled: true, store, openSession: h.openSession, now: () => now + Date.now(), intervalMs: 60000, storeTimeoutMs: 6000 });
+    // Keep the synthetic clock inside the grant lifetime while allowing the observer's throttle to advance.
+    vi.setSystemTime(0);
+    const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+    await service.start(selection, connection); hold = true;
+    const poll = service.poll(); const result = poll.catch(error => error); await waiting;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(await result).toMatchObject({ code: 'pending' });
+    expect(service.status()).toBe('pending');
+    await service.poll();
+    expect(reads).toBe(1);
+    await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+    release(); await service.stop();
+  } finally { vi.useRealTimers(); }
+});
+
+it('fences a post-call authority read that outlives the enclosing adapter deadline', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(0);
+    const h = fixture(); let hold = false; let reads = 0; let release!: () => void; let entered!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    const store = { ...h.store, async load(...args: Parameters<T3ServiceStore['load']>) {
+      if (hold) { reads++; entered(); await barrier; }
+      return h.store.load(...args);
+    } };
+    const openSession = async () => { const session = await h.openSession(); return { ...session,
+      async callTool(...args: Parameters<typeof session.callTool>) {
+        await new Promise(resolve => setTimeout(resolve, 4000)); hold = true; return session.callTool(...args);
+      } }; };
+    const service = new T3Service({ enabled: true, store, openSession, now: () => now + Date.now(), intervalMs: 60000, storeTimeoutMs: 6000 });
+    const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+    await service.start(selection, connection);
+    const result = service.poll().catch(error => error);
+    await vi.advanceTimersByTimeAsync(4000); await waiting;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await result).toMatchObject({ code: 'pending' });
+    await service.poll(); expect(reads).toBe(1);
+    await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+    release(); await service.stop();
+  } finally { vi.useRealTimers(); }
+});
+
+it('fences an abandoned connector read until the connector actually settles', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(0);
+    const h = fixture(); let release!: () => void; let entered!: () => void; let calls = 0;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    const openSession = async () => { const session = await h.openSession(); return { ...session,
+      async callTool(...args: Parameters<typeof session.callTool>) { calls++; entered(); await barrier; return session.callTool(...args); } }; };
+    const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now + Date.now(), intervalMs: 60000, storeTimeoutMs: 6000 });
+    const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+    await service.start(selection, connection);
+    const result = service.poll().catch(error => error); await waiting;
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(await result).toMatchObject({ code: 'pending' });
+    await service.poll(); expect(calls).toBe(1);
+    await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+    release(); await service.stop();
+  } finally { vi.useRealTimers(); }
 });
 
 it('retains terminal session status when a scheduled poll consumes the result', async () => {

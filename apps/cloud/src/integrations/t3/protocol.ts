@@ -23,7 +23,7 @@ export function connectionPreview(endpoint: string) {
 
 export class T3Adapter {
   private readonly environmentId: string;
-  constructor(private readonly client: T3McpClient, readonly authority: T3Authority, readonly now: () => number) {
+  constructor(private readonly client: T3McpClient, readonly authority: T3Authority, readonly now: () => number, private readonly timeoutMs = 5000) {
     connectionPreview(client.configuration.endpoint);
     this.environmentId = parse(id, client.configuration.environmentId);
   }
@@ -37,7 +37,7 @@ export class T3Adapter {
   }
   async guard(context: T3Context, signal: AbortSignal) {
     if (context.grant.environmentId !== this.environmentId) throw new T3Error('invalid_configuration');
-    return deadline(inner => authorized(context, this.authority, this.now, inner), signal);
+    return deadline(inner => authorized(context, this.authority, this.now, inner), signal, this.timeoutMs);
   }
   private async call(context: T3Context, name: T3ToolName, args: Record<string, unknown>, signal: AbortSignal, write = false, expiresAt?: number): Promise<unknown> {
     context = parse(contextSchema, context);
@@ -57,7 +57,7 @@ export class T3Adapter {
         if (!text || text.length > 200000) throw new T3Error('invalid_contract');
         return JSON.parse(text);
       } catch (error) { cancelled(signal); throw error instanceof T3Error ? error : new T3Error('unavailable'); }
-    }, signal);
+    }, signal, this.timeoutMs);
   }
   async read(context: T3Context, cursor: { afterPosition?: number; itemId?: string }, signal: AbortSignal) {
     const bounded = parse(z.object({ afterPosition: z.number().int().nonnegative().optional(), itemId: id.optional() }).strict(), cursor);

@@ -27,7 +27,7 @@ export function cancelled(signal: AbortSignal) { if (signal.aborted) throw new T
 export async function sanitized<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); } catch (error) { throw error instanceof T3Error ? error : new T3Error('unavailable'); }
 }
-export async function deadline<T>(operation: (signal: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<T> {
+export async function deadline<T>(operation: (signal: AbortSignal) => Promise<T>, signal: AbortSignal, timeoutMs = 5000): Promise<T> {
   cancelled(signal);
   const controller = new AbortController();
   const relay = () => controller.abort();
@@ -37,7 +37,7 @@ export async function deadline<T>(operation: (signal: AbortSignal) => Promise<T>
     onAbort = () => reject(new T3Error(signal.aborted ? 'cancelled' : 'unavailable'));
     controller.signal.addEventListener('abort', onAbort, { once: true });
   });
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try { return await Promise.race([operation(controller.signal), aborted]); }
   finally { clearTimeout(timer); signal.removeEventListener('abort', relay); controller.signal.removeEventListener('abort', onAbort); }
 }
