@@ -7,6 +7,7 @@ import { DocumentEditor } from '../features/documents/DocumentEditor';
 import { TaskBoard } from '../features/board/TaskBoard';
 import type { BoardColumnView } from '../features/board/board-view';
 import { createPreviewBoard, reconcilePreviewBoard } from './preview-board';
+import { boardKey, boardStorage, readLocalBoard, reconcileLocalBoard, saveLocalBoard, type LocalBoard } from './local-board-layout';
 import { Chat } from '../features/chat/Chat';
 import { CodexDemo, type CodexDemoHandle, type DemoActivity } from '../features/chat/CodexDemo';
 import { Question } from '../features/checkins/Question';
@@ -31,6 +32,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const shell = useRef<DesktopShellHandle>(null);
   const [inspectedTask, setInspectedTask] = useState<string>();
   const [previewBoards, setPreviewBoards] = useState<Record<string, BoardColumnView[]>>({});
+  const [localBoards, setLocalBoards] = useState<Record<string, LocalBoard>>({});
   const settingsButton = useRef<HTMLButtonElement>(null);
   const titleDraft = useDraft(drafts, 'new-project:title', '', 0), briefDraft = useDraft(drafts, 'new-project:brief', '', 0);
   const pendingCreation = useDraft(drafts, 'new-project:pending', '', 0);
@@ -158,6 +160,11 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const fixtureMode = fixture || snapshot?.connection.mode === 'fixture';
   const taskIdentity = snapshot?.project.tasks.map(task => task.id).sort().join('|') ?? '';
   const previewColumns = useMemo(() => fixtureMode && snapshot ? reconcilePreviewBoard(previewBoards[snapshot.project.id] ?? createPreviewBoard(snapshot.project.tasks), snapshot.project.tasks) : undefined, [fixtureMode, snapshot?.project.id, taskIdentity, previewBoards]);
+  const localBoard = useMemo(() => {
+    if (fixtureMode || !snapshot) return undefined;
+    const { ownerId, id, tasks } = snapshot.project;
+    return reconcileLocalBoard(localBoards[boardKey(ownerId, id)] ?? readLocalBoard(boardStorage(), ownerId, id, tasks), tasks);
+  }, [fixtureMode, snapshot?.project.ownerId, snapshot?.project.id, taskIdentity, localBoards]);
   const disabled = busy || offline || !!error || !snapshot || snapshot.project.status === 'archived';
   const layoutChanged = layout && snapshot && JSON.stringify(layout.panels) !== JSON.stringify(snapshot.project.workspace.panels);
   async function applyLayout() {
@@ -232,8 +239,9 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
           {rejected && <p className="notice" role="status">Layout rejected. Showing the last trusted layout or a plain task checklist.</p>}
           {layoutChanged && <div className="notice"><p>Workspace arrangement update available. Your editor stays in place.</p><p>{snapshot.project.workspace.panels.map(panel => panel.heading).join(' · ')}</p><Button variant="outline" onClick={() => void applyLayout()}>Apply workspace arrangement</Button></div>}
           {snapshot.project.tasks.length === 0 && <p className="empty">No tasks yet. Planning has not produced an accepted task list.</p>}
+          {localBoard && <p role="status">{localBoard.status === 'saved' ? 'Layout saved on this device' : localBoard.status === 'unavailable' ? 'Layout not saved on this device' : 'Layout on this device'}</p>}
           <div className="board-host">
-            <div className="board-content"><TaskBoard key={snapshot.project.id} snapshot={snapshot} store={drafts} saveTaskDetails={saveTaskDetails} reviewTaskDetails={reviewTaskDetails} columns={previewColumns} onColumnsChange={fixtureMode ? next => { if (!disabled && !settingsOpen && activeSnapshot.current === snapshot) setPreviewBoards(current => ({ ...current, [snapshot.project.id]: next })); } : undefined} disabled={disabled || settingsOpen} selectedTaskId={inspectedTask} openTask={openTask} closeTask={() => setInspectedTask(undefined)} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} /></div>
+            <div className="board-content"><TaskBoard key={snapshot.project.id} snapshot={snapshot} store={drafts} saveTaskDetails={saveTaskDetails} reviewTaskDetails={reviewTaskDetails} columns={fixtureMode ? previewColumns : localBoard?.columns} onColumnsChange={next => { if (disabled || settingsOpen || activeSnapshot.current !== snapshot) return; if (fixtureMode) setPreviewBoards(current => ({ ...current, [snapshot.project.id]: next })); else { const { ownerId, id, tasks } = snapshot.project; const board = saveLocalBoard(boardStorage(), ownerId, id, next, tasks); setLocalBoards(current => ({ ...current, [boardKey(ownerId, id)]: board })); } }} disabled={disabled || settingsOpen} selectedTaskId={inspectedTask} openTask={openTask} closeTask={() => setInspectedTask(undefined)} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} /></div>
           </div>
         </>}
       </div>
