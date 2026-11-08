@@ -26,9 +26,9 @@
       "upstreamBytes": 1805,
       "upstreamGitBlobSha1": "709e5fd2f97527364ca1ebf1e8fe82b3f9ca8417",
       "upstreamSha256": "aaf3ea20e8060c75dd86e06fedfca053d49f81071123ba647b5699efcbc010ea",
-      "localSha256": "38288c1fbdec60b626f24a69d7f737a5dc7fc6e5ee4b92287654d21a291a9eaf",
+      "localSha256": "f92cb92ced30be531848c508d471b55bc7e62cfd8d9bf2b526183306b8172db7",
       "adaptations": [
-        "Local cn import. Group and Panel receive minimum-size-zero classes. Default separators consume 8 CSS pixels each (16 total for two handles); className may override. All pointer/keyboard resizing remains react-resizable-panels v4."
+        "Local cn import. Group and Panel receive minimum-size-zero classes. Default separators use explicit 8 CSS pixel dimensions, independent of the root font size (16 total for two handles); className may override. All pointer/keyboard resizing remains react-resizable-panels v4."
       ]
     },
     {
