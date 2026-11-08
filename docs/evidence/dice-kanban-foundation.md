@@ -81,8 +81,19 @@ The exact-head independent review requested four P2 fixes. Parent reproduced the
 
 Focused GREEN: 25/25 tests. The complete UI run in this isolated foundation checkout passed 166 tests across 16 files (81.63 seconds). Typecheck and whitespace checks pass. The tests use real dnd-kit sensors with synthetic jsdom geometry; they do not establish browser/native or visual acceptance.
 
-Current adapted source: 38,122 bytes; SHA-256 `5544981a66505e03e9fc608d7e9a6bc1bdcd6309766846bcf1cc60a1fb6e58b4`. The upstream and license bytes are unchanged; provenance records the current adapted digest and all corrections.
+The author-local correction receipt was 38,122 CRLF bytes, SHA-256 `5544981a66505e03e9fc608d7e9a6bc1bdcd6309766846bcf1cc60a1fb6e58b4`; this was not the committed LF representation. The final LF receipt below supersedes that claim. The upstream and license bytes are unchanged; provenance records the current adapted digest and all corrections.
 
 Parent production build and 64 artifact fixtures pass. The bounded output audit remains 12 files / 6,673,838 bytes, manifest `537ed9dadb3bae503ffae9d07b4383ea93c2d61fe571639581ca7fb8fa5402b4`, secretAbsenceProven false. Its unchanged output is expected: the unused Kanban export is tree-shaken from the current product renderer. This is not a composed Dice UI board or browser interaction proof.
 
 Parent changes are limited to primitive, focused tests, provenance and this evidence record in the completed author's isolated checkout. No coordinator/held-root/source/model/DB/native/phone/T3/deployment resource was changed. Fresh correction review and user visual approval remain required; no acceptance gate is promoted here.
+
+
+## Final primitive-zero and LF receipt correction
+
+Independent recheck confirmed F1/F2/F3 and object-ID zero corrections, then found one remaining P2: a primitive numeric item value `0` was rejected by `if (!activeItem)`. Parent added a tracked primitive 0/1 control pair asserting actual target hover, one immutable preview, and accepted cancel/drop paths. The zero case failed while the one control passed. A separate provenance regression failed against the prior CRLF receipt.
+
+The guard now checks for undefined. Adapted source is recorded as committed/repository-policy LF bytes: 36,926 bytes, SHA-256 `96bfb1f9f6596764acfe50241239595ee3415b1f725141dcf46a9e5f6b23bfb6`. The source and all changed text files are written explicitly as LF; a tracked regression verifies normalized source byte count/hash. Upstream and MIT license receipts are unchanged.
+
+These are focused primitive/source-receipt corrections only. Product Dice composition, physical/browser/native behavior and visual acceptance are not established.
+
+Final focused run: 28/28 PASS; typecheck and whitespace PASS. The earlier 166-test/full-build/artifact results belong to correction 642fec5 and are not relabeled as a new full run.

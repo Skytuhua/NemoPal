@@ -26,8 +26,9 @@
   },
   "adapted": {
     "path": "packages/project-ui/src/ui/kanban.tsx",
-    "bytes": 38122,
-    "sha256": "5544981a66505e03e9fc608d7e9a6bc1bdcd6309766846bcf1cc60a1fb6e58b4"
+    "bytes": 36926,
+    "sha256": "96bfb1f9f6596764acfe50241239595ee3415b1f725141dcf46a9e5f6b23bfb6",
+    "representation": "Git source bytes with LF line endings"
   },
   "modifications": [
     "Add upstream attribution and links to this provenance and verbatim MIT license.",
@@ -43,7 +44,8 @@
     "Track offered and controlled-acknowledged previews separately so declining a later offer retains prior rollback and final-move authority.",
     "Forward hover and terminal consumer callbacks after internal notifications so a synchronous consumer replacement has final authority.",
     "Compose consumer sensor handlers before dnd-kit listeners; preventDefault prevents activation. Preserve Slot child composition and asHandle roots.",
-    "Use explicit nullable-ID checks and canonical string record keys; valid numeric-zero IDs retain overlay and collision/announcement behavior."
+    "Use explicit nullable-ID checks and canonical string record keys; valid numeric-zero IDs retain overlay and collision/announcement behavior.",
+    "Use a presence check for primitive item values, preserving numeric-zero intercolumn previews; source custody records repository-policy LF bytes."
   ],
   "dependencies": {
     "@dnd-kit/core": "6.3.1",

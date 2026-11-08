@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import '@testing-library/jest-dom/vitest';
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -351,4 +353,41 @@ test('consumer replacement from onDragOver supersedes that event preview', async
   await user.keyboard('[Escape]');
   expect(screen.getByTestId('value').textContent).toBe(JSON.stringify(replacement));
   expect(move).not.toHaveBeenCalled();
+});
+
+
+test.each([0, 1])('primitive numeric item %i offers an immutable intercolumn preview and completes both terminal paths', async item => {
+  const initialValue = Object.freeze({ source: Object.freeze([item]), target: Object.freeze([]) }) as unknown as Record<string, number[]>;
+  for (const terminal of ['[Escape]', '[Space]']) {
+    const changes = vi.fn(), moved = vi.fn(), hovered = vi.fn();
+    function PrimitiveFixture() {
+      const [value, setValue] = useState(initialValue);
+      return <><output data-testid="primitive-value">{JSON.stringify(value)}</output><Kanban<number> value={value} onDragOver={hovered} onMove={moved} onValueChange={next => { changes(next); setValue(next); }}><KanbanBoard>{Object.entries(value).map(([id, items]) => <KanbanColumn key={id} value={id} data-column={id}>{items.map(number => <KanbanItem key={number} value={number} data-card={number} data-testid={`primitive-${number}`}><KanbanItemHandle aria-label={`Primitive ${number}`} /></KanbanItem>)}</KanbanColumn>)}</KanbanBoard><KanbanOverlay dropAnimation={null}>{({ value }) => <div data-testid="primitive-overlay">{value}</div>}</KanbanOverlay></Kanban></>;
+    }
+    const view = render(<PrimitiveFixture />), user = userEvent.setup();
+    screen.getByRole('button', { name: `Primitive ${item}` }).focus(); await user.keyboard('[Space][ArrowRight]');
+    expect(hovered.mock.calls.some(([event]) => event.active.id === item && event.over?.id === 'target')).toBe(true);
+    expect(changes).toHaveBeenCalledOnce();
+    expect(changes.mock.calls[0]![0]).toEqual({ source: [], target: [item] });
+    expect(initialValue).toEqual({ source: [item], target: [] });
+    await user.keyboard(terminal);
+    if (terminal === '[Escape]') {
+      expect(changes.mock.calls.at(-1)![0]).toBe(initialValue);
+      expect(screen.getByTestId('primitive-value').textContent).toBe(JSON.stringify(initialValue));
+      expect(moved).not.toHaveBeenCalled();
+    } else {
+      expect(moved).toHaveBeenCalledOnce();
+      expect(moved.mock.calls[0]![0]).toMatchObject({ active: { id: item }, activeIndex: 0, overIndex: 0 });
+      expect(screen.getByTestId('primitive-value').textContent).toBe(JSON.stringify({ source: [], target: [item] }));
+    }
+    view.unmount();
+  }
+});
+
+test('adapted provenance describes repository-policy LF source bytes', () => {
+  const file = 'packages/project-ui/src/ui/kanban.tsx';
+  const source = Buffer.from(readFileSync(file, 'utf8').replaceAll('\r\n', '\n'));
+  const provenance = JSON.parse(readFileSync('packages/project-ui/src/ui/diceui-provenance.json', 'utf8'));
+  expect(provenance.adapted.bytes).toBe(source.length);
+  expect(provenance.adapted.sha256).toBe(createHash('sha256').update(source).digest('hex'));
 });

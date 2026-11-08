@@ -415,7 +415,7 @@ function Kanban<T>(props: KanbanProps<T>) {
           if (activeIndex === -1) return;
 
           const activeItem = activeItems[activeIndex];
-          if (!activeItem) return;
+          if (activeItem === undefined) return;
 
           const overIndex = overItems.findIndex(
             (item) => getItemValue(item) === over.id,
