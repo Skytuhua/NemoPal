@@ -5,6 +5,8 @@ import { transaction } from '../db/transaction';
 import { authorize, reauthorize, type Principal } from '../auth/credentials';
 import { reject, revision } from './errors';
 import { reconcileCheckIns } from '../checkins/reconcile';
+import { actorId, disableLink, isPhone, reauthorizeJob, type JobAuthority } from '../integrations/sendblue/authority';
+import { sendblueConfig, type SendblueConfig } from '../integrations/sendblue/config';
 export async function lockProject(db: PoolClient, id: string, ownerId: string): Promise<c.Project> {
     const row = (await db.query('SELECT * FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [id, ownerId])).rows[0];
     if (!row || row.deleted)
@@ -22,9 +24,9 @@ export async function appendEvent(db: PoolClient, project: c.Project, kind: c.Pr
     const row = (await db.query('INSERT INTO events(owner_id,project_id,data) VALUES($1,$2,$3) RETURNING seq', [project.ownerId, project.id, event])).rows[0];
     return Number(row.seq);
 }
-export async function queueJob(db: PoolClient, project: c.Project, kind: c.ManagerJob['kind'], now: Date, inputMessageId: string | null = null, staleCount = 0, authority?: Principal) {
+export async function queueJob(db: PoolClient, project: c.Project, kind: c.ManagerJob['kind'], now: Date, inputMessageId: string | null = null, staleCount = 0, authority?: JobAuthority) {
     if (kind === 'reflection') {
-        const existing = (await db.query("SELECT id FROM jobs WHERE project_id=$1 AND state IN ('queued','running') AND data->>'kind'='reflection' LIMIT 1", [project.id])).rows[0];
+        const existing = (await db.query("SELECT id FROM jobs WHERE project_id=$1 AND state IN ('queued','running') AND data->>'kind'='reflection' AND ($2::text IS NULL OR data->>'inputMessageId'=$2) LIMIT 1", [project.id, authority && isPhone(authority) ? inputMessageId : null])).rows[0];
         if (existing)
             return existing.id as string;
     }
@@ -40,12 +42,13 @@ export type Mutation<T> = {
     acceptedJob?: string;
 };
 export class Store {
-    constructor(public pool: Pool, public now: () => Date = () => new Date()) { }
+    constructor(public pool: Pool, public now: () => Date = () => new Date(), public phoneConfig: SendblueConfig = sendblueConfig()) { }
     inference: c.ProjectSnapshot['connection']['inference'] = { available: false, reason: 'Live Nemotron capability gate has not passed.' };
-    async command<T>(principal: Principal, path: string, envelope: c.CommandEnvelope<unknown>, projectId: string | null, mutate: (db: PoolClient, project: c.Project | null) => Promise<Mutation<T>>) {
+    async command<T>(principal: JobAuthority, path: string, envelope: c.CommandEnvelope<unknown>, projectId: string | null, mutate: (db: PoolClient, project: c.Project | null) => Promise<Mutation<T>>) {
         const hash = await c.hashCommand(path, envelope);
         return transaction(this.pool, async (db) => {
-            await reauthorize(db, principal, this.now());
+            if (isPhone(principal) && path !== '/webhooks/sendblue') reject(403, 'phone_action', 'Phone action is unavailable.');
+            await reauthorizeJob(db, principal, this.now, projectId, 'message', this.phoneConfig);
             let project: c.Project | null = null;
             if (projectId) {
                 const row = (await db.query('SELECT * FROM projects WHERE id=$1 AND owner_id=$2 FOR UPDATE', [projectId, principal.ownerId])).rows[0];
@@ -54,7 +57,7 @@ export class Store {
                 if (!row.deleted)
                     project = c.ProjectSchema.parse(row.data);
             }
-            const old = (await db.query('SELECT * FROM command_receipts WHERE actor_id=$1 AND operation_id=$2', [principal.deviceId, envelope.operationId])).rows[0];
+            const old = (await db.query('SELECT * FROM command_receipts WHERE actor_id=$1 AND operation_id=$2', [actorId(principal), envelope.operationId])).rows[0];
             if (old) {
                 if (old.request_hash !== hash)
                     reject(409, 'operation_conflict', 'Operation ID was already used with different arguments.');
@@ -64,6 +67,7 @@ export class Store {
             }
             if (projectId && !project)
                 reject(404, 'not_found', 'Project is unavailable.');
+            if (isPhone(principal)) await reauthorizeJob(db, principal, this.now, projectId, 'message', this.phoneConfig);
             const changed = await mutate(db, project);
             if (!project) {
                 const row = (await db.query('SELECT data FROM projects WHERE id=$1', [changed.resourceId])).rows[0];
@@ -73,7 +77,7 @@ export class Store {
             const seq = await appendEvent(db, project, changed.kind, changed.resourceId);
             const receipt: c.CommandReceipt<T> = { operationId: envelope.operationId, requestHash: hash, status: changed.acceptedJob ? 'accepted' : 'completed', result: changed.result, projectRevision: project.revision, eventSequence: seq };
             const response = changed.acceptedJob ? { receipt, jobId: changed.acceptedJob, state: 'queued' } : receipt;
-            await db.query('INSERT INTO command_receipts(actor_id,operation_id,project_id,request_hash,response) VALUES($1,$2,$3,$4,$5)', [principal.deviceId, envelope.operationId, projectId, hash, response]);
+            await db.query('INSERT INTO command_receipts(actor_id,operation_id,project_id,request_hash,response) VALUES($1,$2,$3,$4,$5)', [actorId(principal), envelope.operationId, projectId, hash, response]);
             return response;
         });
     }
@@ -129,13 +133,7 @@ export class Store {
         return this.command(p, path, e, id, async (db, project) => {
             const x = project!;
             revision(x.revision, e.expectedRevision);
-            if (x.status !== 'active')
-                reject(409, 'project_paused', 'Resume this project before requesting inference.');
-            const message: c.ChatMessage = { id: randomUUID(), projectId: id, role: 'owner', text: e.input.text, createdAt: this.now().toISOString(), observationIds: [], operationId: e.operationId };
-            await saveProject(db, x, this.now());
-            const job = await queueJob(db, x, 'owner_message', this.now(), message.id, 0, p);
-            message.jobId = job;
-            await db.query('INSERT INTO messages(id,project_id,data) VALUES($1,$2,$3)', [message.id, id, message]);
+            const { message, job } = await appendOwnerMessage(db, x, e.input.text, e.operationId, this.now(), p);
             return { result: null, kind: 'message_added', resourceId: message.id, acceptedJob: job };
         });
     }
@@ -256,6 +254,9 @@ export class Store {
             revision(x.revision, e.expectedRevision);
             x.epoch++;
             x.revision++;
+            const links = (await db.query('SELECT * FROM sendblue_links WHERE owner_id=$1 AND project_id=$2 AND active FOR UPDATE', [p.ownerId, id])).rows;
+            for (const link of links) await disableLink(db, link.id);
+            await db.query('UPDATE sendblue_outbox SET text=NULL WHERE project_id=$1', [id]);
             await db.query("UPDATE jobs SET state='cancelled',generation=generation+1,lease_expires_at=NULL,data=jsonb_build_object('id',id,'projectId',project_id,'state','cancelled') WHERE project_id=$1", [id]);
             for (const table of ['generated_dependencies', 'checkins', 'messages', 'documents', 'observations', 'source_bindings'])
                 await db.query(`DELETE FROM ${table} WHERE project_id=$1`, [id]);
@@ -296,6 +297,15 @@ export class Store {
             return results;
         });
     }
+}
+export async function appendOwnerMessage(db: PoolClient, project: c.Project, text: string, operationId: string, now: Date, authority: JobAuthority) {
+    if (project.status !== 'active') reject(409, 'project_paused', 'Resume this project before requesting inference.');
+    const message: c.ChatMessage = { id: randomUUID(), projectId: project.id, role: 'owner', text, createdAt: now.toISOString(), observationIds: [], operationId };
+    await saveProject(db, project, now);
+    const job = await queueJob(db, project, 'owner_message', now, message.id, 0, authority);
+    message.jobId = job;
+    await db.query('INSERT INTO messages(id,project_id,data) VALUES($1,$2,$3)', [message.id, project.id, message]);
+    return { message, job };
 }
 export async function snapshotData(db: PoolClient, project: c.Project, now: Date): Promise<c.ProjectSnapshot> {
     for(const q of await reconcileCheckIns(db,project,now,false))

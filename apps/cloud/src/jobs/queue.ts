@@ -2,14 +2,17 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import * as c from '@living-playbooks/contracts';
 import { validateProposal, type ToolReceipt } from '@living-playbooks/nemotron';
-import { reauthorize, type Principal } from '../auth/credentials';
 import { transaction } from '../db/transaction';
 import { lockProject, saveProject, appendEvent, queueJob, snapshotData } from '../domain/store';
 import { scheduleSuggestion } from '../checkins/scheduler';
+import { isPhone, reauthorizeJob, type JobAuthority } from '../integrations/sendblue/authority';
+import { sendblueConfig, type SendblueConfig } from '../integrations/sendblue/config';
+import { enqueueManagerReply } from '../integrations/sendblue/outbox';
+import { DomainError } from '../domain/errors';
 const grants = (sources: c.SourceBinding[]) => sources.filter(s => s.state === 'following' && s.exportPolicy !== 'off').map(s => ({ bindingId: s.id, grantRevision: s.grantRevision })).sort((a, b) => a.bindingId.localeCompare(b.bindingId));
 export async function persistJob(db: PoolClient, job: c.ManagerJob) { await db.query('UPDATE jobs SET data=$2,state=$3,run_after=$4,lease_expires_at=$5,generation=$6 WHERE id=$1', [job.id, job, job.state, job.runAfter, job.leaseExpiresAt, job.leaseGeneration]); }
 export class JobQueue {
-    constructor(public pool: Pool, public now: () => Date = () => new Date()) { }
+    constructor(public pool: Pool, public now: () => Date = () => new Date(), public phoneConfig: SendblueConfig = sendblueConfig()) { }
     async claim(): Promise<c.ManagerJob | null> {
         return transaction(this.pool, async (db) => {
             // The running lease is the durable global slot; serialize its admission across processes.
@@ -19,7 +22,7 @@ export class JobQueue {
             const candidate = (await db.query("SELECT j.id,j.project_id,j.authority,p.owner_id FROM jobs j JOIN projects p ON p.id=j.project_id WHERE NOT p.deleted AND (j.state='queued' AND j.run_after<=$1 OR j.state='running' AND j.lease_expires_at<=$1) ORDER BY CASE WHEN j.state='running' THEN 0 ELSE 1 END,j.run_after,j.id LIMIT 1", [this.now()])).rows[0];
             if (!candidate)
                 return null;
-            const authority = candidate.authority as Principal | null;
+            const authority = candidate.authority as JobAuthority | null;
             if (!authority) {
                 await db.query("UPDATE jobs SET state='failed',data=data || '{\"state\":\"failed\",\"errorClass\":\"authority_unavailable\"}'::jsonb WHERE id=$1 AND state='queued'", [candidate.id]);
                 return null;
@@ -30,7 +33,11 @@ export class JobQueue {
             if (!row || !(row.state === 'queued' && new Date(row.run_after) <= this.now() || row.state === 'running' && new Date(row.lease_expires_at) <= this.now()))
                 return null;
             const job = c.ManagerJobSchema.parse(row.data);
-            const valid = (await db.query('SELECT 1 FROM credentials WHERE id=$1 AND revoked_at IS NULL AND expires_at>$2', [authority.credentialId, this.now()])).rowCount;
+            let valid: number | boolean = false;
+            if (isPhone(authority)) {
+                try { await reauthorizeJob(db, authority, this.now, project.id, 'manager', this.phoneConfig); valid = true; }
+                catch (error) { if (!(error instanceof DomainError)) throw error; }
+            } else valid = Boolean((await db.query('SELECT 1 FROM credentials WHERE id=$1 AND revoked_at IS NULL AND expires_at>$2', [authority.credentialId, this.now()])).rowCount);
             if (!valid || project.status !== 'active' || job.tries >= 2 || job.modelCalls >= 4) {
                 job.state = 'failed';
                 job.errorClass = !valid ? 'authority_unavailable' : project.status !== 'active' ? 'project_paused' : 'retry_exhausted';
@@ -53,22 +60,29 @@ export class JobQueue {
             return job;
         });
     }
-    private async locked<T>(job: c.ManagerJob, work: (db: PoolClient, current: c.ManagerJob, project: c.Project, authority: Principal, staleCount: number) => Promise<T>): Promise<T> {
+    private async locked<T>(job: c.ManagerJob, work: (db: PoolClient, current: c.ManagerJob, project: c.Project, authority: JobAuthority, staleCount: number) => Promise<T>): Promise<T> {
         return transaction(this.pool, async (db) => {
-            const authority = (await db.query('SELECT authority FROM jobs WHERE id=$1', [job.id])).rows[0]?.authority as Principal | undefined;
+            const authority = (await db.query('SELECT authority FROM jobs WHERE id=$1', [job.id])).rows[0]?.authority as JobAuthority | undefined;
             if (!authority)
                 throw new Error('lease_authority');
-            await reauthorize(db, authority, this.now());
+            await reauthorizeJob(db, authority, this.now, job.projectId, 'manager', this.phoneConfig);
             const project = await lockProject(db, job.projectId, authority.ownerId);
             const row = (await db.query('SELECT * FROM jobs WHERE id=$1 FOR UPDATE', [job.id])).rows[0];
             if (!row || row.state !== 'running' || row.generation !== job.leaseGeneration || !row.lease_expires_at || new Date(row.lease_expires_at) <= this.now())
                 throw new Error('lease_lost');
-            return work(db, c.ManagerJobSchema.parse(row.data), project, authority, row.stale_count);
+            const result = await work(db, c.ManagerJobSchema.parse(row.data), project, authority, row.stale_count);
+            if (isPhone(authority)) await reauthorizeJob(db, authority, this.now, project.id, 'manager', this.phoneConfig);
+            return result;
         });
     }
     async context(job: c.ManagerJob): Promise<c.AuthorizedProjectContext> {
         return this.locked(job, async (db, current, project) => {
             const snapshot = await snapshotData(db, project, this.now());
+            if (current.inputMessageId && !snapshot.messages.some(message => message.id === current.inputMessageId)) {
+                const row = (await db.query('SELECT data FROM messages WHERE id=$1 AND project_id=$2', [current.inputMessageId, project.id])).rows[0];
+                if (!row || row.data.role !== 'owner') throw new Error('proposal_stale');
+                snapshot.messages = [c.ChatMessageSchema.parse(row.data), ...snapshot.messages.slice(-199)];
+            }
             const grantVersions = grants(snapshot.sourceBindings);
             if (project.status !== 'active' || project.revision !== current.baseProjectRevision || project.epoch !== current.projectEpoch || c.canonicalJson(grantVersions) !== c.canonicalJson(current.grantVersions))
                 throw new Error('proposal_stale');
@@ -131,7 +145,8 @@ export class JobQueue {
             }
             const message: c.ChatMessage = { id: randomUUID(), projectId: project.id, role: 'manager', text: proposal.reply.text, createdAt: this.now().toISOString(), observationIds: [...new Set([...proposal.reply.observationIds, ...dependencies])], jobId: job.id };
             await db.query('INSERT INTO messages(id,project_id,data) VALUES($1,$2,$3)', [message.id, project.id, message]);
-            if (proposal.questionSuggestion)
+            await enqueueManagerReply(db, project, current, authority, message, this.now, this.phoneConfig);
+            if (proposal.questionSuggestion && !isPhone(authority))
                 await scheduleSuggestion(db, project, proposal, authority, this.now(), dependencies);
             await saveProject(db, project, this.now());
             current.state = 'completed';
