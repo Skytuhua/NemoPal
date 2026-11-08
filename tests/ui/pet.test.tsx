@@ -32,7 +32,7 @@ test('pet identity and local visibility preferences fence foreign questions', as
   const h = harness(); render(<Pet bridge={h.bridge} />); h.emit();
   h.emit({ ...h.event, projectId: snapshot(100).project.id, managerName: 'Second manager' });
   expect(screen.queryByText('Have you recorded the demo?')).not.toBeInTheDocument();
-  expect(screen.getByText('Second manager')).toBeVisible();
+  expect(screen.getByRole('img', { name: /Second manager/ })).toBeVisible();
   h.emit({ ...h.event, preference: { ...h.event.preference, focus: true } });
   expect(screen.queryByText('Have you recorded the demo?')).not.toBeInTheDocument();
   expect(screen.getByText('Focus mode · proactive question hidden')).toBeVisible();

@@ -1,9 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { PetCommandSchema, SafePetEventSchema, type PetBridge, type PetCommand, type PetState, type SafePetEvent } from '@living-playbooks/contracts';
 import { Question } from '../features/checkins/Question';
 import './pet-mouse.css';
+import './pet-speech.css';
 export function Pet({ bridge }: { bridge?: PetBridge }) {
   const [event, setEvent] = useState<SafePetEvent>(), [error, setError] = useState(''), [submitted, setSubmitted] = useState('');
+  const [expanded, setExpanded] = useState(true);
+  const [phase, setPhase] = useState('opening');
+  const [systemReducedMotion, setSystemReducedMotion] = useState(() => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+  const toggle = useRef<HTMLButtonElement>(null), bubbleId = useId();
+  const reducedMotion = systemReducedMotion || !!event?.preference.reducedMotion;
+  useEffect(() => {
+    const media = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!media) return;
+    const change = () => setSystemReducedMotion(media.matches);
+    change(); media.addEventListener('change', change);
+    return () => media.removeEventListener('change', change);
+  }, []);
+  useEffect(() => {
+    if (reducedMotion) { setPhase(expanded ? 'open' : 'closed'); return; }
+    setPhase(expanded ? 'opening' : 'closing');
+    const timer = setTimeout(() => setPhase(expanded ? 'open' : 'closed'), expanded ? 180 : 130);
+    return () => clearTimeout(timer);
+  }, [expanded, reducedMotion, !!event]);
+  function closeBubble() { toggle.current?.focus(); setExpanded(false); }
   const signature = useRef(''), pending = useRef(false), current = useRef<SafePetEvent | undefined>(undefined);
   useEffect(() => bridge?.onEvent(raw => {
     const parsed = SafePetEventSchema.safeParse(raw);
@@ -27,9 +47,17 @@ export function Pet({ bridge }: { bridge?: PetBridge }) {
   const validQuestion = checkIn && checkIn.projectId === event.projectId && ['available', 'presented'].includes(checkIn.state) && Date.parse(checkIn.expiresAt) > Date.now();
   const state: PetState = event.state === 'offline' ? 'offline' : preference.focus || event.state === 'snoozed' ? 'snoozed' : validQuestion ? 'waiting_for_you' : event.state === 'milestone' || event.state === 'reviewing' ? event.state : 'idle';
   const presentation = checkIn ? `${event.projectId}:${checkIn.id}:${checkIn.presentationId}` : '';
-  return <main className="pet-surface" data-reduced-motion={preference.reducedMotion}>
-    {!preference.hidden && <div className={`pet-art pet-mouse state-${state}`} role="img" aria-label={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} />}
-    <div className="pet-bubble"><strong>{event.managerName || 'No project selected'}</strong>
+  return <main className="pet-surface pet-speech" data-reduced-motion={preference.reducedMotion} onKeyDown={e => {
+    if (e.key === 'Escape' && expanded) { e.preventDefault(); e.stopPropagation(); closeBubble(); }
+  }}>
+    <button ref={toggle} className="pet-speech-toggle" aria-label={expanded ? 'Close controls' : 'Open controls'} title={expanded ? 'Close controls' : 'Open controls'} aria-expanded={expanded} aria-controls={bubbleId} onClick={() => expanded ? closeBubble() : setExpanded(true)}>
+      {!preference.hidden && <span className={`pet-art pet-mouse state-${state}`} role="img" aria-label={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} />}
+      {preference.hidden && <span>Pet controls</span>}
+      <svg className="pet-speech-mark" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 5h14v10H10l-5 4V5Z" /></svg>
+    </button>
+    <div id={bubbleId} className="pet-bubble" data-phase={phase} hidden={phase === 'closed'} inert={!expanded} aria-hidden={!expanded}>
+      <div className="pet-speech-body" tabIndex={expanded ? 0 : -1} role="region" aria-label="Pet controls">
+      <fieldset disabled={!expanded}>
       {event.demoTiming && <small>Demo reminder timing</small>}
       {state === 'offline' && <p>Cloud offline · check-in timing unavailable</p>}
       {preference.hidden && <p>Pet hidden</p>}{preference.focus && <p>Focus mode · proactive question hidden</p>}
@@ -43,6 +71,8 @@ export function Pet({ bridge }: { bridge?: PetBridge }) {
       {validQuestion && submitted === presentation && presentation && <p role="status">Submitted · waiting for canonical desktop state</p>}
       {error && <p role="alert">{error}</p>}
       <div className="actions">{event.projectId && <button onClick={() => void invoke({ type: 'openProject', projectId: event.projectId! }).catch(() => setError('Project could not be opened.'))}>Open project</button>}<button onClick={() => void invoke({ type: 'setPreference', preference: { ...preference, hidden: !preference.hidden } }).catch(() => setError('Pet preference not saved.'))}>{preference.hidden ? 'Show pet' : 'Hide pet'}</button><button aria-pressed={preference.focus} onClick={() => void invoke({ type: 'setPreference', preference: { ...preference, focus: !preference.focus } }).catch(() => setError('Pet preference not saved.'))}>Focus mode</button></div>
+      </fieldset>
+      </div>
     </div>
   </main>;
 }
