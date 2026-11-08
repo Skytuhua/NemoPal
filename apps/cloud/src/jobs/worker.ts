@@ -43,17 +43,17 @@ export async function runJob(queue: JobQueue, adapter: c.NemotronAdapter, job: c
 export function startManagerDispatcher(queue: JobQueue, adapter: c.NemotronAdapter | null) {
     const controller = new AbortController();
     let active: Promise<void> | null = null;
-    const tick = async () => { if (!adapter || active || controller.signal.aborted)
-        return; const job = await queue.claim(); if (job) {
-        active = runJob(queue, adapter, job, controller.signal);
-        try {
-            await active;
-        }
-        finally {
-            active = null;
-        }
-    } };
-    const timer = setInterval(() => { void tick().catch(() => { }); }, 15000);
-    void tick().catch(() => { });
-    return async () => { clearInterval(timer); controller.abort(); await active; };
+    const tick = () => {
+        if (!adapter || active || controller.signal.aborted) return;
+        const running = Promise.resolve().then(async () => {
+            if (controller.signal.aborted) return;
+            const job = await queue.claim();
+            if (job && !controller.signal.aborted) await runJob(queue, adapter, job, controller.signal);
+        });
+        active = running;
+        void running.catch(() => {}).finally(() => { if (active === running) active = null; });
+    };
+    const timer = setInterval(tick, 15000);
+    tick();
+    return async () => { clearInterval(timer); controller.abort(); await active?.catch(() => {}); };
 }
