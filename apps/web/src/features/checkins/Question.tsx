@@ -1,19 +1,19 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CheckIn, CheckInAnswer, SnoozeInput } from '@living-playbooks/contracts';
 
-export function Question({ question, disabled = false, compact = false, answer, snooze, cancel, openTask }: { question: CheckIn; disabled?: boolean; compact?: boolean; answer(input: CheckInAnswer): Promise<void>; snooze(input: SnoozeInput): Promise<void>; cancel?: () => Promise<void>; openTask?: () => void }) {
+export function Question({ question, disabled = false, compact = false, conversation = false, answer, snooze, cancel, openTask }: { question: CheckIn; disabled?: boolean; compact?: boolean; conversation?: boolean; answer(input: CheckInAnswer): Promise<void>; snooze(input: SnoozeInput): Promise<void>; cancel?: () => Promise<void>; openTask?: () => void }) {
   const [until, setUntil] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [view, setView] = useState<'primary' | 'read' | 'snooze'>('primary');
   const [discloseText, setDiscloseText] = useState(false);
   const untilId = useId(), dateInput = useRef<HTMLInputElement>(null), fullText = useRef<HTMLParagraphElement>(null);
   const snoozeButton = useRef<HTMLButtonElement>(null), readButton = useRef<HTMLButtonElement>(null), previousView = useRef(view);
   useEffect(() => {
-    if (!compact) return;
+    if (!compact && !conversation) return;
     if (view === 'snooze') dateInput.current?.focus();
     if (view === 'read') fullText.current?.focus();
     if (view === 'primary' && previousView.current !== 'primary') (previousView.current === 'snooze' ? snoozeButton : readButton).current?.focus();
     previousView.current = view;
-  }, [compact, view]);
+  }, [compact, conversation, view]);
   useLayoutEffect(() => {
     const button = readButton.current;
     if (!compact || view !== 'primary' || !button) return;
@@ -34,6 +34,19 @@ export function Question({ question, disabled = false, compact = false, answer, 
     if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) throw new Error('Choose a future time');
     await snooze({ until: date.toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
   }
+  if (conversation) return <div className="pet-chat-question" onKeyDown={event => {
+    if (event.key === 'Escape' && view === 'snooze' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); setView('primary'); }
+  }}>
+    <p className="pet-chat-question-text">{question.question}</p>
+    {!actionable && <small>Question {question.state}{['available', 'presented'].includes(question.state) ? ' · expired' : ''}{question.snoozedUntil ? ` · until ${new Date(question.snoozedUntil).toLocaleString()}` : ''}</small>}
+    {question.answer && <p>Answer saved: {question.answer.kind === 'recorded' ? 'Task marked done' : 'Not yet'}</p>}
+    {actionable && <>
+      <div className="pet-chat-answers"><button disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'recorded' }))}>Mark task done</button><button disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'not_yet' }))}>Not yet</button></div>
+      <button ref={snoozeButton} className="pet-chat-snooze-toggle" aria-label="Snooze options" aria-expanded={view === 'snooze'} disabled={disabled || busy} onClick={() => setView(view === 'snooze' ? 'primary' : 'snooze')}>Snooze question</button>
+      {view === 'snooze' && <div className="pet-chat-snooze"><label htmlFor={untilId}>Snooze until</label><input ref={dateInput} id={untilId} type="datetime-local" value={until} onChange={event => setUntil(event.target.value)} /><button disabled={disabled || busy || !until} onClick={() => void run(submitSnooze)}>Save snooze</button></div>}
+    </>}
+    {busy && <p role="status">Saving answer…</p>}{error && <p role="alert">{error}</p>}
+  </div>;
   if (compact) return <div className="question question-compact" data-view={view} onKeyDown={event => {
     if (event.key === 'Escape' && view !== 'primary') { event.preventDefault(); event.stopPropagation(); setView('primary'); }
   }}>

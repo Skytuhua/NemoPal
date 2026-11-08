@@ -12,7 +12,7 @@ import { syncBuiltinESMExports } from 'node:module';
 const outputs = [
   'apps/cloud/dist/main.js', 'apps/cloud/dist/main.js.map',
   'apps/desktop/dist/main/index.js', 'apps/desktop/dist/main/index.js.map',
-  'apps/desktop/dist/preload/pet.cjs', 'apps/desktop/dist/preload/workspace.cjs',
+  'apps/desktop/dist/preload/pet-chat.cjs', 'apps/desktop/dist/preload/pet.cjs', 'apps/desktop/dist/preload/workspace.cjs',
   'apps/web/dist/assets/favicon-test.svg', 'apps/web/dist/assets/index-test.css',
   'apps/web/dist/assets/index-test.js', 'apps/web/dist/index.html',
 ];
@@ -46,8 +46,8 @@ test('complete outputs produce sorted exact counts and known SHA-256 bytes, with
   const result = auditBuildOutput(root);
   assert.equal(result.status, 'PASS');
   assert.equal(result.secretAbsenceProven, false);
-  assert.equal(result.fileCount, 10);
-  assert.equal(result.totalBytes, 45 + Buffer.byteLength(html));
+  assert.equal(result.fileCount, 11);
+  assert.equal(result.totalBytes, 50 + Buffer.byteLength(html));
   assert.deepEqual(result.files.map(file => file.path), outputs);
   assert.deepEqual(result.files[0], {
     path: outputs[0], bytes: 5,
@@ -56,7 +56,7 @@ test('complete outputs produce sorted exact counts and known SHA-256 bytes, with
   assert.deepEqual(result.roots, [
     { path: 'apps/cloud/dist', fileCount: 2, bytes: 10 },
     { path: 'apps/web/dist', fileCount: 4, bytes: 15 + Buffer.byteLength(html) },
-    { path: 'apps/desktop/dist', fileCount: 4, bytes: 20 },
+    { path: 'apps/desktop/dist', fileCount: 5, bytes: 25 },
   ]);
   assert.match(result.manifestSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(auditBuildOutput(root), result);
@@ -123,7 +123,7 @@ test('HTML references must point to inventoried local assets', () => fixture(roo
 
 test('a non-build sibling is neither inventoried nor read', () => fixture(root => {
   write(root, 'outside/.env', 'nvapi-' + 'SYNTHETIC'.repeat(8));
-  assert.equal(auditBuildOutput(root).fileCount, 10);
+  assert.equal(auditBuildOutput(root).fileCount, 11);
 }));
 
 test('file size and aggregate size are bounded before any content read', () => fixture(root => {
@@ -234,7 +234,7 @@ function approvedSprite() {
 test('the digest-pinned approved mouse PNG is included as opaque bytes', () => fixture(root => {
   writeFileSync(join(root, spritePath), approvedSprite());
   const result = auditBuildOutput(root);
-  assert.equal(result.fileCount, 11);
+  assert.equal(result.fileCount, 12);
   assert.deepEqual(result.files.find(file => file.path === spritePath), { path: spritePath, bytes: 960766,
     sha256: '215aabdb08587e857d675451f6631afbb4c1d5133cae77c310574eea05778e7e' });
 }));
@@ -252,7 +252,7 @@ const approvedFont = () => readFileSync(new URL('../apps/web/src/app/fonts/geist
 test('only the exact reviewed Geist font is inventoried as opaque bytes', () => fixture(root => {
   writeFileSync(join(root, fontPath), approvedFont());
   const result = auditBuildOutput(root);
-  assert.equal(result.fileCount, 11);
+  assert.equal(result.fileCount, 12);
   assert.deepEqual(result.files.find(file => file.path === fontPath), {
     path: fontPath, bytes: 69760,
     sha256: '2ffebe993e969069a9789d15164b7715d42491b5835516c5e3b935d5f81b05f1',
