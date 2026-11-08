@@ -8,7 +8,7 @@ import { TaskBoard } from '../features/board/TaskBoard';
 import type { BoardColumnView } from '../features/board/board-view';
 import { createPreviewBoard, reconcilePreviewBoard } from './preview-board';
 import { Chat } from '../features/chat/Chat';
-import { CodexDemo } from '../features/chat/CodexDemo';
+import { CodexDemo, type CodexDemoHandle, type DemoActivity } from '../features/chat/CodexDemo';
 import { Question } from '../features/checkins/Question';
 import { SourceControls } from '../features/sources/SourceControls';
 import { validateSnapshot } from './snapshots';
@@ -22,8 +22,11 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const [filter, setFilter] = useState(''), [settingsOpen, setSettingsOpen] = useState(false);
   const [chatMode, setChatMode] = useState<'manager' | 'codex'>('manager');
   const codexGuard = useRef(false);
+  const codexDemo = useRef<CodexDemoHandle>(null);
+  const [demoActivity, setDemoActivity] = useState<{ projectId: string; activity: DemoActivity }>();
   const [codexSwitchNotice, setCodexSwitchNotice] = useState('');
   const setCodexGuard = useCallback((blocked: boolean) => { codexGuard.current = blocked; }, []);
+  const reportDemoActivity = useCallback((projectId: string, activity: DemoActivity) => { if (currentId.current === projectId) setDemoActivity({ projectId, activity }); }, []);
   const shell = useRef<DesktopShellHandle>(null);
   const [inspectedTask, setInspectedTask] = useState<string>();
   const [previewBoards, setPreviewBoards] = useState<Record<string, BoardColumnView[]>>({});
@@ -33,6 +36,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const title = titleDraft.draft.text, brief = briefDraft.draft.text;
   const currentId = useRef<string | undefined>(undefined), ticket = useRef(0), activeSnapshot = useRef<ProjectSnapshot | undefined>(undefined), editing = useRef(false);
   const lastLayout = useRef<WorkspaceSpec | undefined>(undefined), live = useRef(true), projectListTicket = useRef(0);
+  const reportDemoActivityForProject = useCallback((activity: DemoActivity) => { if (selected) reportDemoActivity(selected, activity); }, [selected, reportDemoActivity]);
   const heldDocuments = useRef<DocumentDraft[]>([]);
   const detailWrite = useRef<symbol | undefined>(undefined);
   const list = useCallback(async () => {
@@ -65,7 +69,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     setCodexSwitchNotice('');
     currentId.current = id; activeSnapshot.current = undefined; lastLayout.current = undefined; editing.current = false; detailWrite.current = undefined;
     heldDocuments.current = [];
-    setSelected(id); setSnapshot(undefined); setLayout(undefined); setLoading(true); setBusy(false); setError(''); setSettingsOpen(false); shell.current?.showWorkspace(); setInspectedTask(undefined);
+    setDemoActivity(undefined); setSelected(id); setSnapshot(undefined); setLayout(undefined); setLoading(true); setBusy(false); setError(''); setSettingsOpen(false); shell.current?.showWorkspace(); setInspectedTask(undefined);
     await refresh(id);
   }, [drafts, refresh]);
   useEffect(() => {
@@ -235,8 +239,8 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     manager={<div className="chat-surface">{snapshot ? <>
       {codexSwitchNotice && <p role="status">{codexSwitchNotice}</p>}
       {bridge?.startCodexDemo && bridge.sendCodexDemo && bridge.stopCodexDemo && <nav className="chat-mode" aria-label="Conversation"><Button variant="ghost" aria-pressed={chatMode === 'manager'} onClick={() => setChatMode('manager')}>Manager</Button><Button variant="ghost" aria-pressed={chatMode === 'codex'} onClick={() => setChatMode('codex')}>Codex demo</Button></nav>}
-      <div className="chat-mode-content" hidden={chatMode !== 'manager'}><Chat key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} renderCheckIn={renderQuestion} /></div>
-      {bridge?.startCodexDemo && bridge.sendCodexDemo && bridge.stopCodexDemo && <div className="chat-mode-content" hidden={chatMode !== 'codex'}><CodexDemo key={snapshot.project.id} projectId={snapshot.project.id} start={bridge.startCodexDemo} send={bridge.sendCodexDemo} stop={bridge.stopCodexDemo} onGuardChange={setCodexGuard} /></div>}
+      <div className="chat-mode-content" hidden={chatMode !== 'manager'}><Chat key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} renderCheckIn={renderQuestion} demo={demoActivity?.projectId === snapshot.project.id ? demoActivity.activity : undefined} demoRef={codexDemo} /></div>
+      {bridge?.startCodexDemo && bridge.sendCodexDemo && bridge.stopCodexDemo && <div className="chat-mode-content" hidden={chatMode !== 'codex'}><CodexDemo ref={codexDemo} onActivity={reportDemoActivityForProject} key={snapshot.project.id} projectId={snapshot.project.id} start={bridge.startCodexDemo} send={bridge.sendCodexDemo} stop={bridge.stopCodexDemo} onGuardChange={setCodexGuard} /></div>}
     </> : <div className="empty"><h2>Manager chat</h2><p>{loading ? 'Loading…' : 'Choose a project to open its conversation.'}</p></div>}</div>}
   />;
 }

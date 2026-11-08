@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
@@ -74,4 +74,24 @@ test('keeps the Codex conversation on same-project selection and blocks switchin
   expect(await screen.findByText(/clear or copy its draft before switching projects/i)).toBeVisible();
   expect(screen.getByLabelText('Message to Codex')).toHaveValue('keep draft');
   expect(screen.getByRole('heading', { name: 'Hackathon demo' })).toBeVisible();
+});
+
+test('manager forwards to the selected demo and shows its reply in the project', async () => {
+  const a = snapshot(), client = createFixtureClient({ snapshots: [a] }), desktop = events();
+  const send = vi.fn(async ({ text }: { projectId: string; text: string }) => ({ status: 'completed' as const, replies: [`Synthetic: ${text}`] }));
+  desktop.bridge.startCodexDemo = async () => 'started';
+  desktop.bridge.sendCodexDemo = send;
+  desktop.bridge.stopCodexDemo = async () => {};
+  render(<App client={client} drafts={memoryDrafts()} bridge={desktop.bridge} fixture />);
+  await screen.findByRole('heading', { name: 'Hackathon demo' });
+  await userEvent.click(screen.getByRole('button', { name: 'Codex demo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Start Codex demo' }));
+  await screen.findByRole('button', { name: 'Stop demo' });
+  await userEvent.click(screen.getByRole('button', { name: 'Manager' }));
+  const input = screen.getByLabelText('Message to Nemo');
+  await waitFor(() => expect(input).toBeEnabled());
+  await userEvent.type(input, 'Inspect this project');
+  await userEvent.click(screen.getByRole('button', { name: 'Send request to Codex demo' }));
+  expect(await within(screen.getByRole('log', { name: 'Selected manager conversation' })).findByText('Synthetic: Inspect this project')).toBeVisible();
+  expect(send).toHaveBeenCalledExactlyOnceWith({ projectId: a.project.id, text: 'Inspect this project' });
 });
