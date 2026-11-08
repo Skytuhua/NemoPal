@@ -19,8 +19,14 @@ test('uncertain operation is durably written before dispatch and restored verbat
   expect(ownerB.pending).toBeUndefined();
 });
 test('failed durable pending write prevents sending rather than silently losing operation identity', async () => {
-  const store = memoryDrafts(); store.write = async () => { throw Error('Synthetic disk unavailable'); };
+  const store = memoryDrafts(), write = store.write; let failing = true;
+  store.write = async (key, value) => { if (failing) throw Error('Synthetic disk unavailable'); await write(key, value); };
   const session = new PetChatSession(store, 'synthetic-owner-project'); await session.load();
   await expect(session.prepare({ text: 'Keep me', baseRevision: 1 }, 0)).rejects.toThrow();
-  expect(session.pending).toBeUndefined();
+  const original = session.pending;
+  expect(original?.command.input.text).toBe('Keep me');
+  failing = false;
+  await session.persistPending();
+  const reload = new PetChatSession(store, 'synthetic-owner-project'); await reload.load();
+  expect(reload.pending).toEqual(original);
 });

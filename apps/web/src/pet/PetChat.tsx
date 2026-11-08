@@ -39,7 +39,7 @@ export function PetChat({ bridge, store: suppliedStore }: { bridge?: PetChatBrid
       let succeeded = true;
       try {
         await operations.settle();
-        try { await store.flush(); } catch { await retryDraft.current?.(); await store.flush(); }
+        try { await store.flush(); } catch { await retryDraft.current?.(); await store.retryFailed?.(); await store.flush(); }
       } catch { succeeded = false; }
       if (active && latest.current?.contextId === contextId) await bridge.invoke({ type: 'flushed', contextId, flushId, succeeded }).catch(() => {});
     })();
@@ -60,16 +60,23 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
   const conversation = state.conversation;
   const session = useMemo(() => new PetChatSession(store, conversation?.draftScope ?? 'unavailable'), [store, conversation?.draftScope]);
   const failedDraftWrite = useRef(false);
-  const draftStore = useMemo<DraftStore>(() => ({
-    ...store,
-    async write(key, value) { try { await store.write(key, value); failedDraftWrite.current = false; } catch (error) { failedDraftWrite.current = true; throw error; } },
-    async remove(key) { await store.remove(key); failedDraftWrite.current = false; },
-  }), [store]);
+  const draftStore = useMemo<DraftStore>(() => {
+    let sequence = 0;
+    return {
+      ...store,
+      async write(key, value) {
+        const operation = ++sequence;
+        try { await store.write(key, value); if (sequence === operation) failedDraftWrite.current = false; }
+        catch (error) { if (sequence === operation) failedDraftWrite.current = true; throw error; }
+      },
+      async remove(key) { ++sequence; failedDraftWrite.current = false; await store.remove(key); },
+    };
+  }, [store]);
   const local = useDraft(draftStore, session.draftKey, '', 0);
   useEffect(() => {
     const retry = async () => {
       if (!failedDraftWrite.current || !local.ready) return;
-      await draftStore.write(session.draftKey, local.current.current);
+      await local.retry();
     };
     retryDraft.current = retry;
     return () => { if (retryDraft.current === retry) retryDraft.current = undefined; };
@@ -125,7 +132,8 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     sending.current = true; setBusy(true); setError(''); setStatus('');
     let operation: PendingPetMessage | undefined;
     try {
-      operation = retry ? session.pending : await session.prepare(local.current.current, context.conversation.projectRevision);
+      if (retry) { operation = session.pending; await session.persistPending(); }
+      else operation = await session.prepare(local.current.current, context.conversation.projectRevision);
       if (!operation) throw Error('Pending message unavailable');
       setPending(operation);
       if (current()?.contextId !== context.contextId || !current()?.visible) return;

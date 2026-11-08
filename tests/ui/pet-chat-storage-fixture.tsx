@@ -11,5 +11,6 @@ let listener: (state: PetChatState) => void = () => {};
 const acknowledgements: unknown[] = [];
 const bridge: PetChatBridge = { read: async () => initial, invoke: async input => { acknowledgements.push(input); return undefined; }, onEvent(fn) { listener = fn; return () => {}; } };
 const element = document.createElement('div'); document.body.replaceChildren(element);
-createRoot(element).render(<PetChat bridge={bridge} store={createDraftStore()} />);
-Object.assign(window, { petStorageTest: { initial, acknowledgements, emit: (value: PetChatState) => listener(value), read: () => createDraftStore().read('pet-chat:synthetic-owner-project:draft') } });
+const store = createDraftStore();
+createRoot(element).render(<PetChat bridge={bridge} store={store} />);
+Object.assign(window, { petStorageTest: { initial, acknowledgements, store, emit: (value: PetChatState) => listener(value), read: () => createDraftStore().read('pet-chat:synthetic-owner-project:draft') } });

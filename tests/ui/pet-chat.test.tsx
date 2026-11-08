@@ -151,6 +151,28 @@ test('quit flush reports only a bounded acknowledgement through the restricted b
   await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
 });
 
+test('a failed pending write never dispatches until the same envelope is durable', async () => {
+  const store = memoryDrafts(), write = store.write; let failing = true;
+  store.write = async (key, value) => { if (failing && key.endsWith(':pending')) throw Error('disk full'); await write(key, value); };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Keep the same envelope' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await screen.findByRole('alert');
+  expect(h.invoke).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same request' }));
+  await screen.findByText(/not confirmed/i);
+  expect(h.invoke).not.toHaveBeenCalled();
+  failing = false;
+  h.invoke.mockRejectedValueOnce(Error('synthetic uncertain result'));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same request' }));
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledOnce());
+  const sent = h.invoke.mock.calls[0]![0];
+  if (sent.type !== 'send') throw Error('Expected send');
+  const saved = await store.read('pet-chat:synthetic-owner-project:draft:pending');
+  expect(JSON.parse(saved!.text).command).toEqual(sent.command);
+});
+
 test('explicitly resolving an uncertain stale request preserves the draft and never resends it', async () => {
   const store = memoryDrafts(), h = harness(state(), store);
   const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
