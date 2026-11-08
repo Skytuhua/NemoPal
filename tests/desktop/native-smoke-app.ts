@@ -48,7 +48,7 @@ async function run() { try {
   assert(workAreas.some(a => x >= a.x && y >= a.y && x + 240 <= a.x + a.width && y + 280 <= a.y + a.height));
   let preference = { hidden: false, focus: false, reducedMotion: true, pinnedProjectId: null };
   let ignoreMouse = false;
-  const tray = createCompanionTray({ preference: () => preference, open: () => windows.workspace.show(), setPreference: async input => { preference = { ...input, pinnedProjectId: null }; if (input.hidden) windows.pet.hide(); else windows.pet.showInactive(); }, clickThrough: value => { ignoreMouse = value; windows.pet.setIgnoreMouseEvents(value, { forward: true }); }, quit: () => { void lifetime.quit(); }, error: () => { throw Error('Tray failure'); } });
+  const tray = createCompanionTray({ preference: () => preference, open: () => windows.workspace.show(), setPreference: async input => { preference = { ...input, pinnedProjectId: null }; if (input.hidden) windows.pet.hide(); else windows.pet.showInactive(); }, clickThrough: value => { ignoreMouse = value; windows.pet.setIgnoreMouseEvents(value, { forward: true }); }, withdrawSources: async () => {}, quit: () => { void lifetime.quit(); }, error: () => { throw Error('Tray failure'); } });
   console.log('stage tray-controls');
   const workspaceShown = once(windows.workspace, 'show'); tray.menu.getMenuItemById('open')!.click(); await workspaceShown; await nextNativeTurn(); assert(windows.workspace.isVisible());
   const workspaceHidden = once(windows.workspace, 'hide'); windows.workspace.close(); await workspaceHidden; assert(!windows.workspace.isVisible()); assert(windows.pet.isVisible());

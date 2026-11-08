@@ -3,10 +3,12 @@ import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { IdSchema, IngestObservationsInputSchema, LIMITS, LocalBindingSchema, ObservationBatchSchema, PetPreferenceSchema, SourceCursorSchema, type LocalBinding, type LocalStore, type ObservationBatch, type PendingUpload, type PetPreference, type SourceCursor } from '@living-playbooks/contracts';
+import { ReceivingIdentitySchema, type ReceivingIdentity } from './consent';
 
 const SourceCommand = z.strictObject({ id: IdSchema, operationId: IdSchema, bindingId: IdSchema, grantRevision: z.number().int().nonnegative(), kind: z.enum(['pause', 'revoke']) });
 const Upload = z.strictObject({ id: IdSchema, operationId: IdSchema, bindingId: IdSchema, grantRevision: z.number().int().nonnegative(), input: IngestObservationsInputSchema });
-const Entry = z.strictObject({ local: LocalBindingSchema, cursor: SourceCursorSchema.nullable(), cloud: z.boolean() });
+// Optional preserves legacy checksums. Absence never supplies receiving consent.
+const Entry = z.strictObject({ local: LocalBindingSchema, cursor: SourceCursorSchema.nullable(), cloud: z.boolean(), receivingConsent: z.strictObject({ grantRevision: z.number().int().nonnegative(), identity: ReceivingIdentitySchema }).optional() });
 const Journal = z.strictObject({ version: z.literal(1), entries: z.array(Entry).max(10), uploads: z.array(Upload).max(LIMITS.spoolCount), sourceCommands: z.array(SourceCommand).max(20), presentations: z.array(z.strictObject({ checkInId: IdSchema, presentationId: IdSchema })).max(2000), preference: PetPreferenceSchema, position: z.strictObject({ x: z.number().finite(), y: z.number().finite() }).nullable() });
 type Data = z.infer<typeof Journal>;
 const checksum = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -58,13 +60,25 @@ export class JournalStore implements LocalStore {
   binding(id: string): LocalBinding | undefined { const value = this.data.entries.find(entry => entry.local.binding.id === id)?.local; return value ? structuredClone(value) : undefined; }
   cursor(id: string): SourceCursor | null { return structuredClone(this.data.entries.find(entry => entry.local.binding.id === id)?.cursor ?? null); }
   isFollowing(id: string): boolean { return !this.fenced.has(id) && this.binding(id)?.binding.state === 'following'; }
-  async putBinding(input: LocalBinding, cloud: boolean): Promise<void> {
+  async putBinding(input: LocalBinding, cloud: boolean, receiving: ReceivingIdentity | null = null, withdrawal?: 'pause' | 'revoke'): Promise<void> {
     const local = LocalBindingSchema.parse(input);
+    const grantRevision = local.binding.grantRevision;
+    if (withdrawal) {
+      this.fence(local.binding.id);
+      local.binding = withdrawal === 'revoke' ? { ...local.binding, state: 'revoked', grantRevision: grantRevision + 1, exportPolicy: 'off' } : { ...local.binding, state: 'paused' };
+    }
+    const receivingConsent = cloud && local.binding.exportPolicy !== 'off' && receiving ? { grantRevision: local.binding.grantRevision, identity: ReceivingIdentitySchema.parse(receiving) } : undefined;
     await this.mutate(data => {
       if (data.entries.some(entry => entry.local.binding.id === local.binding.id)) throw Error('Source already enrolled');
-      if (data.entries.some(entry => entry.local.binding.state !== 'revoked')) throw Error('Only one selected source is supported');
-      data.entries.push({ local, cursor: null, cloud });
+      if (local.binding.state !== 'revoked' && data.entries.some(entry => entry.local.binding.state !== 'revoked')) throw Error('Only one selected source is supported');
+      data.entries.push({ local, cursor: null, cloud, ...(receivingConsent ? { receivingConsent } : {}) });
+      if (cloud && withdrawal) data.sourceCommands.push({ id: randomUUID(), operationId: randomUUID(), bindingId: local.binding.id, grantRevision, kind: withdrawal });
     });
+  }
+  canExport(bindingId: string, grantRevision: number, current: ReceivingIdentity | null): boolean {
+    const consent = this.data.entries.find(entry => entry.local.binding.id === bindingId)?.receivingConsent;
+    const identity = ReceivingIdentitySchema.safeParse(current);
+    return Boolean(consent && consent.grantRevision === grantRevision && identity.success && consent.identity.cloudOrigin === identity.data.cloudOrigin && consent.identity.modelEndpoint === identity.data.modelEndpoint && consent.identity.disclosure === identity.data.disclosure);
   }
   async commitObservationBatch(bindingId: string, expectedCursor: SourceCursor | null, input: ObservationBatch): Promise<void> {
     const batch = ObservationBatchSchema.parse(input);

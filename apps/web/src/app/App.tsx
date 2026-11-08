@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { commandEnvelopeSchema, CreateProjectInputSchema, ProjectSummarySchema, SafeDesktopEventSchema, type DesktopBridge, type DocumentDraft, type OwnerAction, type PlaybooksClient, type ProjectSnapshot, type ProjectSummary, type WorkspaceSpec } from '@living-playbooks/contracts';
+import { commandEnvelopeSchema, CreateProjectInputSchema, ProjectSummarySchema, SafeDesktopEventSchema, type CheckIn, type DesktopBridge, type DocumentDraft, type OwnerAction, type PlaybooksClient, type ProjectSnapshot, type ProjectSummary, type WorkspaceSpec } from '@living-playbooks/contracts';
 import { WorkspaceCatalog } from '@living-playbooks/project-ui';
 import type { DraftStore } from '../features/documents/drafts';
 import { DocumentEditor } from '../features/documents/DocumentEditor';
@@ -72,7 +72,11 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     const result = SafeDesktopEventSchema.safeParse(raw);
     if (result.success && result.data.type === 'connection') setConnected(result.data.connected);
     if (result.success && result.data.type === 'source_state' && result.data.binding.projectId === currentId.current) void refresh();
-  }), [bridge, refresh]);
+    if (result.success && result.data.type === 'open_project') {
+      const projectId = result.data.projectId;
+      if (projects.some(project => project.id === projectId)) void select(projectId);
+    }
+  }), [bridge, refresh, select, projects]);
   async function action(input: OwnerAction) {
     const record = activeSnapshot.current;
     if (!record || busy) return;
@@ -106,6 +110,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const disabled = busy || offline || !!error || !snapshot || snapshot.project.status === 'archived';
   const layoutChanged = layout && snapshot && JSON.stringify(layout.panels) !== JSON.stringify(snapshot.project.workspace.panels);
   const needsTaskInspector = inspectedTask && snapshot?.project.tasks.some(task => task.id === inspectedTask) && !layout?.panels.some(panel => panel.type === 'checklist' && panel.taskIds.includes(inspectedTask));
+  const inboxQuestions = snapshot?.checkIns.filter(record => !layout?.panels.some(panel => panel.type === 'question_card' && panel.checkInId === record.id)) ?? [];
   async function applyLayout() {
     const record = activeSnapshot.current;
     if (!record) return;
@@ -120,6 +125,9 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     if (!record?.project.tasks.some(task => task.id === id)) return;
     setSurface('Workspace'); setInspectedTask(id);
     requestAnimationFrame(() => { if (currentId.current === record.project.id) document.getElementById(`task-${id}`)?.focus(); });
+  }
+  function renderQuestion(record: CheckIn) {
+    return <Question key={record.id} question={record} disabled={disabled || snapshot?.project.status === 'paused'} answer={async input => { await client.answerCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(record.projectId); }} snooze={async input => { await client.snoozeCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(record.projectId); }} cancel={async () => { await client.cancelCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input: {} }); await refresh(record.projectId); }} openTask={() => openTask(record.taskId)} />;
   }
   return <div className="app-shell" data-surface={surface}>
     <a className="skip-link" href="#workspace">Skip to workspace</a>
@@ -146,10 +154,11 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
             const canonical = snapshot.documents.find(item => item.id === id), record = canonical ?? heldDocuments.current.find(item => item.id === id);
             return record ? <Fragment key={id}><DocumentEditor document={record} heading={heading} client={client} store={drafts} disabled={disabled || !canonical} refresh={() => refresh(snapshot.project.id)} />{!canonical && <p role="status">Document removed from the current workspace. Your local editor is retained until you apply the arrangement; saving is unavailable.</p>}</Fragment> : <p>Document unavailable. Your local copy is preserved.</p>;
           }}
-          question={record => <Question key={record.id} question={record} disabled={disabled || snapshot.project.status === 'paused'} answer={async input => { await client.answerCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(snapshot.project.id); }} snooze={async input => { await client.snoozeCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(snapshot.project.id); }} cancel={async () => { await client.cancelCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input: {} }); await refresh(snapshot.project.id); }} openTask={() => openTask(record.taskId)} />}
+          question={renderQuestion}
         />
         {needsTaskInspector && <WorkspaceCatalog snapshot={snapshot} panels={[{ id: inspectorId, type: 'checklist', heading: 'Selected task', taskIds: [inspectedTask!] }]} disabled={disabled} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} document={() => null} question={() => null} openTask={openTask} />}
         <SourceControls key={snapshot.project.id} bridge={bridge} snapshot={snapshot} refresh={() => refresh(snapshot.project.id)} />
+        {inboxQuestions.length > 0 && <section aria-label="Project questions"><h2>Questions</h2>{inboxQuestions.map(renderQuestion)}</section>}
       </>}
     </main>
     <aside className="chat-surface" aria-label="Manager chat">{snapshot ? <Chat key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} /> : <div className="empty"><h2>Manager chat</h2><p>{loading ? 'Loading selected manager…' : 'Select a project to open its conversation.'}</p></div>}</aside>

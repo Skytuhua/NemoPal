@@ -59,12 +59,12 @@ export class AppServerObserver implements CodexObserver {
       const turn = turns[t]!;
       let offset = t === start && anchor.turn !== null ? cursor!.offset : 0;
       if (offset > turn.items.length || (t === start && anchor.turn !== null && prefixDigest(turn.items.slice(0, offset), anchor.baseline) !== anchor.prefix)) throw Error('Source history truncated or prefix changed');
-      if (turn.status !== 'completed') break;
+      if (turn.status === 'inProgress') break;
       const seen = new Set(turn.items.slice(0, offset).map(item => String(item.id)));
       while (offset < turn.items.length && observations.length < 20) {
         const item = turn.items[offset++]!;
         if (!seen.has(String(item.id))) {
-          const observation = normalizeItem(item, turn.id, turn.completedAt, binding, this.options.mode, now);
+          const observation = normalizeItem(item, turn.id, turn.completedAt, binding, this.options.mode, now, turn.status !== 'completed');
           if (observation) observations.push(observation);
           seen.add(String(item.id));
         }
@@ -72,7 +72,7 @@ export class AppServerObserver implements CodexObserver {
       next = makeCursor(thread.id, birth, turn.id, turn.items, offset);
       if (observations.length >= 20) break;
     }
-    return ObservationBatchSchema.parse({ observations, nextCursor: next, mode: 'incremental_history', lastObservedAt: observations.length ? now : null, coverage: 'Completed persisted history in latest 20 turns; hidden reasoning, tool output, diffs and attachments excluded. Secret filtering is best effort.' });
+    return ObservationBatchSchema.parse({ observations, nextCursor: next, mode: 'incremental_history', lastObservedAt: observations.length ? now : null, coverage: 'Completed persisted history in latest 20 turns. Failed/interrupted boundaries retain explicitly completed messages and terminal command metadata; unfinished items are excluded. Hidden reasoning, tool output, diffs and attachments excluded. Secret filtering is best effort.' });
   }
   async stop(bindingId: string): Promise<void> { this.stopped.add(bindingId); await this.options.close?.(); }
 }

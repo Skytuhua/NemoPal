@@ -38,4 +38,10 @@ Observation kinds must match metadata and evidence labels. Only completed visibl
 
 ## Changes after freeze
 
+### IPC v1.1: explicit project navigation
+
+`SafeDesktopEvent` adds `{ type: 'open_project', projectId }` so a trusted native pet Open action can select its project in the workspace. Main must emit it only for its authorized project; this event grants no cloud or native authority. The renderer rejects extra fields and invalid IDs, requires the project in its authorized list, and uses the existing draft-flushing selection path. A failed flush leaves the current project and text in place. `goldenOpenProjectEvent` covers the additive fixture. There is no HTTP, stored record, or client signature migration. Desktop producers and the workspace consumer must join this contract commit before native acceptance; old producers remain compatible but cannot request project navigation.
+
+The visible Electron application launcher uses `windowsHide: false`; hidden background helpers are separate. Lane B reported that hiding this process prevented a visible workspace despite a show event. This integration correction still needs a joined native check; schema/jsdom tests do not establish Windows focus or tray acceptance.
+
 Send Lead the smallest schema-change request: affected DTO/fields, consumers, reason, migration/fixture/test impact. Do not redefine a competing type in a lane. Lead updates this record, notifies every affected lane, and publishes the integration commit.

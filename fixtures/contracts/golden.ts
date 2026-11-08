@@ -38,4 +38,5 @@ export const goldenSnapshot = {
 };
 export const goldenObservationBatch = { observations: [goldenObservation], nextCursor: { adapterId: 'fixture-codex', identity: 'synthetic-file', offset: 100, fingerprint: 'synthetic-v1' }, mode: 'incremental_history', lastObservedAt: timestamp, coverage: 'Completed visible messages only; synthetic fixture.' };
 export const revokedBinding = { ...goldenBinding, state: 'revoked', grantRevision: 2, exportPolicy: 'off' };
+export const goldenOpenProjectEvent = { type: 'open_project' as const, projectId: fixtureIds.project };
 export const checkInLifecycle = ['scheduled', 'available', 'presented', 'snoozed', 'answered'].map((state, revision) => ({ ...goldenCheckIn, state, revision, ...(state === 'snoozed' ? { snoozedUntil: '2026-11-07T13:00:00.000Z' } : {}), answer: state === 'answered' ? { kind: 'not_yet' } : null }));
