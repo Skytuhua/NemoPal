@@ -3,7 +3,7 @@ import { authorized, contextSchema, digest, id, itemSchema, parse, T3Error, type
 import { T3Adapter } from './protocol';
 
 export type T3Observation = {
-  bindingKey: string; mode: 'current' | 'stale' | 'offline' | 'revoked' | 'cancelled' | 'unmapped'; label: string;
+  bindingKey: string; mode: 'current' | 'stale' | 'offline' | 'revoked' | 'cancelled' | 'unmapped' | 'session_ended'; label: string;
   cursor: number; lastSeenAt: number | null; threadUpdatedAt: string | null; runId: string | null; runOrdinal: number | null;
   status: string; runStatus: string; items: T3Page['items']; hasMore: boolean;
 };

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-export type T3ErrorCode = 'invalid_contract' | 'invalid_configuration' | 'capability_unavailable' | 'revoked' | 'cancelled' | 'unavailable' | 'wrong_owner' | 'stale_request' | 'expired' | 'replay' | 'conflict' | 'permission_unsupported';
+export type T3ErrorCode = 'invalid_contract' | 'invalid_configuration' | 'capability_unavailable' | 'revoked' | 'cancelled' | 'unavailable' | 'wrong_owner' | 'stale_request' | 'expired' | 'replay' | 'conflict' | 'permission_unsupported' | 'pending';
 export class T3Error extends Error {
   constructor(readonly code: T3ErrorCode, readonly notSent = false) { super(code); this.name = 'T3Error'; }
 }

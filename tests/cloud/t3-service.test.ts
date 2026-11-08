@@ -73,7 +73,7 @@ it('closes a session returned after shutdown during startup and never schedules 
   const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now });
   const start = service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} });
   const rejected = expect(start).rejects.toThrow();
-  await opening; await service.stop(); release(); await rejected;
+  await opening; const stopping = service.stop(); release(); await rejected; await stopping;
   expect(h.closes()).toBe(1); expect(h.calls).toHaveLength(0);
 });
 
@@ -81,7 +81,7 @@ it('stops the session when canonical authority is revoked outside the service', 
   const h = fixture(); const service = new T3Service({ enabled: true, store: h.store, openSession: h.openSession, now: () => now, intervalMs: 60000 });
   await service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} });
   h.current().grant.revoked = true;
-  await service.poll();
+  await service.poll(); await service.stop();
   expect(h.closes()).toBe(1); expect(h.calls).toHaveLength(0);
   expect(await service.poll()).toBeUndefined();
 });
@@ -137,4 +137,95 @@ it('schedules observation and stops scheduling after shutdown', async () => {
     await vi.advanceTimersByTimeAsync(1000); expect(h.calls).toHaveLength(1);
     await service.stop(); await vi.advanceTimersByTimeAsync(10000); expect(h.calls).toHaveLength(1);
   } finally { vi.useRealTimers(); }
+});
+
+it('keeps all stop callers fenced until a held open and cleanup settle', async () => {
+  const h = fixture(); let release!: () => void; let entered!: () => void;
+  const barrier = new Promise<void>(r => { release = r; }); const opening = new Promise<void>(r => { entered = r; });
+  const service = new T3Service({ enabled: true, store: h.store, openSession: async () => { entered(); await barrier; return h.openSession(); }, now: () => now, storeTimeoutMs: 50 });
+  const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+  const starting = service.start(selection, connection).catch(() => {}); await opening;
+  const stops = [service.stop(), service.stop()].map(p => p.catch(e => e));
+  await Promise.all(stops); await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+  release(); await starting; await service.stop(); expect(h.closes()).toBe(1);
+});
+
+it('returns an explicit pending result while a late commit still fences restart', async () => {
+  const h = fixture(); let release!: () => void; let entered!: () => void;
+  const barrier = new Promise<void>(r => { release = r; }); const writing = new Promise<void>(r => { entered = r; });
+  const store = { ...h.store, async commitIfCurrent(...args: Parameters<T3ServiceStore['commitIfCurrent']>) { entered(); await barrier; return h.store.commitIfCurrent(...args); } };
+  const service = new T3Service({ enabled: true, store, openSession: h.openSession, now: () => now, intervalMs: 60000, storeTimeoutMs: 30 });
+  const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+  await service.start(selection, connection); const poll = service.poll(); await writing;
+  await expect(poll).rejects.toMatchObject({ code: 'pending' });
+  await expect(service.stop()).rejects.toMatchObject({ code: 'pending' });
+  await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+  release(); await service.stop(); expect(h.checkpoint()).toBeDefined();
+  await service.start(selection, connection); await service.stop();
+});
+
+it('fences starts when a load or revoke outcome is still pending', async () => {
+  const h = fixture(); let release!: () => void; let entered!: () => void;
+  const barrier = new Promise<void>(r => { release = r; }); const waiting = new Promise<void>(r => { entered = r; });
+  const store = { ...h.store, async load(...args: Parameters<T3ServiceStore['load']>) { entered(); await barrier; return h.store.load(...args); } };
+  const service = new T3Service({ enabled: true, store, openSession: h.openSession, now: () => now, storeTimeoutMs: 30 });
+  const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+  const start = service.start(selection, connection); await waiting;
+  await expect(start).rejects.toMatchObject({ code: 'pending' });
+  await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+  release(); await service.stop();
+});
+
+it('keeps revocation pending and fenced until its actual outcome is known', async () => {
+  const h = fixture(); let release!: () => void; let entered!: () => void;
+  const barrier = new Promise<void>(r => { release = r; }); const waiting = new Promise<void>(r => { entered = r; });
+  const store = { ...h.store, async revoke(...args: Parameters<T3ServiceStore['revoke']>) { entered(); await barrier; await h.store.revoke(...args); } };
+  const service = new T3Service({ enabled: true, store, openSession: h.openSession, now: () => now, storeTimeoutMs: 30 });
+  const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+  await service.start(selection, connection); const revoke = service.revoke(); await waiting;
+  await expect(revoke).rejects.toMatchObject({ code: 'pending' });
+  await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+  release(); await service.stop();
+  await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'revoked' });
+});
+
+it('surfaces a timed out authority read and fences the still-running load', async () => {
+  const h = fixture(); let hold = false; let release!: () => void; let entered!: () => void;
+  const barrier = new Promise<void>(r => { release = r; }); const waiting = new Promise<void>(r => { entered = r; });
+  const store = { ...h.store, async load(...args: Parameters<T3ServiceStore['load']>) { if (hold) { entered(); await barrier; } return h.store.load(...args); } };
+  const service = new T3Service({ enabled: true, store, openSession: h.openSession, now: () => now, storeTimeoutMs: 30 });
+  const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+  await service.start(selection, connection); hold = true;
+  const poll = service.poll(); await waiting; await expect(poll).rejects.toMatchObject({ code: 'pending' });
+  expect(service.status()).toBe('pending');
+  await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'conflict' });
+  release(); await service.stop();
+});
+
+it('retains terminal session status when a scheduled poll consumes the result', async () => {
+  vi.useFakeTimers();
+  try {
+    const h = fixture(); let ended = false;
+    const openSession = async () => { const session = await h.openSession(); return { ...session, get closed() { return ended; } }; };
+    const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now, intervalMs: 1000 });
+    const connection = { endpoint: 'synthetic-endpoint', onAuthorization() {} };
+    await service.start(selection, connection); ended = true;
+    await vi.advanceTimersByTimeAsync(1000); await service.stop();
+    expect(service.status()).toBe('session_ended'); expect(service.sessionEnded()).toBe(true);
+    await service.start(selection, connection); expect(service.sessionEnded()).toBe(false); await service.stop();
+  } finally { vi.useRealTimers(); }
+});
+
+it('retains uncertainty when an aborted open reports an unconfirmed delivery', async () => {
+  const h = fixture(); let entered!: () => void;
+  const opening = new Promise<void>(r => { entered = r; });
+  const { T3ConnectionError } = await import('../../apps/cloud/src/integrations/t3/client/boundary');
+  const openSession = async (options: import('../../apps/cloud/src/integrations/t3/client').LocalT3SessionOptions): Promise<import('../../apps/cloud/src/integrations/t3/client').LocalT3Session> => {
+    entered(); await new Promise<void>(resolve => options.signal!.addEventListener('abort', () => resolve(), { once: true }));
+    throw new T3ConnectionError('cancelled', 'cleanup', 'uncertain');
+  };
+  const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now });
+  const start = service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} }).catch(() => {});
+  await opening; await expect(service.stop()).rejects.toMatchObject({ delivery: 'uncertain' }); await start;
+  expect(service.status()).toBe('cleanup_unconfirmed');
 });

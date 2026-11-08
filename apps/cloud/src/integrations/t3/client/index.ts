@@ -20,7 +20,7 @@ export interface ConnectionCheckOptions {
   requestTimeoutMs?: number;
 }
 
-export interface LocalT3Session extends T3McpClient { close(): Promise<void> }
+export interface LocalT3Session extends T3McpClient { readonly closed?: boolean; close(): Promise<void> }
 export interface LocalT3SessionOptions extends ConnectionCheckOptions { environmentId: string; threadId: string; sessionTimeoutMs?: number }
 
 /** Finite operator check. No tool calls, environment claims, credential store or application registration. */
@@ -175,6 +175,7 @@ async function connect(options: ConnectionCheckOptions, scoped?: LocalT3SessionO
       const onAbort = () => { void close().catch(() => {}); };
       signal.addEventListener('abort', onAbort, { once: true });
       session = {
+        get closed() { return closed || signal.aborted; },
         configuration: Object.freeze({ endpoint: endpoint.href, environmentId: scoped.environmentId }),
         toolNames: Object.freeze([...T3_TOOLS]), permissions: Object.freeze(['orchestration:read']),
         async callTool(name: T3ToolName, args: Record<string, unknown>, requestSignal: AbortSignal) {
