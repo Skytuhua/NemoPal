@@ -302,6 +302,40 @@ test('disconnects on unmount and ignores callbacks from the retired observer', (
   expect(layout.narrow).toBe(true);
 });
 
+test.each(['commit', 'reset'] as const)('a retired %s callback cannot replace a newer controller preference', kind => {
+  containerWidth = 1600;
+  const first = mount();
+  const retiredCommit = layout.commitUserWidths, retiredReset = layout.resetLayout;
+  first.unmount();
+
+  const second = mount();
+  const latest = { projects: 320, manager: 480 };
+  act(() => layout.commitUserWidths(latest));
+  const expectedWrites = [...writes];
+  act(() => {
+    if (kind === 'commit') retiredCommit({ projects: 220, manager: 330 });
+    else retiredReset();
+  });
+
+  expect(writes).toEqual(expectedWrites);
+  expect(layout.preferredWidths).toEqual(latest);
+  expect(JSON.parse(storage.getItem(key)!)).toEqual({ version: 1, ...latest });
+  second.unmount();
+  mount();
+  expect(layout.preferredWidths).toEqual(latest);
+  expect(writes).toEqual(expectedWrites);
+});
+
+test('StrictMode reactivates persistence after its effect cleanup rehearsal', () => {
+  render(<StrictMode><Harness /></StrictMode>);
+  act(() => layout.commitUserWidths({ projects: 280, manager: 400 }));
+  expect(layout.preferredWidths).toEqual({ projects: 280, manager: 400 });
+  expect(JSON.parse(storage.getItem(key)!)).toEqual({ version: 1, projects: 280, manager: 400 });
+  act(() => layout.resetLayout());
+  expect(layout.preferredWidths).toEqual(defaults);
+  expect(JSON.parse(storage.getItem(key)!)).toEqual({ version: 1, ...defaults });
+});
+
 test('StrictMode retires its first observer and keeps the current observer working', () => {
   render(<StrictMode><Harness /></StrictMode>);
   expect(ContainerObserver.instances).toHaveLength(2);

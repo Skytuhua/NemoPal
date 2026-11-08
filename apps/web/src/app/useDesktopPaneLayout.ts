@@ -58,10 +58,16 @@ function fitWidths(widths: PaneWidths, containerWidth: number): PaneWidths {
 
 export function useDesktopPaneLayout() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mounted = useRef(false);
   const measuredWidth = useRef(0);
   const [containerWidth, setContainerWidth] = useState(0);
   const [preferredWidths, setPreferredWidths] = useState(readPreferences);
   const [drawer, setDrawer] = useState<Drawer>(null);
+
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -96,12 +102,13 @@ export function useDesktopPaneLayout() {
   }, []);
   const closeDrawer = useCallback(() => setDrawer(null), []);
   const commitUserWidths = useCallback((widths: PaneWidths) => {
-    if (!isPaneWidths(widths)) return;
+    if (!mounted.current || !isPaneWidths(widths)) return;
     const next = fitWidths(clampWidths(widths), measuredWidth.current);
     setPreferredWidths(next);
     persistPreferences(next);
   }, []);
   const resetLayout = useCallback(() => {
+    if (!mounted.current) return;
     setPreferredWidths(defaults);
     persistPreferences(defaults);
   }, []);

@@ -109,7 +109,7 @@ cleanup/late notifications, StrictMode retirement, and the missing-observer
 fallback. A stable child textarea retains its node, text, and focus in the hook
 harness; this does not establish the parent's future shell identity behavior.
 
-Final author review: no unresolved in-scope finding. No reviewer child was
+Initial author review: no unresolved in-scope finding was identified. No reviewer child was
 started because the assignment explicitly forbids children; the parent must
 independently review this exact delivered revision. Declined to judge composition,
 official library pointer/keyboard behavior, Sheet accessibility, visual quality,
@@ -124,7 +124,7 @@ for the first combined shell before phase-two controls or integration merge.
 
 ## Verified implementation bytes
 
-SHA256 before publication (these code/test bytes are unchanged by this note):
+SHA256 at initial publication `4f15d9b` (historical bytes, before the parent correction below):
 
 - Hook: `c297c83e9c259dbb1dd1ea37b22b837c1c670e3e61ccd4ba0ab18aa36d121766`.
 - Tests: `c19c9c38c58a3c26597bd3367a0011853d3de60fb3d73c672aeaacd82b20400d`.
@@ -133,3 +133,31 @@ The final delivery reports the immutable commit/tree, clean status, and publicat
 result. No watch, merge, branch deletion, self-archive, or child lifecycle action
 is authorized for this implementation leaf; the parent owns review/integration
 and archives only after receiving the result and confirming completed task state.
+
+## Parent correction after independent review
+
+The independent review at `4f15d9b` reproduced one P2: retained commit/reset
+callbacks from an unmounted controller could overwrite a newer controller's
+persisted widths, despite React discarding the retired state update. Observer
+cleanup alone did not protect these external storage writes.
+
+The parent added two regression cases which each retain a callback from A,
+unmount A, commit B's newer widths, invoke the retired callback, then reload.
+Both failed before the fix: the retired commit wrote 220/330 and the retired
+reset wrote defaults over B's 320/480. A separate StrictMode case verifies that
+the current controller can still commit and reset after effect cleanup rehearsal.
+RED: 2 failed / 38 passed. A mounted-lifetime fence now retires both persistence
+callbacks and reactivates on effect setup, preserving StrictMode behavior.
+
+Parent verification after the correction:
+
+- `pnpm exec vitest run tests/ui/desktop-pane-layout.test.tsx --maxWorkers=1 --no-file-parallelism`: **40/40 PASS**.
+- `pnpm typecheck`: **PASS**.
+- `git diff --check`: **PASS**.
+- Hook SHA256: `11fcf68fae7f05a4a543dcbf54040439eb0c9a01554e1532c300f674702556ae`.
+- Tests SHA256: `e8d2e7e63b54262ac428a49e7eae094b35dbcf32a4eeacd420eb70a4c8e9ff7a`.
+
+Only the same three leaf files changed. The earlier 188-test receipt remains
+historical; it was not rerun for this correction. Fresh independent recheck and
+exact-head hosted CI remain pending. No browser/native/live operation or
+acceptance promotion occurred.
