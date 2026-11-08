@@ -55,6 +55,8 @@ A subsequent recheck found that a per-request deadline could still trigger clean
 
 A further recheck found that a server JSON-RPC error can share the SDK's timeout code. The connector now tracks its own deadline independently: a prompt server error is reported as an MCP error and receives bounded cleanup, while an actual local deadline still suppresses new sends. Focused synthetic cases cover both paths.
 
+The next recheck found two additional races: an SDK initialization notification could outlive its deadline, and an optional background stream could overwrite the foreground error. The operation now actively fences later requests on expiry and isolates background failures. Synthetic checks cover delayed initialization, oversized and timed-out background streams, and the original foreground failure.
+
 1. Install the locked dependencies in the selected checkout without lifecycle scripts: `pnpm install --frozen-lockfile --ignore-scripts`.
 2. In a private local terminal, run `pnpm exec tsx scripts/t3-connect.ts --endpoint '<YOUR_LOCAL_MCP_URL>'`. Supply the copied same-machine URL at runtime; do not put it into tracked scripts or docs. There is no default address or port.
 3. Open the printed local authorization link yourself. Verify `NemoPal local connection check` and the local return destination, explicitly choose **Read only**, then approve in T3. If requested, enter the pairing code only in T3. No agent should enter it or approve for you. If `iss` is missing, stop and update/review compatibility rather than weakening the callback check.

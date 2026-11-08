@@ -45,8 +45,9 @@ export async function checkLocalT3Connection(options: ConnectionCheckOptions) {
   let localRequestExpired = false;
   const boundedMcp = async <T>(request: (requestSignal: AbortSignal) => Promise<T>): Promise<T> => {
     const controller = new AbortController();
-    const requestTimer = setTimeout(() => { localRequestExpired = true; controller.abort('deadline'); }, requestMs);
-    try { return await request(AbortSignal.any([signal, controller.signal])); }
+    const requestTimer = setTimeout(() => { localRequestExpired = true; network.expireDeadline(); controller.abort('deadline'); }, requestMs);
+    const requestSignal = AbortSignal.any([signal, controller.signal]);
+    try { return await untilAborted(request(requestSignal), requestSignal); }
     finally { clearTimeout(requestTimer); }
   };
   let result: { status: 'connected'; transport: 'loopback_http'; permissions: string[]; expectedReadTools: string[];

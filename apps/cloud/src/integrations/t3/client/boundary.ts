@@ -60,6 +60,13 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
     try { url = new URL(input instanceof Request ? input.url : String(input)); }
     catch { return fail('invalid_metadata'); }
     const method = (init.method ?? 'GET').toUpperCase();
+    const background = url.href === endpoint.href && method === 'GET';
+    let requestFailure: T3ConnectionError | undefined;
+    const failRequest = (code: ConnectionCode): never => {
+      requestFailure = new T3ConnectionError(code, phase());
+      if (!background) failure = requestFailure;
+      throw requestFailure;
+    };
     if (url.origin !== endpoint.origin || url.username || url.password || url.search || url.hash) return fail('invalid_metadata');
     let action = `${method} ${url.pathname}`;
     const publicActions = ['GET /.well-known/oauth-protected-resource/mcp', 'GET /.well-known/oauth-authorization-server',
@@ -73,12 +80,13 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
         action += ` ${message.method}`;
       }
     } else if (!publicActions.includes(action)) return fail('invalid_metadata');
-    if (used.has(action)) return fail('http_error');
+    if (used.has(action)) return failRequest('http_error');
     used.add(action);
     if (signal.aborted) return fail(signal.reason === 'deadline' ? 'deadline' : 'cancelled');
+    if (deadlineExpired) return failRequest('deadline');
     if (method === 'POST' || method === 'DELETE') attempted();
     const controller = new AbortController();
-    const timer = setTimeout(() => { deadlineExpired = true; controller.abort('deadline'); }, timeoutMs);
+    const timer = setTimeout(() => { if (!background) deadlineExpired = true; controller.abort('deadline'); }, timeoutMs);
     active.set(controller, timer);
     const combined = AbortSignal.any([signal, controller.signal, ...(init.signal ? [init.signal] : [])]);
     const finish = () => { clearTimeout(timer); active.delete(controller); };
@@ -94,12 +102,12 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
         if (observed) sessionId = observed;
       }
       if (response.status >= 300 && response.status < 400) {
-        await response.body?.cancel(); return fail('http_error');
+        await response.body?.cancel(); return failRequest('http_error');
       }
       const maxBytes = url.href === endpoint.href ? 256 * 1024 : 64 * 1024;
       const length = response.headers.get('content-length');
       if (length && (!/^[0-9]+$/.test(length) || Number(length) > maxBytes)) {
-        await response.body?.cancel(); return fail('response_too_large');
+        await response.body?.cancel(); return failRequest('response_too_large');
       }
       if (!response.body) { finish(); return response; }
       const reader = response.body.getReader();
@@ -110,12 +118,15 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
             const part = await reader.read();
             if (part.done) { finish(); output.close(); return; }
             received += part.value.byteLength;
-            if (received > maxBytes) { await reader.cancel(); fail('response_too_large'); }
+            if (received > maxBytes) { await reader.cancel(); failRequest('response_too_large'); }
             output.enqueue(part.value);
           } catch (error) {
             finish();
-            if (!(error instanceof T3ConnectionError)) failure = new T3ConnectionError(abortCode(), phase());
-            output.error(failure ?? error);
+            if (!(error instanceof T3ConnectionError)) {
+              requestFailure = new T3ConnectionError(abortCode(), phase());
+              if (!background) failure = requestFailure;
+            }
+            output.error(requestFailure ?? error);
           }
         },
         async cancel() { finish(); controller.abort(); await reader.cancel().catch(() => {}); },
@@ -124,7 +135,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
     } catch (error) {
       finish();
       if (error instanceof T3ConnectionError) throw error;
-      return fail(abortCode());
+      return failRequest(abortCode());
     }
   };
   return {
@@ -132,6 +143,7 @@ export function networkBoundary(endpoint: URL, signal: AbortSignal, timeoutMs: n
     setBearer(value: string) { bearer = value; },
     get sessionId() { return sessionId; },
     get deadlineExpired() { return deadlineExpired; },
+    expireDeadline() { deadlineExpired = true; for (const request of active.keys()) request.abort('deadline'); },
     get failure() { return failure; },
     dispose() { bearer = ''; sessionId = ''; for (const [request, timer] of active) { clearTimeout(timer); request.abort(); } active.clear(); },
   };

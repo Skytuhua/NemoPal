@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { once } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as connector from '../../apps/cloud/src/integrations/t3/client/index';
+import { networkBoundary } from '../../apps/cloud/src/integrations/t3/client/boundary';
 import { main } from '../../scripts/t3-connect';
 
 const fixtures: { close(): Promise<void> }[] = [];
@@ -11,7 +12,7 @@ afterEach(async () => { await Promise.all(fixtures.splice(0).map(f => f.close())
 type Mode = 'ok' | 'cross-origin' | 'bad-resource' | 'bad-issuer' | 'no-pkce' | 'oversize' |
   'redirect' | 'discovery-error' | 'token-error' | 'broad-token' | 'mcp-error' | 'missing-tool' | 'hang' |
   'session' | 'cleanup-error' | 'chunked-oversize' | 'mcp-oversize' | 'mcp-hang' | 'sse' | 'bad-token-endpoint' | 'bad-registration-endpoint' |
-  'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty';
+  'pkce-mismatch' | 'invalid-registration' | 'init-error' | 'delete405' | 'initialized-error' | 'initialized-cancel' | 'server-timeout-error' | 'mcp-empty' | 'slow-init-notification' | 'background-oversize' | 'background-hang';
 
 async function fixture(mode: Mode = 'ok') {
   const requests: { path: string; method: string; body: string; authorization?: string; session?: string }[] = [];
@@ -77,19 +78,22 @@ async function fixture(mode: Mode = 'ok') {
     }
     if (req.url === '/mcp') {
       expect(req.headers.authorization).toBe('Bearer fixture-secret-access-token');
-      if (req.method === 'GET') return res.writeHead(405).end();
+      if (req.method === 'GET') { if (mode === 'background-oversize') return res.writeHead(200, { 'content-type': 'text/event-stream' }).end('x'.repeat(300000)); if (mode === 'background-hang') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('data: ping\n\n'); return; } return res.writeHead(405).end(); }
       if (req.method === 'DELETE') return res.writeHead(mode === 'cleanup-error' ? 500 : mode === 'delete405' ? 405 : 204).end();
       const message = JSON.parse(body);
       if (message.method === 'initialize') {
         if (mode === 'init-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
-        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
+        if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250));
+        if (['session', 'cleanup-error', 'delete405', 'initialized-error', 'initialized-cancel', 'mcp-hang', 'server-timeout-error', 'mcp-empty', 'slow-init-notification', 'background-oversize'].includes(mode)) res.setHeader('mcp-session-id', 'fixture-session');
         return send(res, { jsonrpc: '2.0', id: message.id,
           result: { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'private-server-name', version: '0.1.7' } } });
       }
-      if (message.method === 'notifications/initialized') { onInitialized(); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
+      if (message.method === 'notifications/initialized') { onInitialized(); if (mode === 'slow-init-notification') await new Promise(resolve => setTimeout(resolve, 250)); return res.writeHead(mode === 'initialized-error' ? 500 : 202).end(); }
       if (message.method === 'tools/list') {
         if (mode === 'mcp-empty') return res.writeHead(202).end();
         if (mode === 'server-timeout-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } });
+        if (mode === 'background-oversize') { await new Promise(resolve => setTimeout(resolve, 150)); return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } }); }
+        if (mode === 'background-hang') { await new Promise(resolve => setTimeout(resolve, 120)); return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32001, message: 'server error' } }); }
         if (mode === 'mcp-hang') return;
         if (mode === 'mcp-oversize') return send(res, { pad: 'x'.repeat(300_000) });
         if (mode === 'mcp-error') return send(res, { jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'private-body' } });
@@ -281,6 +285,42 @@ describe('dedicated local T3 OAuth and MCP connection', () => {
       .rejects.toMatchObject({ code: 'deadline', phase: 'tools_list', delivery: 'uncertain' });
     expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
     await f.checkCallbackClosed();
+  });
+
+  it('fences later requests if initialization finishes after its deadline', async () => {
+    const f = await fixture('slow-init-notification');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 400, signInTimeoutMs: 3000,
+      onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'deadline', phase: 'initialize' });
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(f.requests.some(r => r.body.includes('tools/list'))).toBe(false);
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(0);
+    await f.checkCallbackClosed();
+  });
+
+  it('does not replace a foreground error with a background stream failure', async () => {
+    const f = await fixture('background-oversize');
+    await expect(connector.checkLocalT3Connection({ endpoint: f.endpoint, requestTimeoutMs: 2000, signInTimeoutMs: 3000,
+      onAuthorization: async url => { await f.authorize(url); } })).rejects.toMatchObject({ code: 'mcp_error', phase: 'tools_list' });
+    expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
+    await f.checkCallbackClosed();
+  });
+
+  it('does not attribute a background stream timeout to the foreground request', async () => {
+    const f = await fixture('background-hang');
+    const boundary = networkBoundary(new URL(f.endpoint), new AbortController().signal, 200, () => 'tools_list', () => {});
+    boundary.setBearer('fixture-secret-access-token');
+    try {
+      const background = await boundary.fetch(f.endpoint, { method: 'GET' });
+      const reader = background.body!.getReader();
+      await reader.read();
+      const pendingRead = reader.read().catch(() => {});
+      await new Promise(resolve => setTimeout(resolve, 120));
+      const foreground = await boundary.fetch(f.endpoint, { method: 'POST', body: JSON.stringify({ method: 'tools/list' }) });
+      expect((await foreground.json()).error.code).toBe(-32001);
+      expect(boundary.deadlineExpired).toBe(false);
+      expect(boundary.failure).toBeUndefined();
+      await pendingRead;
+    } finally { boundary.dispose(); }
   });
 
   it('CLI requires an endpoint and never echoes invalid private arguments or raw errors', async () => {
