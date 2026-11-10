@@ -52,7 +52,7 @@ async function start() {
       const command = c.revisionedCommandSchema(c.EnrollSourceInputSchema).parse(JSON.parse(String(init.body)));
       const enrollment = [...enrollments].find(entry => entry.operationId === command.operationId);
       // Hashing and authorization lookup in the client can await; fence at the actual transport boundary.
-      if (quitting || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
+      if (quitting || sourceStopFailed || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
         return Promise.reject(Error('Source enrollment authority changed'));
     }
     const observations = /^\/v1\/sources\/([^/]+)\/observations$/.exec(path);
@@ -60,7 +60,7 @@ async function start() {
       const command = c.commandEnvelopeSchema(c.IngestObservationsInputSchema).parse(JSON.parse(String(init.body)));
       const upload = store.pendingUpload(command.operationId);
       const binding = upload && store.binding(upload.bindingId)?.binding;
-      if (quitting || !upload || !binding || upload.bindingId !== observations[1] || binding.deviceId !== vault.deviceId() ||
+      if (quitting || sourceStopFailed || !upload || !binding || upload.bindingId !== observations[1] || binding.deviceId !== vault.deviceId() ||
           !store.isFollowing(binding.id) || binding.grantRevision !== upload.grantRevision || binding.exportPolicy === 'off' ||
           !store.canExport(binding.id, upload.grantRevision, currentReceiving()) || JSON.stringify(upload.input) !== JSON.stringify(command.input) ||
           new Headers(init.headers).get('Authorization') !== vault.authorization())
@@ -90,7 +90,9 @@ async function start() {
   let connected = false;
   let suspended = false;
   let quitting = false;
-  let startupCancelled = false;
+  let sourceStopFailed = false;
+  let sourceGeneration = 0;
+  let quitAttempt: Promise<void> | undefined;
   let syncing: Promise<void> | undefined;
   let eventsAbort: AbortController | undefined;
   let eventSequence = 0;
@@ -136,22 +138,24 @@ async function start() {
     tray.rebuild();
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
-    quitting = true; startupCancelled = true;
+    quitting = true; ++sourceGeneration;
     let stopped = false, sourcesStopped = false;
     try {
       // Keep the live session recoverable until the renderer has safely flushed.
       await chat.flush(); await store.flush();
       stopped = true; ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
-      await sources.stop(); sourcesStopped = true; await sync.stop(); await pairingCompletion; await store.flush();
+      await sources.stop(); sourcesStopped = true; sourceStopFailed = false; await sync.stop(); await pairingCompletion; await store.flush();
       chat.stop(); vault.clearMemory();
     } catch (error) {
+      if (stopped && !sourcesStopped) { sourceStopFailed = true; void sync.stop().catch(() => {}); }
       if (stopped && sourcesStopped) {
         ++ownerGeneration; chat.contextChanged(true); ownerAbort = new AbortController(); eventsAbort = undefined; syncing = undefined;
         client = makeClient(); observer = makeObserver(); sources = makeController();
         sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId()); presentation = makePresentation();
         timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
       }
-      if (!stopped || sourcesStopped) { quitting = false; chat.resumeAfterFlush(); if (stopped) void cycle(); }
+      if (stopped && !sourcesStopped) { ownerAbort = new AbortController(); client = makeClient(); }
+      quitting = false; chat.resumeAfterFlush(); if (stopped && sourcesStopped) void cycle();
       throw error;
     }
   }, async () => {}, () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
@@ -197,9 +201,10 @@ async function start() {
     });
     void cycle();
   }
-  const quit = () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local draft or journal flush failed. Keep the application open and preserve your work before exiting.'); }); };
+  const quit = () => { const attempt = lifetime.quit(); quitAttempt = attempt; void attempt.catch(() => { dialog.showErrorBox('Quit blocked', 'Local draft, source stop or journal flush failed. Keep the application open and preserve your work before exiting.'); }); };
   // Tray toggles may arrive from a menu built before pairing.
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
+  let petClickThrough = false;
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => { petClickThrough = value; if (value) windows.cancelPetDrag(); windows.pet.setIgnoreMouseEvents(value, { forward: true }); }, withdrawSources, quit, error: action => {
     if (action) reportWithdrawalFailure();
     else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
   } });
@@ -232,7 +237,7 @@ async function start() {
       case 'getSnapshot': {
         selectedProject = input.projectId;
         const generation = fenceSelection();
-        const result = await sync.run(); assertOwner(owner); connected = result.connected;
+        const result = sourceStopFailed ? { connected: false } : await sync.run(); assertOwner(owner); connected = result.connected;
         return refresh(input.projectId, generation);
       }
       case 'sendMessage': { const job = await client.sendMessage(input.projectId, input.command); assertOwner(owner); authority.jobs.set(job.jobId, input.projectId); return job; }
@@ -253,7 +258,7 @@ async function start() {
         return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: ownerReady && Boolean(vault.authorization()), cloudOrigin: origin });
       }
       case 'pair': {
-        if (pairing) throw Error('Pairing already in progress');
+        if (pairing || sourceStopFailed) throw Error('Pairing unavailable while source stop requires retry');
         const previousOwner = ownerGeneration;
         const redemption = new AbortController(); pairingAbort = redemption;
         let finish!: () => void;
@@ -288,6 +293,7 @@ async function start() {
         } finally { redemption.abort(); pairingAbort = undefined; pairing = false; finish(); pairingCompletion = undefined; if (ownerReady && !quitting) void cycle(); }
       }
       case 'selectSource': {
+        if (sourceStopFailed) throw Error('Source stop requires retry');
         const owner = ownerGeneration;
         const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE;
         if (!threadId || !process.env.LP_SYNTHETIC_SOURCE_NAME || !c.IdSchema.safeParse(threadId).success) return { available: false, reason: 'No exact named own synthetic test source configured. No archive scan or implicit current-thread read is permitted.' };
@@ -296,18 +302,19 @@ async function start() {
         return choice.response === 0 ? consent.offer(projectId, threadId, process.cwd()) : { available: false, reason: 'Source selection cancelled.' };
       }
       case 'confirmSource': {
+        if (sourceStopFailed) throw Error('Source stop requires retry');
         const controller = sources, ownerClient = client;
         const input = c.ConfirmSourceInputSchema.parse(raw); const choice = consent.confirm(input); requirePaired();
         const enrollment: SourceEnrollment = { operationId: input.selectionId, deviceId: vault.deviceId()!, cloud: input.exportPolicy !== 'off', completion: Promise.resolve(), failed: false };
         enrollments.add(enrollment);
         const operation = (async () => { try {
           const snapshot = await ownerClient.getSnapshot(input.projectId);
-          if (quitting || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId) throw Error('Source consent no longer current');
+          if (quitting || sourceStopFailed || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId) throw Error('Source consent no longer current');
           const deviceId = enrollment.deviceId;
           const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await ownerClient.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
           enrollment.bindingId = binding.id;
           if (binding.deviceId !== deviceId || binding.projectId !== input.projectId) throw Error('Source enrollment identity mismatch');
-          if (quitting || vault.localDeviceId() !== deviceId) enrollment.withdrawal = 'revoke';
+          if (quitting || sourceStopFailed || vault.localDeviceId() !== deviceId) enrollment.withdrawal = 'revoke';
           if (enrollment.withdrawal) store.fence(binding.id);
           await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, enrollment.cloud, choice.receiving, enrollment.withdrawal);
           if (enrollment.withdrawal) await controller[enrollment.withdrawal](binding.id);
@@ -326,6 +333,7 @@ async function start() {
       case 'invoke': return execute(c.AllowedClientCommandSchema.parse(raw));
       case 'setPetPreference': return preference(c.PetPreferenceSchema.parse(raw));
       case 'petInvoke': { const input = c.PetCommandSchema.parse(raw); if (input.type === 'setPreference') return preference(input.preference); if (input.type === 'openChat') { if (input.contextId !== chat.launchId) throw Error('Pet context changed'); return chat.open(); } return presentation.command(input); }
+      case 'petDrag': if (!petClickThrough) windows.dragPet(raw as 'start' | 'move' | 'end'); return;
       case 'petChatRead': return chat.read();
       case 'petChatInvoke': return chat.command(c.PetChatCommandSchema.parse(raw));
       default: throw Error('Native operation denied');
@@ -347,7 +355,7 @@ async function start() {
     } catch { throw Error('Native request rejected. Check source consent, current project and pairing state.'); }
   });
   async function cycle(): Promise<void> {
-    if (pairing || !ownerReady || syncing || quitting || suspended) return syncing;
+    if (pairing || !ownerReady || syncing || quitting || suspended || sourceStopFailed) return syncing;
     const owner = ownerGeneration, ownerSync = sync, controller = sources, ownerClient = client, deviceId = vault.deviceId();
     const run = (async () => {
       try {
@@ -377,12 +385,12 @@ async function start() {
   app.on('window-all-closed', () => {});
   app.on('activate', open);
   app.on('before-quit', event => { event.preventDefault(); quit(); });
-  powerMonitor.on('suspend', () => { suspended = true; eventsAbort?.abort(); void sources.stop(); disconnect(); });
-  powerMonitor.on('resume', () => { const owner = ownerGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
+  powerMonitor.on('suspend', () => { suspended = true; eventsAbort?.abort(); if (!sourceStopFailed) void sources.stop().catch(() => {}); disconnect(); });
+  powerMonitor.on('resume', () => { if (sourceStopFailed) return; const owner = ownerGeneration, generation = sourceGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); if (generation !== sourceGeneration || sourceStopFailed) return; observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
   windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); sendPet(event ?? { type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() }); });
   try { await windows.load(); }
-  catch (error) { if (startupCancelled) return; throw error; }
-  if (quitting) return;
+  catch (error) { if (quitting && quitAttempt) { try { await quitAttempt; return; } catch { /* Failed quit does not suppress startup failure. */ } } throw error; }
+  if (quitting && quitAttempt) { try { await quitAttempt; return; } catch { /* Resume startup after failed quit. */ } }
   windows.workspace.show(); if (!store.preference().hidden) windows.pet.showInactive();
   await cycle();
 }

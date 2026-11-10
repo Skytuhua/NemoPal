@@ -21,10 +21,14 @@ export class PetChatSession {
     if (this.pending) throw Error('Reconcile the pending message first');
     const pending = PendingSchema.parse({ command: { operationId: crypto.randomUUID(), expectedRevision, input: { text: sent.text } }, sent: { text: sent.text, baseRevision: sent.baseRevision } });
     await this.store.flush();
-    await this.store.write(`${this.draftKey}:pending`, { text: JSON.stringify(pending), baseRevision: 0 });
-    await this.store.flush();
     this.pending = pending;
+    await this.persistPending();
     return pending;
+  }
+  async persistPending() {
+    if (!this.pending) throw Error('Pending message unavailable');
+    await this.store.write(`${this.draftKey}:pending`, { text: JSON.stringify(this.pending), baseRevision: 0 });
+    await this.store.flush();
   }
   async complete(pending: PendingPetMessage) {
     if (this.pending !== pending) return;

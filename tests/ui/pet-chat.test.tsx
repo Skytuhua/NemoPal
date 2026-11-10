@@ -151,6 +151,113 @@ test('quit flush reports only a bounded acknowledgement through the restricted b
   await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
 });
 
+test('a failed pending write never dispatches until the same envelope is durable', async () => {
+  const store = memoryDrafts(), write = store.write; let failing = true;
+  store.write = async (key, value) => { if (failing && key.endsWith(':pending')) throw Error('disk full'); await write(key, value); };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Keep the same envelope' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await screen.findByRole('alert');
+  expect(h.invoke).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same request' }));
+  await screen.findByText(/not confirmed/i);
+  expect(h.invoke).not.toHaveBeenCalled();
+  failing = false;
+  h.invoke.mockRejectedValueOnce(Error('synthetic uncertain result'));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry same request' }));
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledOnce());
+  const sent = h.invoke.mock.calls[0]![0];
+  if (sent.type !== 'send') throw Error('Expected send');
+  const saved = await store.read('pet-chat:synthetic-owner-project:draft:pending');
+  expect(JSON.parse(saved!.text).command).toEqual(sent.command);
+});
+
+test('resolving a failed pending write clears its error and allows sending the preserved draft', async () => {
+  const store = memoryDrafts(), write = store.write;
+  store.write = async (key, value) => { if (key.endsWith(':pending')) throw Error('disk full'); await write(key, value); };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Keep this draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await screen.findByRole('alert');
+  expect(h.invoke).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve unconfirmed request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Keep draft and resolve' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
+  expect(composer).toHaveValue('Keep this draft');
+  expect(await store.read('pet-chat:synthetic-owner-project:draft:pending')).toBeUndefined();
+});
+
+test('resolving a pending write cannot erase a newer error', async () => {
+  const store = memoryDrafts(), write = store.write, remove = store.remove, release = deferred<void>();
+  store.write = async (key, value) => { if (key.endsWith(':pending')) throw Error('disk full'); await write(key, value); };
+  store.remove = async key => { await release.promise; await remove(key); };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Keep this draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve unconfirmed request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Keep draft and resolve' }));
+  h.invoke.mockRejectedValueOnce(Error('resize failed'));
+  fireEvent.click(screen.getByRole('button', { name: 'Expand conversation' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/resize/));
+  await act(async () => release.resolve());
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Keep draft and resolve' })).not.toBeInTheDocument());
+  expect(screen.getByRole('alert')).toHaveTextContent(/resize/);
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+});
+
+test('a failed pending removal remains blocking until a later durable resolution', async () => {
+  const store = memoryDrafts(), write = store.write, remove = store.remove;
+  let failRemove = true;
+  store.write = async (key, value) => { if (key.endsWith(':pending')) throw Error('disk full'); await write(key, value); };
+  store.remove = async key => { if (failRemove) throw Error('still full'); await remove(key); };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Keep this draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve unconfirmed request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Keep draft and resolve' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Keep draft and resolve' })).toBeEnabled());
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+  expect(screen.getByRole('alert')).toHaveTextContent(/persisted/);
+  failRemove = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Keep draft and resolve' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
+  expect(composer).toHaveValue('Keep this draft'); expect(h.invoke).not.toHaveBeenCalled();
+});
+
+test('resolving an older pending failure does not clear a newer draft write failure', async () => {
+  const store = memoryDrafts(), write = store.write, remove = store.remove, release = deferred<void>();
+  store.write = async (key, value) => { if (key.endsWith(':pending') || value.text === 'newer unsaved draft') throw Error('disk full'); await write(key, value); };
+  store.remove = async key => { await release.promise; await remove(key); };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'original draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' })); await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve unconfirmed request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Keep draft and resolve' }));
+  fireEvent.change(composer, { target: { value: 'newer unsaved draft' } });
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  await act(async () => release.resolve());
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Keep draft and resolve' })).not.toBeInTheDocument());
+  expect(screen.getByRole('alert')).toHaveTextContent(/persisted/);
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+  expect(composer).toHaveValue('newer unsaved draft'); expect(h.invoke).not.toHaveBeenCalled();
+});
+
+test('a flush request fences composer edits before acknowledging navigation', async () => {
+  const store = memoryDrafts(), h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Owner A draft' } });
+  h.emit({ ...h.initial, version: 2, flushRequestId: snapshot().project.ownerId });
+  expect(composer).toBeDisabled();
+  fireEvent.change(composer, { target: { value: 'late edit' } });
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
+  expect((await store.read('pet-chat:synthetic-owner-project:draft'))?.text).toBe('Owner A draft');
+});
+
 test('explicitly resolving an uncertain stale request preserves the draft and never resends it', async () => {
   const store = memoryDrafts(), h = harness(state(), store);
   const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
@@ -186,4 +293,30 @@ test('flush acknowledgement waits for an in-flight send and its local draft writ
   await act(async () => result.resolve(receipt(command.command.operationId)));
   await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: true }));
   expect(await store.read('pet-chat:synthetic-owner-project:draft:pending')).toBeUndefined();
+});
+
+
+test('retired popup retries the latest failed draft without exposing it to the next context', async () => {
+  const values = new Map<string, { text: string; baseRevision: number }>();
+  let failing = true, failedKey = '';
+  const store = {
+    async read(key: string) { return values.get(key); },
+    async write(key: string, value: { text: string; baseRevision: number }) { if (failing) { failedKey = key; throw Error('disk full'); } values.set(key, structuredClone(value)); if (key === failedKey) failedKey = ''; },
+    async remove(key: string) { values.delete(key); if (key === failedKey) failedKey = ''; },
+    async flush() { if (failedKey) throw Error('sticky disk full'); },
+  };
+  const h = harness(state(), store);
+  const composer = await screen.findByRole('textbox', { name: 'Message' }); await waitFor(() => expect(composer).toBeEnabled());
+  fireEvent.change(composer, { target: { value: 'Latest old owner draft' } });
+  await screen.findByRole('alert');
+  h.emit({ ...h.initial, version: 2, visible: false, flushRequestId: snapshot().project.ownerId });
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: snapshot().project.ownerId, succeeded: false }));
+  failing = false;
+  const retryId = snapshot(100).project.id;
+  h.emit({ ...h.initial, version: 3, visible: false, flushRequestId: retryId });
+  await waitFor(() => expect(h.invoke).toHaveBeenCalledWith({ type: 'flushed', contextId: h.initial.contextId, flushId: retryId, succeeded: true }));
+  expect((await store.read('pet-chat:synthetic-owner-project:draft'))?.text).toBe('Latest old owner draft');
+  const b = snapshot(100);
+  h.emit({ ...h.initial, version: 4, contextId: b.project.id, visible: true, conversation: { ...h.initial.conversation!, draftScope: 'synthetic-owner-project-B', projectId: b.project.id, messages: [], checkIn: null } });
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveValue(''));
 });
