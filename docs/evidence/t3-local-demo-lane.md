@@ -1,0 +1,13 @@
+# T3 local demo lane handoff
+
+Status: backend seam only. No host registration, desktop UI, real T3 sign-in or live round trip is claimed. Keep disabled until the host lifecycle and recovery boundaries below are implemented and reviewed.
+
+The branch starts from PR 62 and incorporates PR 58 as a cherry-pick. The trusted host can call `T3Service.activity()` to obtain a detached, committed metadata snapshot, and `questions()` to obtain at most five selected-thread pending questions for manual resolution in T3. These methods are not registered on a public API. Questions do not have independent run association; neither question response nor permission approval is enabled by this read-only connection.
+
+`CanonicalT3Store` rejects other adapters, validates restored checkpoints, accepts changed-run metadata tied to the observed run, and compares the prior checkpoint while holding the canonical project and enrollment locks. A competing writer loses the comparison and its service stops. An unconfirmed session close blocks another start in the same service instance.
+
+T3 transactions destroy the connection after an unknown commit/rollback result and wait for a new project row lock before returning the error. All T3 writes acquire that lock before mutation. Failed reconciliation remains pending, allowing the service to retain its fence. This does not implement durable service ownership, cross-process session-close reconciliation, or recovery after process restart; those remain required before enabling a real session. Review the transaction assumptions and host lifetime independently.
+
+The coordinator must wire authenticated owner/device selection, canonical source and task/run mapping, explicit local-read consent and bounded grant expiry; present committed activity and manual T3 question resolution; enforce one host instance across restarts and unconfirmed closes; and await cleanup at shutdown. A genuine local connection additionally needs the owner's supported local T3 MCP endpoint, read-only OAuth authorization, an explicitly selected thread and run, and a fresh authorized test. The previously rejected authorization page must not be retried or bypassed. No T3 endpoint, credentials, identifiers, real user data, model, provider, GUI or external listener were used in these checks.
+
+Focused verification: 189 tests across six T3 files passed, including 11 PostgreSQL tests on an owned disposable loopback database and synthetic transaction fault tests; typecheck passed. These are local and synthetic evidence, not native UI, live T3, or end-to-end acceptance. Independent review remains outstanding.

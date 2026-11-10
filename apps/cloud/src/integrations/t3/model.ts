@@ -10,7 +10,7 @@ const revision = z.number().int().positive();
 export const contextSchema = z.object({
   grant: z.object({ bindingId: id, ownerId: id, deviceId: id, environmentId: id, projectId: id, t3ProjectId: id, threadId: id,
     revision, expiresAt: z.number().int().positive(), revoked: z.boolean(), startPosition: z.number().int().nonnegative() }).strict(),
-  mapping: z.object({ ownerId: id, projectId: id, taskId: id, taskRevision: revision, mappingRevision: revision, grantRevision: revision, runId: id, runOrdinal: revision }).strict(),
+  mapping: z.object({ ownerId: id, projectId: id, taskId: id, taskRevision: z.number().int().nonnegative().safe(), mappingRevision: revision, grantRevision: revision, runId: id, runOrdinal: revision }).strict(),
   completionPolicy: z.object({ enabled: z.boolean(), revision, criterionId: id }).strict(),
 }).strict();
 export type T3Context = z.infer<typeof contextSchema>;
