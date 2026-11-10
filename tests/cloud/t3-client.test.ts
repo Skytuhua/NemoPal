@@ -778,7 +778,7 @@ it('service gracefully closes an idle real connector with MCP DELETE', async () 
   expect(f.requests.filter(r => r.method === 'DELETE')).toHaveLength(1);
 });
 
-it('reports a terminal expired connector and restarts from the durable checkpoint after cleanup', async () => {
+it('reports a terminal expired connector and blocks restart when cleanup is unconfirmed', async () => {
   const f = await fixture('session');
   const context = { grant: { bindingId: 'binding', ownerId: 'owner', deviceId: 'device', environmentId: 'env', projectId: 'project', t3ProjectId: 'source', threadId: 'thread', revision: 1, expiresAt: Date.now() + 60000, revoked: false, startPosition: 0 }, mapping: { ownerId: 'owner', projectId: 'project', taskId: 'task', taskRevision: 1, mappingRevision: 1, grantRevision: 1, runId: 'run', runOrdinal: 1 }, completionPolicy: { enabled: false, revision: 1, criterionId: 'criterion' } };
   const { T3Service } = await import('../../apps/cloud/src/integrations/t3/service');
@@ -792,11 +792,7 @@ it('reports a terminal expired connector and restarts from the durable checkpoin
   expect((await service.poll())?.mode).toBe('session_ended');
   await service.stop().catch(() => {});
   expect(service.status()).toBe('cleanup_unconfirmed');
-  await service.start(selection, connection);
-  expect((await service.poll())?.cursor).toBe(1);
-  const calls = f.requests.filter(r => r.method === 'POST' && r.body.includes('tools/call')).map(r => JSON.parse(r.body));
-  expect(calls.some(call => call.params.arguments.afterPosition === 1)).toBe(true);
-  await service.stop();
+  await expect(service.start(selection, connection)).rejects.toMatchObject({ code: 'unavailable' });
 });
 
 

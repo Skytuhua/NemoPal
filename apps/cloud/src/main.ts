@@ -8,13 +8,15 @@ if (!process.env.DATABASE_URL)
     throw new Error('DATABASE_URL is required. Run db:migrate explicitly before start.');
 const origin = new URL(process.env.PUBLIC_ORIGIN ?? 'http://127.0.0.1:4310');
 const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname);
+const localT3 = process.env.LP_LOCAL_T3 === '1';
+if (localT3 && !loopback) throw new Error('LP_LOCAL_T3 requires a loopback-only cloud listener.');
 if (origin.protocol !== 'https:' && !(loopback && origin.protocol === 'http:'))
     throw new Error('PUBLIC_ORIGIN must use HTTPS outside loopback development.');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
 // pg emits idle-client failures on the pool; never log the error/client object or let it exit Node.
 pool.on('error', () => console.error('Cloud database connection unavailable.'));
 const model = await configureModel(pool);
-const app = buildServer(pool, { inference: model.inference });
+const app = buildServer(pool, { inference: model.inference, localT3 });
 const stopManager = startManagerDispatcher(new JobQueue(pool), model.adapter);
 const stopCheckins = startCheckInDispatcher(new CheckInScheduler(pool));
 const close = async () => { await stopManager(); await stopCheckins(); await app.close(); await pool.end(); };

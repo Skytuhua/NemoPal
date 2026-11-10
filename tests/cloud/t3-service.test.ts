@@ -48,6 +48,45 @@ it('composes scoped session, adapter and observer and commits only metadata', as
   await service.stop(); expect(h.closes()).toBe(1);
 });
 
+it('exposes only committed activity and clears it when the session stops', async () => {
+  const h = fixture(); const service = new T3Service({ enabled: true, store: h.store, openSession: h.openSession, now: () => now, intervalMs: 60000 });
+  await service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} });
+  expect(service.activity()).toBeUndefined();
+  await service.poll();
+  const activity = service.activity()!;
+  expect(activity.mode).toBe('current');
+  activity.items.length = 0;
+  expect(service.activity()!.items).toHaveLength(1);
+  await service.stop();
+  expect(service.activity()).toBeUndefined();
+});
+
+it('returns bounded pending questions for manual resolution in T3', async () => {
+  const h = fixture();
+  const openSession = async () => { const session = await h.openSession(); return { ...session, toolNames: ['t3_thread_read', 't3_pending_request'],
+    async callTool(name: string, args: Record<string, unknown>) {
+      if (name !== 't3_pending_request') return session.callTool(name, args);
+      if (args.action === 'list') return { structuredContent: { requestIds: ['request'] } };
+      return { structuredContent: { requestId: 'request', questions: [{ id: 'choice', header: 'Question', question: 'Choose one', options: [{ label: 'Yes', description: '' }] }] } };
+    } }; };
+  const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now, intervalMs: 60000 });
+  await service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} });
+  expect(await service.questions()).toMatchObject({ resolution: 'open_in_t3', questions: [{ requestId: 'request' }] });
+  await service.stop();
+});
+
+it('marks the last committed activity offline when a subsequent read fails', async () => {
+  const h = fixture(); let clock = now; let fail = false;
+  const openSession = async () => { const session = await h.openSession(); return { ...session,
+    async callTool(...args: Parameters<typeof session.callTool>) { if (fail) throw Error('offline'); return session.callTool(...args); } }; };
+  const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => clock, intervalMs: 60000 });
+  await service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} });
+  await service.poll(); fail = true; clock += 1000;
+  await service.poll();
+  expect(service.activity()?.mode).toBe('offline');
+  await service.stop();
+});
+
 it('rejects a selection that does not match the authoritative binding before opening', async () => {
   const h = fixture(); let opened = false;
   const service = new T3Service({ enabled: true, store: h.store, now: () => now, openSession: async (...args) => { opened = true; return h.openSession(); } });
@@ -298,12 +337,16 @@ it('retains uncertainty when an aborted open reports an unconfirmed delivery', a
   const h = fixture(); let entered!: () => void;
   const opening = new Promise<void>(r => { entered = r; });
   const { T3ConnectionError } = await import('../../apps/cloud/src/integrations/t3/client/boundary');
+  let attempts = 0;
   const openSession = async (options: import('../../apps/cloud/src/integrations/t3/client').LocalT3SessionOptions): Promise<import('../../apps/cloud/src/integrations/t3/client').LocalT3Session> => {
+    if (attempts++ > 0) return h.openSession();
     entered(); await new Promise<void>(resolve => options.signal!.addEventListener('abort', () => resolve(), { once: true }));
     throw new T3ConnectionError('cancelled', 'cleanup', 'uncertain');
   };
   const service = new T3Service({ enabled: true, store: h.store, openSession, now: () => now });
   const start = service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} }).catch(() => {});
   await opening; await expect(service.stop()).rejects.toMatchObject({ delivery: 'uncertain' }); await start;
+  expect(service.status()).toBe('cleanup_unconfirmed');
+  await expect(service.start(selection, { endpoint: 'synthetic-endpoint', onAuthorization() {} })).rejects.toMatchObject({ code: 'unavailable' });
   expect(service.status()).toBe('cleanup_unconfirmed');
 });

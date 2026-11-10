@@ -1,6 +1,6 @@
 import { openLocalT3Session, type LocalT3Session, type LocalT3SessionOptions } from './client';
 import { T3ConnectionError } from './client/boundary';
-import { authorized, contextSchema, parse, T3Error, type T3Context } from './model';
+import { authorized, contextSchema, parse, T3Error, type T3Context, type T3Question } from './model';
 import { T3Observer, type T3Observation } from './observer';
 import { T3Adapter } from './protocol';
 
@@ -13,14 +13,16 @@ export type T3Selection = { ownerId: string; deviceId: string; projectId: string
  * service fences all new starts. */
 export interface T3ServiceStore {
   load(selection: T3Selection): Promise<{ context: T3Context; checkpoint?: T3Observation }>;
-  commitIfCurrent(expected: T3Context, observation: T3Observation): Promise<boolean>;
+  commitIfCurrent(expected: T3Context, observation: T3Observation, previous?: T3Observation): Promise<boolean>;
   revoke(selection: T3Selection, expected: T3Context): Promise<void>;
 }
 type OpenSession = (options: LocalT3SessionOptions) => Promise<LocalT3Session>;
 type Options = { enabled?: boolean; store: T3ServiceStore; openSession?: OpenSession; now?: () => number; intervalMs?: number; storeTimeoutMs?: number };
 type Connection = Pick<LocalT3SessionOptions, 'endpoint' | 'onAuthorization' | 'signInTimeoutMs' | 'requestTimeoutMs' | 'sessionTimeoutMs'>;
-type Active = { context?: T3Context; selection: T3Selection; stop: AbortController; session?: LocalT3Session; observer?: T3Observer;
+type Active = { context?: T3Context; selection: T3Selection; stop: AbortController; session?: LocalT3Session; observer?: T3Observer; adapter?: T3Adapter;
   timer?: ReturnType<typeof setTimeout>; starting?: Promise<void>; polling?: Promise<T3Observation | undefined>; closing?: Promise<void>;
+  questioning?: Promise<{ resolution: 'open_in_t3'; questions: T3Question[]; hasMore: boolean }>;
+  checkpoint?: T3Observation; published?: T3Observation;
   operations: Set<Promise<unknown>>; opening: boolean; inCall: boolean; stopping: boolean; pending: boolean; openFailure?: T3ConnectionError };
 
 /** Explicitly started, single-binding lifecycle. This module registers no route or listener. */
@@ -45,6 +47,16 @@ export class T3Service {
     return this.active ? (this.active.pending ? 'pending' : this.active.stopping ? 'stopping' : 'active') : (this.cleanupUnconfirmed ? 'cleanup_unconfirmed' : this.terminalSession ? 'session_ended' : 'idle');
   }
   sessionEnded(): boolean { return this.terminalSession; }
+  /** Trusted host only. Never expose a restored or uncommitted observation as current. */
+  activity(): T3Observation | undefined {
+    const active = this.active;
+    if (!active || active.stopping || !active.published || !active.context || active.context.grant.expiresAt <= this.now()) return undefined;
+    const result = structuredClone(active.published);
+    if (result.mode === 'current' && (result.lastSeenAt === null || this.now() - result.lastSeenAt > 15000)) {
+      result.mode = 'stale'; result.label = 'T3 activity is stale';
+    }
+    return result;
+  }
   private bounded<T>(promise: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout>;
     const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new T3Error('pending')), this.timeoutMs); });
@@ -72,11 +84,13 @@ export class T3Service {
   async start(selection: T3Selection, connection: Connection): Promise<void> {
     if (!this.options.enabled) throw new T3Error('capability_unavailable');
     if (this.active) throw new T3Error('conflict');
+    if (this.cleanupUnconfirmed) throw new T3Error('unavailable');
     const active: Active = { selection: { ...selection }, stop: new AbortController(), operations: new Set(), opening: false, inCall: false, stopping: false, pending: false };
     this.active = active;
     this.terminalSession = false;
     const starting = (async () => {
       const loaded = await this.store(active, () => this.options.store.load(active.selection));
+      active.checkpoint = loaded.checkpoint;
       const context = parse(contextSchema, loaded.context); active.context = context;
       await authorized(context, () => this.authority(active), this.now, active.stop.signal);
       if (active.stopping) throw new T3Error('cancelled');
@@ -92,6 +106,7 @@ export class T3Service {
         try { return await this.track(active, () => session.callTool(...args)); } finally { active.inCall = false; }
       } }, () => this.authority(active), this.now, Math.max(5000, this.timeoutMs + 1000));
       if (!adapter.capabilities().observation) throw new T3Error('capability_unavailable');
+      active.adapter = adapter;
       active.observer = new T3Observer(context, adapter, this.now, loaded.checkpoint);
       if (active.stopping) throw new T3Error('cancelled');
       this.schedule(active);
@@ -110,6 +125,7 @@ export class T3Service {
   async poll(): Promise<T3Observation | undefined> {
     const active = this.active;
     if (!active?.observer || active.stopping) return undefined;
+    if (active.questioning) return undefined;
     if (active.polling) return active.polling;
     const polling = (async () => {
       const observation = await active.observer!.poll(active.stop.signal);
@@ -124,17 +140,41 @@ export class T3Service {
         return { ...observation, mode: 'session_ended' as const, label: 'T3 session ended; restart to reconnect' };
       }
       if (observation.mode === 'revoked') { this.close(active); return undefined; }
-      if (observation.mode !== 'current' && observation.mode !== 'unmapped') return observation;
+      if (observation.mode !== 'current' && observation.mode !== 'unmapped') {
+        if (active.published) active.published = { ...active.published, mode: observation.mode, label: observation.label };
+        return observation;
+      }
       let committed: boolean;
-      try { committed = await this.store(active, () => this.options.store.commitIfCurrent(active.context!, observation)); }
+      try { committed = await this.store(active, () => this.options.store.commitIfCurrent(active.context!, observation, active.checkpoint)); }
       catch (error) { this.close(active); throw error instanceof T3Error ? error : new T3Error('unavailable'); }
       if (!committed) { this.close(active); return undefined; }
+      active.checkpoint = observation;
       if (active.stopping) return undefined;
+      active.published = structuredClone(observation);
       return observation;
     })();
     active.polling = polling;
     try { return await polling; }
     finally { active.polling = undefined; }
+  }
+  /** A trusted host can present these questions; replies must be made in T3. */
+  async questions() {
+    const active = this.active;
+    if (!active?.adapter || !active.context || active.stopping) throw new T3Error('unavailable');
+    if (active.questioning || active.polling) throw new T3Error('conflict');
+    const querying = (async () => {
+      try {
+        const ids = await active.adapter!.pendingIds(active.context!, active.stop.signal);
+        const questions: T3Question[] = [];
+        for (const id of ids.slice(0, 5)) questions.push(await active.adapter!.question(active.context!, id, active.stop.signal));
+        if (active.stopping) throw new T3Error('cancelled');
+        return { resolution: 'open_in_t3' as const, questions, hasMore: ids.length > 5 };
+      } finally {
+        if (active.operations.size) { active.pending = true; this.close(active); }
+      }
+    })();
+    active.questioning = querying;
+    try { return await querying; } finally { active.questioning = undefined; }
   }
   private close(active: Active): Promise<void> {
     if (active.closing) return active.closing;
@@ -148,6 +188,7 @@ export class T3Service {
       await Promise.resolve();
       await active.starting?.catch(() => {});
       await active.polling?.catch(() => {});
+      await active.questioning?.catch(() => {});
       while (active.operations.size) await Promise.allSettled([...active.operations]);
       try { if (active.openFailure) throw active.openFailure; await active.session?.close(); }
       catch (error) { this.cleanupUnconfirmed = true; throw error; }
