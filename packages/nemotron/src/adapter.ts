@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as c from '@living-playbooks/contracts';
 import { executeReadTool } from './tools';
 import { validateProposal } from './proposal-validation';
+import { abortable } from './abortable';
 export type NemotronSettings = {
     baseUrl: string;
     model: string;
@@ -159,7 +160,7 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
         const required = { schemaVersion: 1, jobId, baseProjectRevision: 0, projectEpoch: 0, grantVersions: [], taskChanges: [], decisionSuggestions: [], workspace, reply: { text: 'Read the project goal from the tool result.', observationIds: [] } };
         const messages: c.ModelMessage[] = [{ role: 'system', content: 'Determine the project goal using an available read tool. Then return the required ManagerProposal with reply.text set to that exact goal. No other actions.' }, { role: 'user', content: JSON.stringify({ requiredProposal: required, projectId }) }];
         try {
-            const first = await this.turn({ projectId, messages, remainingModelCalls: 4, remainingToolCalls: 6 }, signal);
+            const first = await abortable(this.turn({ projectId, messages, remainingModelCalls: 4, remainingToolCalls: 6 }, signal), signal);
             if (first.type !== 'tool_calls' || first.calls.length !== 1 || first.calls[0]!.name !== 'read_project_state')
                 throw new Error('probe_tool');
             report.toolCall = true;
@@ -170,7 +171,7 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
             messages.push({ role: 'assistant', content: '', toolCalls: first.calls }, { role: 'tool', toolCallId: first.calls[0]!.id, content: JSON.stringify(executeReadTool(first.calls[0],context)) });
             for(let attempt=0;attempt<2;attempt++){
                 try{
-                    const result=await this.turn({projectId,messages,remainingModelCalls:3-attempt,remainingToolCalls:5},signal);
+                    const result=await abortable(this.turn({projectId,messages,remainingModelCalls:3-attempt,remainingToolCalls:5},signal),signal);
                     if(result.type!=='proposal')throw new ProviderError('unsupported_response');
                     validateProposal(result.proposal,job,context);
                     if(result.proposal.reply.text!==project.goal)throw new InvalidProposalError();

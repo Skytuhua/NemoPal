@@ -43,17 +43,24 @@ export async function runJob(queue: JobQueue, adapter: c.NemotronAdapter, job: c
 export function startManagerDispatcher(queue: JobQueue, adapter: c.NemotronAdapter | null) {
     const controller = new AbortController();
     let active: Promise<void> | null = null;
-    const tick = async () => { if (!adapter || active || controller.signal.aborted)
-        return; const job = await queue.claim(); if (job) {
-        active = runJob(queue, adapter, job, controller.signal);
-        try {
-            await active;
-        }
-        finally {
-            active = null;
-        }
-    } };
-    const timer = setInterval(() => { void tick().catch(() => { }); }, 15000);
-    void tick().catch(() => { });
-    return async () => { clearInterval(timer); controller.abort(); await active; };
+    const tick = () => {
+        if (!adapter || active || controller.signal.aborted) return;
+        // Register the whole cycle before a claim can start, settle or reject.
+        const cycle = Promise.resolve().then(async () => {
+            if (controller.signal.aborted) return;
+            const job = await queue.claim();
+            if (!job) return;
+            if (controller.signal.aborted) {
+                // Relinquish the durable lease while queue dependencies remain open.
+                await queue.fail(job, 'job_aborted').catch(() => { });
+                return;
+            }
+            await runJob(queue, adapter, job, controller.signal);
+        });
+        active = cycle;
+        void cycle.catch(() => { }).finally(() => { if (active === cycle) active = null; });
+    };
+    const timer = setInterval(tick, 15000);
+    tick();
+    return async () => { clearInterval(timer); controller.abort(); await active?.catch(() => { }); };
 }

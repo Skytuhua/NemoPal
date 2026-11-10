@@ -3,6 +3,8 @@ import * as c from '@living-playbooks/contracts';
 import { executeReadTool } from './tools';
 import { validateProposal } from './proposal-validation';
 import { InvalidProposalError } from './adapter';
+import { abortable } from './abortable';
+export { abortable } from './abortable';
 export type ToolReceipt = {
     name: c.ReadToolCall['name'];
     references: string[];
@@ -16,16 +18,6 @@ export type RunnerHooks = {
     toolCount?: () => Promise<void>;
     beforeRepair?:()=>Promise<boolean>;
 };
-export async function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-    signal.throwIfAborted();
-    let listener: () => void = () => { };
-    try {
-        return await Promise.race([promise, new Promise<never>((_, reject) => { listener = () => reject(new Error('job_aborted')); signal.addEventListener('abort', listener, { once: true }); })]);
-    }
-    finally {
-        signal.removeEventListener('abort', listener);
-    }
-}
 export class BoundedRunner implements c.ProjectManagerRunner {
     constructor(private adapter: c.NemotronAdapter, private hooks: RunnerHooks = {}) { }
     async run(job: c.ManagerJob, context: c.AuthorizedProjectContext, external: AbortSignal): Promise<c.ManagerProposal> {
