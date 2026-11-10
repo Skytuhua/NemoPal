@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { PlaybooksClient, ProjectSnapshot, TaskStatus } from '@living-playbooks/contracts';
 import type { DraftStore } from '../documents/drafts';
 import { useDraft } from '../documents/useDraft';
-import { ManagerMouse } from '../../app/Presentation';
 import { ManagerOverview } from './ManagerOverview';
 import { ManagerIcon } from './ManagerIcon';
 import './manager-panel.css';
@@ -15,11 +14,12 @@ export interface ChatProps {
   refresh(): Promise<void>;
   openWorkspace?(): void;
   fixture?: boolean;
+  checkIns?: ReactNode;
   openTask?: (id: string) => void;
   updateTask?: (id: string, status: TaskStatus) => void;
 }
 
-export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace, fixture = false, openTask, updateTask }: ChatProps) {
+export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace, fixture = false, openTask, updateTask, checkIns }: ChatProps) {
   const { project } = snapshot, local = useDraft(store, `${project.id}:chat`, '', 0);
   const [busy, setBusy] = useState(false), [status, setStatus] = useState('');
   async function send() {
@@ -55,12 +55,13 @@ export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace
     </header>
 
     <div className="manager-identity">
-      <div className="manager-avatar"><ManagerMouse /></div>
+      <div className="manager-avatar"><ManagerIcon name="bot" /></div>
       <div><h3>{project.manager.displayName}</h3><p>Your project manager</p></div>
     </div>
 
     <div className="manager-scroll">
       <ManagerOverview project={project} disabled={disabled || busy} openTask={openTask} updateTask={updateTask} openWorkspace={openWorkspace} />
+      {checkIns && <section className="manager-checkins" aria-label="Project questions" data-panel-type="question_card"><h3>Check in</h3>{checkIns}</section>}
       <section className="manager-conversation" aria-label="Conversation">
         <h3>Conversation</h3>
         <div className="manager-messages" role="log" aria-label="Selected manager conversation" tabIndex={0}>
@@ -82,6 +83,7 @@ export function Chat({ snapshot, client, store, disabled, refresh, openWorkspace
           <button type="submit" aria-label={busy ? 'Sending…' : 'Send message'} disabled={disabled || !snapshot.connection.inference.available || !local.ready || !local.draft.text.trim() || busy || !!local.error}>{busy ? 'Sending…' : 'Send'}<ManagerIcon name="send" /></button>
         </div>
       </div>
+      <small className="composer-explanation">{chatExplanation}</small>
       {status && <p className="manager-send-status" role="status">{status}</p>}
       {local.error && <p className="manager-draft-error" role="alert">{local.error}</p>}
     </form>

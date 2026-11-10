@@ -1,3 +1,5 @@
+// UI fixtures default to a desktop workspace; responsive tests drive ResizeObserver explicitly.
+if (typeof window !== 'undefined') Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
 import { ProjectSnapshotSchema, type ProjectSnapshot } from '@living-playbooks/contracts';
 import { goldenSnapshot } from '../../fixtures/contracts/golden';
 import type { DraftStore, LocalDraft } from '../../apps/web/src/features/documents/drafts';

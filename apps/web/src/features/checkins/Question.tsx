@@ -15,10 +15,11 @@ export function Question({ question, disabled = false, compact = false, answer, 
   if (compact) return <div className="question compact-question">
     <div className="compact-question-copy"><p>{question.question}</p>
       {!actionable && !question.answer && <small>{question.state === 'snoozed' && question.snoozedUntil ? `Snoozed until ${new Date(question.snoozedUntil).toLocaleString()}` : ['available', 'presented'].includes(question.state) ? 'Question expired' : `Question ${question.state}`}</small>}
-      {question.answer && <small className="question-saved">Answer saved: {question.answer.kind === 'recorded' ? 'Recorded' : 'Not yet'}</small>}
+      {question.answer && <small className="question-saved">Answer saved: {question.answer.kind === 'recorded' ? (compact ? 'Task marked done' : 'Recorded') : 'Not yet'}</small>}
     </div>
+    <small className="question-effect">A done answer marks the linked task done.</small>
     <div className="compact-question-actions">
-      {actionable && <><button className="detail-primary" disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'recorded' }))}><DetailIcon kind="check" />Recorded</button><button disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'not_yet' }))}>Not yet</button><button className="detail-icon-button" aria-label="More options" aria-haspopup="dialog" aria-expanded={options} onClick={() => setOptions(true)}><DetailIcon kind="more" /></button></>}
+      {actionable && <><button className="detail-primary" disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'recorded' }))}><DetailIcon kind="check" />Mark task done</button><button disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'not_yet' }))}>Not yet</button><button className="detail-icon-button" aria-label="More options" aria-haspopup="dialog" aria-expanded={options} onClick={() => setOptions(true)}><DetailIcon kind="more" /></button></>}
       {openTask && <button className="detail-text-button" onClick={openTask}>Open linked task<DetailIcon kind="arrow" /></button>}
     </div>
     {busy && <p role="status">Saving answer…</p>}{error && <p role="alert">{error}</p>}
@@ -37,7 +38,7 @@ export function Question({ question, disabled = false, compact = false, answer, 
   return <div className="question">
     <p>{question.question}</p>
     <small>Question {question.state}{!actionable && ['available', 'presented'].includes(question.state) ? ' · expired' : ''}{question.snoozedUntil ? ` · until ${new Date(question.snoozedUntil).toLocaleString()}` : ''}</small>
-    {question.answer && <p>Answer saved: {question.answer.kind === 'recorded' ? 'Recorded' : 'Not yet'}</p>}
+    {question.answer && <p>Answer saved: {question.answer.kind === 'recorded' ? (compact ? 'Task marked done' : 'Recorded') : 'Not yet'}</p>}
     {actionable && <>
       <div className="actions"><button disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'recorded' }))}>Recorded</button><button disabled={disabled || busy} onClick={() => void run(() => answer({ kind: 'not_yet' }))}>Not yet</button>{cancel && <button disabled={disabled || busy} onClick={() => void run(cancel)}>Cancel question</button>}</div>
       <label>Snooze until<input type="datetime-local" value={until} onChange={event => setUntil(event.target.value)} /></label>

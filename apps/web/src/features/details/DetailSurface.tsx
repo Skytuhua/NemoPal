@@ -1,4 +1,5 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { restoreFocus, trapFocus } from './focus';
 
 /** Keep children mounted when closed so drafts and in-flight work retain identity. */
 export function DetailSurface({ open, title, closeLabel, onClose, children, className = '' }: { open: boolean; title: string; closeLabel: string; onClose(): void; children: ReactNode; className?: string }) {
@@ -15,7 +16,7 @@ export function DetailSurface({ open, title, closeLabel, onClose, children, clas
     return () => {
       if (typeof node.close === 'function') node.close();
       else node.open = false;
-      if (previous instanceof HTMLElement && previous.isConnected && !previous.closest('[hidden]')) previous.focus();
+      restoreFocus(previous);
     };
   }, [open]);
 
@@ -23,12 +24,7 @@ export function DetailSurface({ open, title, closeLabel, onClose, children, clas
     onCancel={event => { event.preventDefault(); onClose(); }}
     onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); }
-      if (event.key !== 'Tab') return;
-      const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, a[href], [tabindex="0"]'))
-        .filter(control => !control.closest('[hidden]') && !control.closest('details:not([open]) > :not(summary)'));
-      const first = controls[0], last = controls.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      trapFocus(event);
     }}>
     <header className="detail-surface-header"><h2 id={titleId}>{title}</h2><button type="button" className="detail-close" data-detail-close aria-label={closeLabel} onClick={onClose}><DetailIcon kind="close" /></button></header>
     <div className="detail-surface-body">{children}</div>

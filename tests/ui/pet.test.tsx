@@ -117,6 +117,6 @@ test('pet answer reaches the shared canonical project view through the client in
   const buttons = screen.getAllByRole('button', { name: 'Recorded' });
   await userEvent.click(buttons[buttons.length - 1]!);
   await waitFor(() => expect(screen.getByLabelText('Status: Record the demo')).toHaveValue('done'));
-  expect(await screen.findByText('Answer saved: Recorded')).toBeVisible();
+  expect(await screen.findByText('Answer saved: Task marked done')).toBeVisible();
   expect(screen.queryByText('Submitted · waiting for canonical desktop state')).not.toBeInTheDocument();
 });

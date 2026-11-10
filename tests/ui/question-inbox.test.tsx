@@ -14,24 +14,24 @@ function withoutQuestionCard(offset = 0) {
   return seed;
 }
 
-test.each(['Not yet', 'Recorded'] as const)('a canonical question without a canvas card or pet can be answered %s and survives reload', async label => {
+test.each(['Not yet', 'Mark task done'] as const)('a canonical question without a canvas card or pet can be answered %s and survives reload', async label => {
   const seed = withoutQuestionCard(), client = createFixtureClient({ snapshots: [seed] }), drafts = memoryDrafts();
   const view = render(<App client={client} drafts={drafts} fixture />);
   await screen.findByRole('region', { name: 'Project questions' });
   expect(screen.getByText('Have you recorded the demo?', { selector: '.compact-question-copy p' })).toBeVisible();
   await userEvent.click(screen.getByRole('button', { name: label }));
-  await screen.findByText(`Answer saved: ${label}`);
-  expect((await client.getSnapshot(seed.project.id)).checkIns[0]!.answer?.kind).toBe(label === 'Recorded' ? 'recorded' : 'not_yet');
+  await screen.findByText(`Answer saved: ${label === 'Mark task done' ? 'Task marked done' : label}`);
+  expect((await client.getSnapshot(seed.project.id)).checkIns[0]!.answer?.kind).toBe(label === 'Mark task done' ? 'recorded' : 'not_yet');
   view.unmount(); render(<App client={client} drafts={drafts} fixture />);
-  expect(await screen.findByText(`Answer saved: ${label}`)).toBeVisible();
+  expect(await screen.findByText(`Answer saved: ${label === 'Mark task done' ? 'Task marked done' : label}`)).toBeVisible();
 });
 
-test('a question already displayed in a canvas card has no duplicate inbox form', async () => {
+test('a canonical question suggested by a canvas card appears once in the manager inbox', async () => {
   render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture />);
   await screen.findByText('Have you recorded the demo?', { selector: '.compact-question-copy p' });
   expect(screen.getAllByText('Have you recorded the demo?', { selector: '.compact-question-copy p' })).toHaveLength(1);
-  expect(screen.getAllByRole('button', { name: 'Recorded' })).toHaveLength(1);
-  expect(screen.queryByRole('region', { name: 'Project questions' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Mark task done' })).toHaveLength(1);
+  expect(screen.getAllByRole('region', { name: 'Project questions' })).toHaveLength(1);
 });
 
 test('a delayed inbox answer for A cannot replace B after project selection', async () => {

@@ -33,6 +33,30 @@ function fixture(run: (root: string) => void) {
   }
 }
 
+const geistPath = 'apps/web/dist/assets/geist-variable-reviewed.woff2';
+const geistBytes = () => fs.readFileSync(fileURLToPath(new URL('../apps/web/src/app/fonts/geist-variable.woff2', import.meta.url)));
+test('only the reviewed local Geist font bytes are admitted with exact custody', () => fixture(root => {
+  fs.writeFileSync(join(root, geistPath), geistBytes());
+  const font = auditBuildOutput(root).files.find(file => file.path === geistPath);
+  assert.equal(font?.bytes, 69760);
+  assert.equal(font?.sha256, '2ffebe993e969069a9789d15164b7715d42491b5835516c5e3b935d5f81b05f1');
+}));
+test('font bytes with the right filename and length but a changed digest are rejected', () => fixture(root => {
+  const changed = geistBytes(); changed[50] = changed[50]! ^ 1;
+  fs.writeFileSync(join(root, geistPath), changed);
+  assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
+}));
+test('font length mismatch is rejected even with the reviewed filename', () => fixture(root => {
+  fs.writeFileSync(join(root, geistPath), geistBytes().subarray(0, -1));
+  assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
+}));
+for (const filename of ['other-font-reviewed.woff2', 'geist-variable.woff2', 'geist-variable-reviewed.ttf', 'geist-variable-reviewed.png']) {
+  test(`font exception does not admit arbitrary binary: ${filename}`, () => fixture(root => {
+    fs.writeFileSync(join(root, 'apps/web/dist/assets', filename), geistBytes());
+    assert.throws(() => auditBuildOutput(root), /Build audit blocked/);
+  }));
+}
+
 test('missing compiled outputs block the audit instead of producing a passing manifest', () => {
   const root = mkdtempSync(join(tmpdir(), 'lp-build-audit-'));
   try {

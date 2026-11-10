@@ -1,4 +1,5 @@
 import type { Project, TaskStatus } from '@living-playbooks/contracts';
+import { actionableTask } from '@living-playbooks/project-ui';
 import { ManagerIcon } from './ManagerIcon';
 
 const statusLabels: Record<TaskStatus, string> = { todo: 'To do', in_progress: 'In progress', blocked: 'Waiting', done: 'Done', skipped: 'Skipped' };
@@ -12,9 +13,7 @@ export function ManagerOverview({ project, disabled, openTask, updateTask, openW
 }) {
   const counts = { todo: 0, in_progress: 0, blocked: 0, done: 0, skipped: 0 };
   for (const task of project.tasks) counts[task.status]++;
-  const nextPanel = project.workspace.panels.find(panel => panel.type === 'next_action');
-  const suggested = nextPanel?.type === 'next_action' ? project.tasks.find(task => task.id === nextPanel.taskId && task.status !== 'done' && task.status !== 'skipped') : undefined;
-  const next = suggested ?? project.tasks.find(task => task.status === 'in_progress') ?? project.tasks.find(task => task.status === 'todo') ?? project.tasks.find(task => task.status === 'blocked');
+  const next = actionableTask(project);
   const remaining = [
     { status: 'in_progress', count: counts.in_progress, text: 'in progress' },
     { status: 'blocked', count: counts.blocked, text: 'waiting' },
