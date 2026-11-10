@@ -27,6 +27,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   const crypto = { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() };
   if (!options.withoutCredential) await new CredentialVault(join(profile, 'device.protected'), crypto, false).save({ token: 'synthetic-main-port-token', deviceId: options.credentialDevice ?? fixtureIds.device, expiresAt: options.credentialExpiry ?? '2099-01-01T00:00:00.000Z' });
   vi.resetModules();
+  vi.stubEnv('NEMOPAL_T3_THREAD_ID', ''); vi.stubEnv('NEMOPAL_T3_CLI', '');
   vi.stubEnv('LP_API_ORIGIN', options.apiOrigin ?? 'http://127.0.0.1:4310'); vi.stubEnv('LP_RENDERER_URL', 'http://127.0.0.1:4321/');
   vi.stubEnv('LP_RECEIVING_MODEL_ENDPOINT', options.receivingEndpoint ?? ''); vi.stubEnv('LP_EXPORT_DISCLOSURE', options.disclosure ?? '');
   const a = projectSnapshot('A'); const b = projectSnapshot('B');

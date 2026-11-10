@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createHttpClient } from '@living-playbooks/api-client';
 import { createInstalledObserver, ADAPTER, VERSION } from '@living-playbooks/codex-observer';
+import { createLocalThreadClient, createT3Runner } from '@living-playbooks/mcp-bridge';
 import * as c from '@living-playbooks/contracts';
 import { CredentialVault } from './credentials';
 import { readPairingResponse } from './pairing';
@@ -66,6 +67,7 @@ async function start() {
   let eventsAbort: AbortController | undefined;
   let eventSequence = 0;
   let observer = makeObserver();
+  const localThread = createLocalThreadClient(process.env.NEMOPAL_T3_THREAD_ID, (args, input, signal) => createT3Runner(process.env.NEMOPAL_T3_CLI || undefined)(args, input, signal));
   function makeObserver(): c.CodexObserver {
     try { return createInstalledObserver(); }
     catch { return { probe: async () => ({ available: false, adapterId: ADAPTER, adapterVersion: VERSION, installedVersion: null, capability: 'unavailable', reason: 'Pinned Codex executable unavailable.', coverage: 'No source observation.' }), readDelta: async () => { throw Error('Observer unavailable'); }, stop: async () => {} }; }
@@ -98,6 +100,7 @@ async function start() {
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
     quitting = true; clearInterval(timer); eventsAbort?.abort();
+    await localThread.close();
     await sources.stop(); await sync.stop(); vault.clearMemory();
   }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
   const reportWithdrawalFailure = () => dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
@@ -186,6 +189,8 @@ async function start() {
   }
   async function dispatch(operation: string, raw: unknown): Promise<unknown> {
     switch (operation) {
+      case 'readLocalThread': return localThread.read(c.LocalThreadReadInputSchema.parse(raw));
+      case 'sendLocalThread': return localThread.send(c.LocalThreadSendInputSchema.parse(raw));
       case 'capabilities': {
         const capability = await observer.probe();
         const sourceObservation = process.env.LP_SELECTED_SOURCE && process.env.LP_SYNTHETIC_SOURCE_NAME ? capability : { ...capability, available: false, capability: 'unavailable', reason: 'No exact named own synthetic project test source configured. General authorization permits source metadata only; live content observation is blocked.' };

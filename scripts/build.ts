@@ -9,7 +9,7 @@ function requireFile(path: string) {
 }
 export async function buildDesktop() {
   for (const path of ['apps/desktop/src/main/index.ts', 'apps/desktop/src/preload/workspace.ts', 'apps/desktop/src/preload/pet.ts']) requireFile(path);
-  await build({ entryPoints: ['apps/desktop/src/main/index.ts'], bundle: true, platform: 'node', format: 'esm', target: 'node24', external: ['electron'], outfile: 'apps/desktop/dist/main/index.js', sourcemap: true });
+  await build({ entryPoints: ['apps/desktop/src/main/index.ts'], bundle: true, platform: 'node', format: 'esm', target: 'node24', external: ['electron', '@modelcontextprotocol/sdk/*'], outfile: 'apps/desktop/dist/main/index.js', sourcemap: true });
   await build({ entryPoints: ['apps/desktop/src/preload/workspace.ts', 'apps/desktop/src/preload/pet.ts'], bundle: true, platform: 'node', format: 'cjs', target: 'node24', external: ['electron'], outdir: 'apps/desktop/dist/preload', outExtension: { '.js': '.cjs' } });
 }
 async function buildAll() {

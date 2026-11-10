@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AllowedClientCommandSchema, ConfirmSourceInputSchema, IdSchema, PairingInputSchema, PetCommandSchema, PetPreferenceSchema, utf8Bytes } from '@living-playbooks/contracts';
+import { AllowedClientCommandSchema, ConfirmSourceInputSchema, IdSchema, LocalThreadReadInputSchema, LocalThreadSendInputSchema, PairingInputSchema, PetCommandSchema, PetPreferenceSchema, utf8Bytes } from '@living-playbooks/contracts';
 
 export type SenderContext = { role: string; senderId: number; frameId: number; topFrameId: number; url: string };
 export type WindowIdentity = { senderId: number; frameId: number; url: string };
@@ -13,6 +13,7 @@ export class NativeBoundary {
     const schemas: Record<string, z.ZodType> = sender.role === 'workspace' ? {
       capabilities: z.undefined(), pair: PairingInputSchema, selectSource: IdSchema, confirmSource: ConfirmSourceInputSchema,
       pauseSource: IdSchema, revokeSource: IdSchema, invoke: AllowedClientCommandSchema, setPetPreference: PetPreferenceSchema,
+      readLocalThread: LocalThreadReadInputSchema, sendLocalThread: LocalThreadSendInputSchema,
     } : { petInvoke: PetCommandSchema };
     const schema = schemas[operation];
     if (!schema) throw Error('Native operation denied');

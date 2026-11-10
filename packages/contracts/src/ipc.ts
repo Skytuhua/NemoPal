@@ -4,6 +4,7 @@ import { CapabilitySchema, CheckInAnswerSchema, CheckInSchema, ObservationSchema
 import { commandEnvelopeSchema, revisionedCommandSchema, CreateProjectInputSchema, MessageInputSchema, OwnerActionSchema, DocumentInputSchema, SnoozeInputSchema, EmptyInputSchema, ProjectEventSchema, PairingInputSchema, PairingResultSchema } from './api';
 import type { CommandEnvelope, PairingInput, PairingResult, PlaybooksClient, ProjectEvent } from './api';
 import type { CheckIn, ProjectSnapshot, SourceBinding } from './domain';
+import type { LocalThreadHistory, LocalThreadReadInput, LocalThreadReceipt, LocalThreadSendInput } from './thread';
 
 export const SourceCursorSchema = z.strictObject({ adapterId: boundedText(80, true), identity: boundedText(512, true), offset: revision, fingerprint: boundedText(256, true) });
 export const ObservationBatchSchema = z.strictObject({ observations: z.array(ObservationSchema).max(20), nextCursor: SourceCursorSchema, mode: SourceCapabilitySchema, lastObservedAt: timestamp.nullable(), coverage: boundedText(1024, true) });
@@ -57,6 +58,10 @@ export type AllowedClientCommand = z.infer<typeof AllowedClientCommandSchema>;
 export type PetCommand = z.infer<typeof PetCommandSchema>;
 export type DesktopCommandResult<C extends AllowedClientCommand> = Awaited<ReturnType<PlaybooksClient[C['type']]>>;
 export interface DesktopBridge {
+  localThread?: {
+    read(input: LocalThreadReadInput): Promise<LocalThreadHistory>;
+    send(input: LocalThreadSendInput): Promise<LocalThreadReceipt>;
+  };
   capabilities(): Promise<DesktopCapabilities>;
   pair(input: PairingInput): Promise<PairingResult>;
   selectSource(projectId: string): Promise<SourceSelectionPreview>;

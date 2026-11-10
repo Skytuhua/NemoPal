@@ -11,6 +11,20 @@ function boundary() {
   return { guard, executed };
 }
 describe('native IPC authority', () => {
+  it('permits only scoped local thread operations from the workspace, without cloud project authority', async () => {
+    const { guard, executed } = boundary();
+    await guard.call(sender(), 'readLocalThread', { limit: 10 });
+    await guard.call(sender(), 'sendLocalThread', { message: 'Synthetic owner message' });
+    expect(executed).toEqual([{ operation: 'readLocalThread', input: { limit: 10 } }, { operation: 'sendLocalThread', input: { message: 'Synthetic owner message' } }]);
+    for (const [operation, input] of [
+      ['readLocalThread', { threadId: ids.project }], ['sendLocalThread', { message: 'hello', mode: 'restart' }],
+      ['sendLocalThread', { message: 'hello', command: 'whoami' }], ['sendLocalThread', { message: '好'.repeat(6000) }],
+    ] as const) await expect(guard.call(sender(), operation, input)).rejects.toThrow();
+    const pet = { ...sender('pet', 'file:///app/index.html?surface=pet'), senderId: 10, frameId: 11, topFrameId: 11 };
+    await expect(guard.call(pet, 'readLocalThread', {})).rejects.toThrow();
+    await expect(guard.call(pet, 'sendLocalThread', { message: 'hello' })).rejects.toThrow();
+    expect(executed).toHaveLength(2);
+  });
   it('denies arbitrary operations, extra fields and cross-project commands before dispatch', async () => {
     const { guard, executed } = boundary();
     for (const input of [{ type: 'exec', command: 'whoami' }, { type: 'listProjects', url: 'https://evil.test' }, { type: 'getSnapshot', projectId: ids.owner }]) {

@@ -4,11 +4,22 @@ import { App } from './App';
 import { runtime } from './runtime';
 import { createDraftStore } from '../features/documents/drafts';
 import { PairingBootstrap } from '../features/pairing/PairingBootstrap';
+import { LocalThread } from '../features/chat/LocalThread';
 
 type WorkspaceProps = { bridge?: DesktopBridge; development: boolean; fixtureEnabled: boolean };
 
 export function WorkspaceRoot(props: WorkspaceProps) {
-  return props.bridge ? <PairingBootstrap bridge={props.bridge}><Workspace {...props} /></PairingBootstrap> : <Workspace {...props} />;
+  const [local, setLocal] = useState(false), [visited, setVisited] = useState(false);
+  const workspace = props.bridge ? <PairingBootstrap bridge={props.bridge}><Workspace {...props} /></PairingBootstrap> : <Workspace {...props} />;
+  if (!props.bridge?.localThread) return workspace;
+  return <>
+    <nav className="desktop-view-nav" aria-label="Desktop views">
+      <button aria-pressed={!local} onClick={() => setLocal(false)}>Project workspace</button>
+      <button aria-pressed={local} onClick={() => { setVisited(true); setLocal(true); }}>Local coding thread</button>
+    </nav>
+    <div hidden={local}>{workspace}</div>
+    <div hidden={!local}>{visited && <LocalThread bridge={props.bridge.localThread} />}</div>
+  </>;
 }
 
 function Workspace({ bridge, development, fixtureEnabled }: WorkspaceProps) {

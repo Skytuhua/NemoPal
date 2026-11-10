@@ -77,6 +77,11 @@ summary { min-height: 44px; padding: 10px 0; font-weight: 600; line-height: 1.6;
 .empty button { justify-self: start; }
 .unavailable { max-width: 780px; margin: 8vh auto; padding: 32px; }
 .pairing-bootstrap form { max-width: 420px; }
+.desktop-view-nav { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.desktop-view-nav button[aria-pressed=true] { background: var(--ink); color: white; border-color: var(--ink); }
+.local-thread { max-width: 900px; margin: 0 auto; padding: 32px 24px; display: grid; gap: 20px; }
+.local-thread .surface-header { display: grid; gap: 12px; }
+.local-thread .composer { margin-top: 0; }
 .loading > div { height: 80px; background: #edf0eb; margin-top: 24px; border-radius: 5px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip-link { position: absolute; top: -80px; z-index: 10; padding: 12px; background: white; }

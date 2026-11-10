@@ -27,3 +27,7 @@ pnpm evidence:check
 Application commands are listed in `package.json` and master-plan Section 19. Missing implementation or live credentials produces failure or `BLOCKED`, never a passing acceptance claim. The full app build becomes usable after the lane PRs join.
 
 Never commit `.env`, source histories, device/pairing credentials, or provider keys. The public repository contains synthetic fixtures only. [Reuse and license record](docs/reuse-and-licenses.md).
+
+## Local T3 thread MCP
+
+The optional [NemoPal coding-thread MCP server](packages/mcp-bridge/README.md) exposes bounded `read_thread` and queued `send_message` tools for one owner-selected local T3 thread. Configure `NEMOPAL_T3_THREAD_ID` when launching the desktop and open **Local coding thread** to read/send without cloud pairing. External MCP hosts can run `pnpm mcp:thread` with the same selection; the linked guide includes a direct host launch configuration. The cloud manager does not automatically receive the transcript.

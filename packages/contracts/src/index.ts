@@ -3,3 +3,4 @@ export * from './domain';
 export * from './api';
 export * from './ipc';
 export * from './model';
+export * from './thread';

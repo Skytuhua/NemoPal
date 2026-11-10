@@ -22,6 +22,7 @@
     "dev:cloud": "tsx apps/cloud/src/main.ts",
     "dev:web": "vite --config apps/web/vite.config.ts",
     "dev:desktop": "tsx scripts/run-desktop.ts",
+    "mcp:thread": "tsx packages/mcp-bridge/src/main.ts",
     "build": "tsx scripts/build.ts",
     "package:win": "tsx scripts/verify-live.ts package",
     "evidence:check": "tsx scripts/check-evidence.ts"
@@ -34,6 +35,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@playwright/test": "1.65.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
