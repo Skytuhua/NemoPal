@@ -36,7 +36,7 @@
 .app-shell :is(.compact-question, .detail-surface) button:hover:not(:disabled) { background: var(--selected); border-color: var(--focus); }
 .app-shell :is(.compact-question, .detail-surface) button:active:not(:disabled) { background: var(--chrome); }
 .app-shell :is(.compact-question, .detail-surface) button:disabled { cursor: default; opacity: 0.5; }
-.app-shell :is(.compact-question, .detail-surface) .detail-primary { background: var(--action); border-color: var(--action); color: var(--ink); }
+.app-shell :is(.compact-question, .detail-surface) .detail-primary { background: var(--action); border-color: var(--action); color: #171611; }
 .app-shell :is(.compact-question, .detail-surface) .detail-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--action) 80%, var(--ink)); border-color: var(--focus); }
 .app-shell .compact-question .detail-icon-button { width: 44px; padding: 8px; }
 .app-shell .compact-question .detail-text-button { color: var(--focus); border-color: transparent; background: transparent; font-weight: 500; }

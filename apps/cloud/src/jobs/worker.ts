@@ -1,5 +1,5 @@
 import type * as c from '@living-playbooks/contracts';
-import { BoundedRunner, ProviderError } from '@living-playbooks/nemotron';
+import { BoundedRunner, HttpNemotronAdapter, ProviderError } from '@living-playbooks/nemotron';
 import { JobQueue } from './queue';
 const safeCodes = new Set(['provider_auth', 'provider_rate_limit', 'provider_network', 'provider_unavailable', 'unsupported_schema', 'unsupported_pending', 'unsupported_response', 'provider_redirect', 'input_budget', 'output_budget', 'tool_output_budget', 'model_budget', 'tool_budget', 'account_budget', 'model_contract', 'tool_contract', 'tool_scope', 'tool_identity', 'proposal_contract', 'proposal_scope', 'proposal_grants', 'proposal_evidence', 'proposal_evidence_level', 'proposal_owner_authority', 'proposal_owner_override', 'proposal_completion_authority', 'proposal_component_references', 'proposal_task_revision', 'proposal_task_identity', 'proposal_duplicate_task', 'proposal_question_subject', 'proposal_stale', 'job_aborted', 'lease_lost', 'lease_project_paused', 'model_configuration']);
 export async function runJob(queue: JobQueue, adapter: c.NemotronAdapter, job: c.ManagerJob, external: AbortSignal) {
@@ -18,7 +18,8 @@ export async function runJob(queue: JobQueue, adapter: c.NemotronAdapter, job: c
     }, 1000);
     try {
         const context = await queue.context(job);
-        const runner = new BoundedRunner(adapter, { beforeCall: async () => { await queue.context(job); await queue.countCall(job); }, beforeTool: () => queue.context(job), toolCount: () => queue.countTool(job), toolReceipt: receipt => queue.receipt(job, receipt),beforeRepair:()=>queue.claimRepair(job) });
+        const scoped = adapter instanceof HttpNemotronAdapter ? adapter.withAuthority(() => queue.context(job)) : adapter;
+        const runner = new BoundedRunner(scoped, { beforeCall: async () => { await queue.context(job); await queue.countCall(job); }, beforeTool: () => queue.context(job), toolCount: () => queue.countTool(job), toolReceipt: receipt => queue.receipt(job, receipt),beforeRepair:()=>queue.claimRepair(job) });
         const proposal = await runner.run(job, context, signal);
         await queue.commit(job, proposal);
     }

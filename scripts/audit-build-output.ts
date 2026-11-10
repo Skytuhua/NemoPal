@@ -14,6 +14,8 @@ const directories = new Set([...roots, 'apps/web/dist/assets', 'apps/desktop/dis
 const maxFiles = 512, maxEntries = 1024, maxFileBytes = 16 * 1024 * 1024, maxTotalBytes = 64 * 1024 * 1024;
 const mouseAsset = /^apps\/web\/dist\/assets\/pixel-mouse-idle-v1-[A-Za-z0-9_-]+\.png$/;
 const mouseSha256 = '215aabdb08587e857d675451f6631afbb4c1d5133cae77c310574eea05778e7e';
+const geistAsset = /^apps\/web\/dist\/assets\/geist-variable-[A-Za-z0-9_-]+\.woff2$/;
+const geistSha256 = '2ffebe993e969069a9789d15164b7715d42491b5835516c5e3b935d5f81b05f1';
 const forbiddenName = /(?:^|[._-])(?:env|credentials?|secrets?|tokens?|pairing|journal|history|sessions?|logs?|device|id_rsa|id_ed25519)(?:[._-]|$)|^\.(?:git|codex|ssh)$|\.(?:jsonl|pem|key|pfx|p12|protected|sqlite3?|db|log)$/i;
 const credentialPatterns = [
   /\b(?:nvapi-|sk-(?:proj-)?|ghp_|github_pat_)[A-Za-z0-9_-]{20,}/,
@@ -90,7 +92,7 @@ function inspect(root: string) {
     }
     if (!stat.isFile()) block('non-regular output');
     if (stat.nlink !== 1) block('hard link');
-    if (!required.includes(path) && !/^apps\/web\/dist\/assets\/[A-Za-z0-9_-]+\.(?:js|css|svg)$/.test(path) && !mouseAsset.test(path)) block('unexpected output file');
+    if (!required.includes(path) && !/^apps\/web\/dist\/assets\/[A-Za-z0-9_-]+\.(?:js|css|svg)$/.test(path) && !mouseAsset.test(path) && !geistAsset.test(path)) block('unexpected output file');
     if (stat.size === 0) block('empty output');
     totalBytes += stat.size;
     if (stat.size > maxFileBytes || totalBytes > maxTotalBytes) block('size limit');
@@ -126,6 +128,12 @@ function inspect(root: string) {
       if (after.size !== current.size || after.mtimeMs !== current.mtimeMs) block('output changed during audit');
     } finally { closeSync(fd); }
     const sha256 = hash(bytes);
+    if (geistAsset.test(file.path)) {
+      // Exact reviewed OFL font only; other fonts and arbitrary binary stay blocked.
+      if (bytes.length !== 69760 || sha256 !== geistSha256) block('font digest mismatch');
+      files.push({ path: file.path, bytes: bytes.length, sha256 });
+      continue;
+    }
     if (mouseAsset.test(file.path)) {
       // Only the reviewed immutable sprite may bypass text decoding; no general PNG admission.
       if (bytes.length !== 960766 || sha256 !== mouseSha256) block('sprite digest mismatch');

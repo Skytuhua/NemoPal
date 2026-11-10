@@ -38,6 +38,13 @@ async function start() {
   let credentialBlocker = '';
   await vault.load().catch(() => { credentialBlocker = 'Protected credential cannot be loaded. Explicit re-pairing required.'; });
   const origin = process.env.LP_API_ORIGIN ?? null;
+  let ownerGeneration = 0;
+  let ownerAbort = new AbortController();
+  let pairing = false;
+  let pairingAbort: AbortController | undefined;
+  let pairingCompletion: Promise<void> | undefined;
+  let ownerReady = true;
+  const assertOwner = (generation: number) => { if (quitting || generation !== ownerGeneration) throw Error('Pairing session changed'); };
   const fetchBounded: typeof fetch = (input, init) => {
     const path = new URL(input instanceof Request ? input.url : input).pathname;
     if (init?.method === 'POST' && /^\/v1\/projects\/[^/]+\/sources$/.test(path)) {
@@ -47,9 +54,29 @@ async function start() {
       if (quitting || !enrollment || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId || new Headers(init.headers).get('Authorization') !== vault.authorization())
         return Promise.reject(Error('Source enrollment authority changed'));
     }
+    const observations = /^\/v1\/sources\/([^/]+)\/observations$/.exec(path);
+    if (init?.method === 'POST' && observations) {
+      const command = c.commandEnvelopeSchema(c.IngestObservationsInputSchema).parse(JSON.parse(String(init.body)));
+      const upload = store.pendingUpload(command.operationId);
+      const binding = upload && store.binding(upload.bindingId)?.binding;
+      if (quitting || !upload || !binding || upload.bindingId !== observations[1] || binding.deviceId !== vault.deviceId() ||
+          !store.isFollowing(binding.id) || binding.grantRevision !== upload.grantRevision || binding.exportPolicy === 'off' ||
+          !store.canExport(binding.id, upload.grantRevision, currentReceiving()) || JSON.stringify(upload.input) !== JSON.stringify(command.input) ||
+          new Headers(init.headers).get('Authorization') !== vault.authorization())
+        return Promise.reject(Error('Observation export authority changed'));
+    }
     return fetch(input, { ...init, signal: init?.headers && new Headers(init.headers).get('Accept') === 'text/event-stream' ? init.signal : AbortSignal.any([AbortSignal.timeout(15000), ...(init?.signal ? [init.signal] : [])]) });
   };
-  const client = createHttpClient({ origin: origin ?? 'http://127.0.0.1:4310', allowInsecureLoopback: !app.isPackaged, getAuthorization: () => vault.authorization(), fetch: fetchBounded });
+  function makeClient() {
+    const generation = ownerGeneration, authorization = vault.authorization(), signal = ownerAbort.signal;
+    return createHttpClient({ origin: origin ?? 'http://127.0.0.1:4310', allowInsecureLoopback: !app.isPackaged, getAuthorization: () => authorization,
+      fetch: (input, init) => {
+        assertOwner(generation);
+        if (signal.aborted || !authorization || authorization !== vault.authorization()) return Promise.reject(Error('Pairing authority changed'));
+        return fetchBounded(input, { ...init, signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]) });
+      } });
+  }
+  let client = makeClient();
   // Explicit owner configuration must name BOTH the actual receiving endpoint and a disclosure.
   const currentReceiving = () => receivingIdentity(origin, process.env.LP_RECEIVING_MODEL_ENDPOINT, process.env.LP_EXPORT_DISCLOSURE);
   let consent = new ConsentSelections(origin, currentReceiving());
@@ -71,15 +98,17 @@ async function start() {
     catch { return { probe: async () => ({ available: false, adapterId: ADAPTER, adapterVersion: VERSION, installedVersion: null, capability: 'unavailable', reason: 'Pinned Codex executable unavailable.', coverage: 'No source observation.' }), readDelta: async () => { throw Error('Observer unavailable'); }, stop: async () => {} }; }
   }
   const sendDesktop = (event: c.SafeDesktopEvent) => { if (!windows.workspace.isDestroyed()) windows.workspace.webContents.send('lp:workspace-event', c.SafeDesktopEventSchema.parse(event)); };
-  const sourceState = (id: string) => { const local = store.binding(id); if (local) sendDesktop({ type: 'source_state', binding: local.binding, cloudRevocationPending: store.pendingSourceCommands().some(command => command.bindingId === id && command.kind === 'revoke') }); };
-  const makeController = () => new SourceController(store, observer, (id, reason) => { const local = store.binding(id); if (local) sendDesktop({ type: 'source_state', binding: { ...local.binding, state: 'blocked' }, cloudRevocationPending: false }); sendDesktop({ type: 'connection', connected, reason }); });
+  const sourceState = (id: string) => { const local = store.binding(id); if (!quitting && local && local.binding.deviceId === vault.localDeviceId()) sendDesktop({ type: 'source_state', binding: local.binding, cloudRevocationPending: store.pendingSourceCommands().some(command => command.bindingId === id && command.kind === 'revoke') }); };
+  const makeController = () => { const generation = ownerGeneration; return new SourceController(store, observer, (id, reason) => { if (generation !== ownerGeneration || quitting) return; const local = store.binding(id); if (local && local.binding.deviceId === vault.localDeviceId()) sendDesktop({ type: 'source_state', binding: { ...local.binding, state: 'blocked' }, cloudRevocationPending: false }); sendDesktop({ type: 'connection', connected, reason }); }); };
   let sources = makeController();
-  let sync = new SyncEngine(store, client, currentReceiving);
+  let sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId());
   const windows = createNativeWindows({ renderer, preloadDirectory: resolve(base, '../preload'), position: store.position(), closeWorkspace: () => lifetime.closeWorkspace(), moved: point => { void store.setPosition(point).catch(() => { sendDesktop({ type: 'connection', connected: false, reason: 'Local position could not be saved.' }); }); } });
   const open = () => { windows.workspace.show(); windows.workspace.focus(); };
-  const presentation = new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { void refresh(projectId).catch(disconnect); }, Date.now, projectId => { sendDesktop({ type: 'open_project', projectId }); open(); });
+  const makePresentation = () => { const generation = ownerGeneration; return new QuestionPresentation(store, client, event => { windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse(event)); }, projectId => { if (generation === ownerGeneration && !quitting) void refresh(projectId).catch(() => { if (generation === ownerGeneration) disconnect(); }); }, Date.now, projectId => { assertOwner(generation); sendDesktop({ type: 'open_project', projectId }); open(); }); };
+  let presentation = makePresentation();
   const fenceSelection = () => { const generation = ++selectionGeneration; presentation.selectProject(petProject()); return generation; };
   const preference = async (input: c.PetPreference) => {
+    const owner = ownerGeneration;
     const previousPin = pinnedProject;
     const pinChanged = previousPin !== input.pinnedProjectId;
     pinnedProject = input.pinnedProjectId;
@@ -88,17 +117,18 @@ async function start() {
       if (pinChanged) await store.setPreference(input);
       else await presentation.command({ type: 'setPreference', preference: input });
     } catch (error) {
-      if (generation === selectionGeneration) { pinnedProject = previousPin; fenceSelection(); }
+      if (owner === ownerGeneration && generation === selectionGeneration) { pinnedProject = previousPin; fenceSelection(); }
       throw error;
     }
+    assertOwner(owner);
     if (input.hidden) windows.pet.hide(); else windows.pet.showInactive();
     const project = petProject();
     if (pinChanged && connected && project) await refresh(project, generation);
     tray.rebuild();
   };
   const lifetime = new CompanionLifetime(() => windows.workspace.hide(), async () => {
-    quitting = true; clearInterval(timer); eventsAbort?.abort();
-    await sources.stop(); await sync.stop(); vault.clearMemory();
+    quitting = true; ownerAbort.abort(); pairingAbort?.abort(); clearInterval(timer); eventsAbort?.abort();
+    await sources.stop(); await sync.stop(); await pairingCompletion; vault.clearMemory();
   }, () => store.flush(), () => { tray.tray.destroy(); windows.destroy(); app.exit(0); });
   const reportWithdrawalFailure = () => dialog.showErrorBox('Local source action incomplete', 'Local source access could not be fully stopped and durably saved. Local reads and exports are fenced for attempted sources, but observer stop or journal saving may have failed. Keep the app running and retry. Preserve the journal and its .previous snapshot; restarting may restore the previous access state. Cloud changes are not confirmed.');
   async function withdrawSources(action: 'pause' | 'revoke') {
@@ -143,44 +173,49 @@ async function start() {
     void cycle();
   }
   const quit = () => { void lifetime.quit().catch(() => { dialog.showErrorBox('Quit blocked', 'Local journal flush failed. Monitoring is stopped; preserve the journal before exiting.'); }); };
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: preference, clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
+  // Tray toggles may arrive from a menu built before pairing.
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
     if (action) reportWithdrawalFailure();
     else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
   } });
-  const requirePaired = () => { if (!origin || !vault.authorization()) throw Error('Configure an API origin and explicitly pair this device.'); };
+  const requirePaired = () => { if (pairing || !ownerReady || !origin || !vault.authorization()) throw Error('Configure an API origin and explicitly pair this device.'); };
   const remember = (snapshot: c.ProjectSnapshot) => {
     eventSequence = Math.max(eventSequence, snapshot.eventSequence);
     authority.projects.add(snapshot.project.id);
     for (const [id, project] of authority.checkIns) if (project === snapshot.project.id) authority.checkIns.delete(id);
     for (const question of snapshot.checkIns) authority.checkIns.set(question.id, question.projectId);
     for (const document of snapshot.documents) authority.documents.set(document.id, document.projectId);
-    const local = store.bindings().filter(entry => entry.binding.projectId === snapshot.project.id).map(entry => entry.binding);
+    const local = store.bindings().filter(entry => entry.binding.deviceId === vault.localDeviceId() && entry.binding.projectId === snapshot.project.id).map(entry => entry.binding);
     return c.ProjectSnapshotSchema.parse({ ...snapshot, sourceBindings: [...snapshot.sourceBindings.filter(binding => !local.some(entry => entry.id === binding.id)), ...local] });
   };
   async function refresh(projectId: string, generation = selectionGeneration) {
-    requirePaired(); const snapshot = remember(await client.getSnapshot(projectId));
+    const owner = ownerGeneration;
+    requirePaired(); const raw = await client.getSnapshot(projectId); assertOwner(owner);
+    const snapshot = remember(raw);
     if (generation === selectionGeneration && petProject() === projectId) await presentation.refresh(snapshot, connected && !suspended);
+    assertOwner(owner);
     return snapshot;
   }
   function disconnect() { connected = false; presentation.offline(); sendDesktop({ type: 'connection', connected: false, reason: 'Cloud unavailable; local monitoring and pending cloud revocation are reported separately.' }); }
   async function execute(input: c.AllowedClientCommand): Promise<unknown> {
+    const owner = ownerGeneration;
     requirePaired();
     switch (input.type) {
-      case 'listProjects': { const result = await client.listProjects(); const ids = new Set(result.map(project => project.id)); for (const id of authority.projects) if (!ids.has(id)) authority.projects.delete(id); for (const id of ids) authority.projects.add(id); return result; }
+      case 'listProjects': { const result = await client.listProjects(); assertOwner(owner); const ids = new Set(result.map(project => project.id)); for (const id of authority.projects) if (!ids.has(id)) authority.projects.delete(id); for (const id of ids) authority.projects.add(id); return result; }
       case 'createProject': return client.createProject(input.command);
       case 'getSnapshot': {
         selectedProject = input.projectId;
         const generation = fenceSelection();
-        const result = await sync.run(); connected = result.connected;
+        const result = await sync.run(); assertOwner(owner); connected = result.connected;
         return refresh(input.projectId, generation);
       }
-      case 'sendMessage': { const job = await client.sendMessage(input.projectId, input.command); authority.jobs.set(job.jobId, input.projectId); return job; }
+      case 'sendMessage': { const job = await client.sendMessage(input.projectId, input.command); assertOwner(owner); authority.jobs.set(job.jobId, input.projectId); return job; }
       case 'applyAction': return client.applyAction(input.projectId, input.command);
       case 'saveDocument': return client.saveDocument(input.projectId, input.documentId, input.command);
       case 'answerCheckIn': return client.answerCheckIn(input.checkInId, input.command);
       case 'snoozeCheckIn': return client.snoozeCheckIn(input.checkInId, input.command);
       case 'cancelCheckIn': return client.cancelCheckIn(input.checkInId, input.command);
-      case 'deleteProject': { const result = await client.deleteProject(input.projectId, input.command); authority.projects.delete(input.projectId); for (const entry of store.bindings().filter(e => e.binding.projectId === input.projectId)) await sources.revoke(entry.binding.id); return result; }
+      case 'deleteProject': { const result = await client.deleteProject(input.projectId, input.command); assertOwner(owner); authority.projects.delete(input.projectId); const controller = sources; for (const entry of store.bindings().filter(e => e.binding.deviceId === vault.localDeviceId() && e.binding.projectId === input.projectId)) await controller.revoke(entry.binding.id); return result; }
       case 'cancelJob': return client.cancelJob(input.jobId, input.command);
     }
   }
@@ -189,40 +224,68 @@ async function start() {
       case 'capabilities': {
         const capability = await observer.probe();
         const sourceObservation = process.env.LP_SELECTED_SOURCE && process.env.LP_SYNTHETIC_SOURCE_NAME ? capability : { ...capability, available: false, capability: 'unavailable', reason: 'No exact named own synthetic project test source configured. General authorization permits source metadata only; live content observation is blocked.' };
-        return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: Boolean(vault.authorization()), cloudOrigin: origin });
+        return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: ownerReady && Boolean(vault.authorization()), cloudOrigin: origin });
       }
       case 'pair': {
-        if (!origin || (!await safeStorage.isAsyncEncryptionAvailable() && process.env.LP_TEMPORARY_PAIRING !== '1')) throw Error('Configured origin and protected storage or explicit temporary session required.');
-        const response = await fetchBounded(new URL('/v1/auth/redeem', origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c.PairingInputSchema.parse(raw)), redirect: 'error', credentials: 'omit' });
-        const result = await vault.save(await readPairingResponse(response));
-        consent = new ConsentSelections(origin, currentReceiving());
-        for (const entry of enrollments) if (entry.deviceId !== vault.localDeviceId()) {
-          entry.withdrawal = 'revoke'; if (entry.bindingId) store.fence(entry.bindingId);
-        }
-        credentialBlocker = ''; sync = new SyncEngine(store, client, currentReceiving); void cycle(); return result;
+        if (pairing) throw Error('Pairing already in progress');
+        const previousOwner = ownerGeneration;
+        const redemption = new AbortController(); pairingAbort = redemption;
+        let finish!: () => void;
+        pairingCompletion = new Promise<void>(resolve => { finish = resolve; });
+        pairing = true;
+        try {
+          if (!origin || (!await safeStorage.isAsyncEncryptionAvailable() && process.env.LP_TEMPORARY_PAIRING !== '1')) throw Error('Configured origin and protected storage or explicit temporary session required.');
+          assertOwner(previousOwner);
+          const response = await fetchBounded(new URL('/v1/auth/redeem', origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c.PairingInputSchema.parse(raw)), redirect: 'error', credentials: 'omit', signal: redemption.signal });
+          const credential = await readPairingResponse(response);
+          assertOwner(previousOwner);
+          // Invalidate before protected storage awaits; an old response cannot acquire the new owner.
+          presentation.reset(); ++ownerGeneration; ++selectionGeneration; ownerReady = false;
+          const owner = ownerGeneration;
+          ownerAbort.abort(); eventsAbort?.abort(); eventsAbort = undefined; syncing = undefined;
+          connected = false; eventSequence = 0; selectedProject = undefined; pinnedProject = null;
+          authority.projects.clear(); authority.checkIns.clear(); authority.documents.clear(); authority.jobs.clear();
+          consent = new ConsentSelections(origin, currentReceiving());
+          credentialBlocker = 'Pairing transition incomplete; explicitly re-pair. Local source custody remains retained.';
+          for (const entry of enrollments) { entry.withdrawal = 'revoke'; if (entry.bindingId) store.fence(entry.bindingId); }
+          await Promise.all([sources.stop(), sync.stop()]);
+          assertOwner(owner);
+          // Retain prior local withdrawal custody until the journal transition succeeds.
+          await store.setPreference({ ...store.preference(), pinnedProjectId: null });
+          assertOwner(owner);
+          const result = await vault.save(credential);
+          assertOwner(owner);
+          ownerAbort = new AbortController(); client = makeClient(); observer = makeObserver(); sources = makeController();
+          sync = new SyncEngine(store, client, currentReceiving, vault.localDeviceId()); presentation = makePresentation();
+          if (store.preference().hidden) windows.pet.hide(); else windows.pet.showInactive(); tray.rebuild();
+          credentialBlocker = ''; ownerReady = true; return result;
+        } finally { redemption.abort(); pairingAbort = undefined; pairing = false; finish(); pairingCompletion = undefined; if (ownerReady && !quitting) void cycle(); }
       }
       case 'selectSource': {
+        const owner = ownerGeneration;
         const projectId = raw as string; const threadId = process.env.LP_SELECTED_SOURCE;
         if (!threadId || !process.env.LP_SYNTHETIC_SOURCE_NAME || !c.IdSchema.safeParse(threadId).success) return { available: false, reason: 'No exact named own synthetic test source configured. No archive scan or implicit current-thread read is permitted.' };
         const choice = await dialog.showMessageBox(windows.workspace, { type: 'question', buttons: ['Preview this exact source', 'Cancel'], defaultId: 1, cancelId: 1, message: 'Select one harmless build/test conversation', detail: `Thread: ${threadId}\nWorkspace: ${process.cwd()}\nOnly this identity will be validated after local-read consent. Cloud sharing is a separate choice.`, noLink: true });
+        assertOwner(owner);
         return choice.response === 0 ? consent.offer(projectId, threadId, process.cwd()) : { available: false, reason: 'Source selection cancelled.' };
       }
       case 'confirmSource': {
+        const controller = sources, ownerClient = client;
         const input = c.ConfirmSourceInputSchema.parse(raw); const choice = consent.confirm(input); requirePaired();
         const enrollment: SourceEnrollment = { operationId: input.selectionId, deviceId: vault.deviceId()!, cloud: input.exportPolicy !== 'off', completion: Promise.resolve(), failed: false };
         enrollments.add(enrollment);
         const operation = (async () => { try {
-          const snapshot = await client.getSnapshot(input.projectId);
+          const snapshot = await ownerClient.getSnapshot(input.projectId);
           if (quitting || enrollment.withdrawal || vault.deviceId() !== enrollment.deviceId) throw Error('Source consent no longer current');
           const deviceId = enrollment.deviceId;
-          const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await client.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
+          const binding: c.SourceBinding = input.exportPolicy === 'off' ? { id: randomUUID(), projectId: input.projectId, deviceId, sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', grantRevision: 1, exportPolicy: 'off', state: 'following', lastObservedAt: null } : (await ownerClient.enrollSource(input.projectId, { operationId: input.selectionId, expectedRevision: snapshot.project.revision, input: { sourceKey: randomUUID(), adapterId: ADAPTER, adapterVersion: VERSION, capability: 'incremental_history', exportPolicy: input.exportPolicy } })).result;
           enrollment.bindingId = binding.id;
           if (binding.deviceId !== deviceId || binding.projectId !== input.projectId) throw Error('Source enrollment identity mismatch');
           if (quitting || vault.localDeviceId() !== deviceId) enrollment.withdrawal = 'revoke';
           if (enrollment.withdrawal) store.fence(binding.id);
           await store.putBinding({ binding, selectedSource: choice.threadId, sourceIdentity: choice.workspace, localReadConsented: true }, enrollment.cloud, choice.receiving, enrollment.withdrawal);
-          if (enrollment.withdrawal) await sources[enrollment.withdrawal](binding.id);
-          else await sources.poll(binding.id);
+          if (enrollment.withdrawal) await controller[enrollment.withdrawal](binding.id);
+          else await controller.poll(binding.id);
           sourceState(binding.id); return store.binding(binding.id)!.binding;
         } catch (error) { if (enrollment.withdrawal && enrollment.bindingId) reportWithdrawalFailure(); throw error; }
         finally { enrollments.delete(enrollment); } })();
@@ -245,30 +308,37 @@ async function start() {
     try {
       if (typeof operation !== 'string' || !frame || quitting || event.sender !== window.webContents || frame !== window.webContents.mainFrame) throw Error('Untrusted sender');
       const boundary = new NativeBoundary({ [role]: { senderId: window.webContents.id, frameId: window.webContents.mainFrame.routingId, url: windows.targets[role] } }, authority, dispatch);
-      return await boundary.call({ role, senderId: event.sender.id, frameId: frame.routingId, topFrameId: window.webContents.mainFrame.routingId, url: frame.url }, operation, input);
+      const owner = ownerGeneration;
+      const result = await boundary.call({ role, senderId: event.sender.id, frameId: frame.routingId, topFrameId: window.webContents.mainFrame.routingId, url: frame.url }, operation, input);
+      // A successful pair advances its own generation once; a later pair invalidates its reply too.
+      assertOwner(operation === 'pair' ? owner + 1 : owner);
+      return result;
     } catch { throw Error('Native request rejected. Check source consent, current project and pairing state.'); }
   });
   async function cycle(): Promise<void> {
-    if (syncing || quitting || suspended) return syncing;
-    return syncing = (async () => {
+    if (pairing || !ownerReady || syncing || quitting || suspended) return syncing;
+    const owner = ownerGeneration, ownerSync = sync, controller = sources, ownerClient = client, deviceId = vault.deviceId();
+    const run = (async () => {
       try {
         if (!origin || !vault.authorization()) { sendDesktop({ type: 'connection', connected: false, reason: credentialBlocker || 'API and pairing unavailable; cloud sharing is OFF.' }); return; }
-        const result = await sync.run(); connected = result.connected; sendDesktop({ type: 'connection', ...result });
+        const result = await ownerSync.run(); assertOwner(owner); connected = result.connected; sendDesktop({ type: 'connection', ...result });
         // Explicit local-read consent is independent of temporary cloud connectivity.
-        for (const local of store.bindings()) { if (local.binding.deviceId !== vault.deviceId()) continue; await sources.poll(local.binding.id); sourceState(local.binding.id); }
+        for (const local of store.bindings()) { if (local.binding.deviceId !== deviceId) continue; await controller.poll(local.binding.id); assertOwner(owner); sourceState(local.binding.id); }
         if (!connected) { disconnect(); return; }
-        const projects = await client.listProjects(); const authorized = new Set(projects.map(project => project.id));
+        const projects = await ownerClient.listProjects(); assertOwner(owner); const authorized = new Set(projects.map(project => project.id));
         for (const id of authority.projects) if (!authorized.has(id)) authority.projects.delete(id);
         for (const id of authorized) authority.projects.add(id);
-        const uploaded = await sync.run(); connected = uploaded.connected; if (!connected) { disconnect(); return; }
-        const project = petProject(); if (project && authority.projects.has(project)) await refresh(project);
-        else if (!eventSequence && projects[0]) eventSequence = (await client.getSnapshot(projects[0].id)).eventSequence;
+        if (pinnedProject && !authorized.has(pinnedProject)) { pinnedProject = null; fenceSelection(); await store.setPreference({ ...store.preference(), pinnedProjectId: null }); assertOwner(owner); }
+        const uploaded = await ownerSync.run(); assertOwner(owner); connected = uploaded.connected; if (!connected) { disconnect(); return; }
+        const project = petProject(); if (project && authority.projects.has(project)) { await refresh(project); assertOwner(owner); }
+        else if (!eventSequence && projects[0]) { const snapshot = await ownerClient.getSnapshot(projects[0].id); assertOwner(owner); eventSequence = snapshot.eventSequence; }
         if (!eventsAbort || eventsAbort.signal.aborted) {
-          eventsAbort = new AbortController(); const signal = eventsAbort.signal;
-          void client.subscribe(eventSequence, event => { eventSequence = Math.max(eventSequence, event.seq); if (authority.projects.has(event.projectId)) { sendDesktop({ type: 'project_event', event }); if (event.kind === 'job_updated') authority.jobs.set(event.resourceId, event.projectId); void cycle(); } }, signal).catch(() => { if (!signal.aborted) { eventSequence = 0; disconnect(); eventsAbort?.abort(); } });
+          const subscription = new AbortController(); eventsAbort = subscription; const signal = subscription.signal;
+          void ownerClient.subscribe(eventSequence, event => { if (owner !== ownerGeneration || signal.aborted || quitting) return; eventSequence = Math.max(eventSequence, event.seq); if (authority.projects.has(event.projectId)) { sendDesktop({ type: 'project_event', event }); if (event.kind === 'job_updated') authority.jobs.set(event.resourceId, event.projectId); void cycle(); } }, signal).catch(() => { if (owner === ownerGeneration && !signal.aborted && !quitting) { eventSequence = 0; disconnect(); subscription.abort(); } });
         }
-      } catch { disconnect(); }
-    })().finally(() => { syncing = undefined; });
+      } catch { if (owner === ownerGeneration && !quitting) disconnect(); }
+    })().finally(() => { if (syncing === run) syncing = undefined; });
+    syncing = run; return run;
   }
   const timer = setInterval(() => { void cycle(); }, c.LIMITS.activePollMs);
   app.on('second-instance', open);
@@ -276,7 +346,7 @@ async function start() {
   app.on('activate', open);
   app.on('before-quit', event => { event.preventDefault(); quit(); });
   powerMonitor.on('suspend', () => { suspended = true; eventsAbort?.abort(); void sources.stop(); disconnect(); });
-  powerMonitor.on('resume', () => { void (async () => { await sources.stop(); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })(); });
+  powerMonitor.on('resume', () => { const owner = ownerGeneration, controller = sources; void (async () => { await controller.stop(); assertOwner(owner); observer = makeObserver(); sources = makeController(); suspended = false; await cycle(); })().catch(() => { if (owner === ownerGeneration && !quitting) disconnect(); }); });
   windows.pet.webContents.on('did-finish-load', () => { const event = presentation.current(); if (event) windows.pet.webContents.send('lp:pet-event', event); else windows.pet.webContents.send('lp:pet-event', c.SafePetEventSchema.parse({ type: 'pet_state', projectId: null, managerName: '', petPackId: 'original-nemo-v1', state: 'offline', checkIn: null, demoTiming: false, preference: store.preference() })); });
   try { await windows.load(); }
   catch (error) { if (quitting) return; throw error; }

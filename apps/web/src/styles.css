@@ -1,5 +1,5 @@
 @import "./app/workspace.css";
-:root { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 16px; color: #f1f2f4; background: #151619; --surface: #1b1d21; --chrome: #151619; --raised: #24272d; --ink: #f1f2f4; --muted: #b0b6c0; --line: #383d46; --control-line: #626b79; --focus: #93c2ff; --action: #286cde; --action-hover: #2266d2; --selected: #2b3442; --success: #85d6a7; --error: #ffb1ad; --error-surface: #352326; font-synthesis: none; color-scheme: dark; scrollbar-color: var(--control-line) var(--chrome); }
+:root { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 16px; color: #f1f2f4; background: #0c0c0c; --surface: #151515; --chrome: #0c0c0c; --raised: #242424; --ink: #f1f2f4; --muted: #aaa9a5; --line: #30302e; --control-line: #61615b; --focus: #dfd1a7; --action: #dfd1a7; --action-hover: #eee3c6; --selected: #292929; --success: #85d6a7; --error: #ffb1ad; --error-surface: #352326; font-synthesis: none; color-scheme: dark; scrollbar-color: var(--control-line) var(--chrome); }
 * { box-sizing: border-box; }
 body { margin: 0; }
 [hidden] { display: none !important; }

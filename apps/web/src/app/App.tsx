@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { commandEnvelopeSchema, CreateProjectInputSchema, ProjectSummarySchema, SafeDesktopEventSchema, type CheckIn, type DesktopBridge, type DocumentDraft, type OwnerAction, type PlaybooksClient, type ProjectSnapshot, type ProjectSummary, type WorkspaceSpec } from '@living-playbooks/contracts';
-import { WorkspaceCatalog } from '@living-playbooks/project-ui';
+import { evidenceLabel, taskLabel, WorkspaceCatalog } from '@living-playbooks/project-ui';
 import type { DraftStore } from '../features/documents/drafts';
 import { DocumentEditor } from '../features/documents/DocumentEditor';
 import { Chat } from '../features/chat/Chat';
@@ -9,15 +9,31 @@ import { SourceControls } from '../features/sources/SourceControls';
 import { validateSnapshot } from './snapshots';
 import { useDraft } from '../features/documents/useDraft';
 import { AppIcon, DetailDisclosure, ManagerMouse, ProjectOverview, ProjectProgress } from './Presentation';
+import { useResizableWorkspace } from './ResizableWorkspace';
+import { DetailSurface } from '../features/details/DetailSurface';
+import { restoreFocus, trapFocus } from '../features/details/focus';
 
 export function App({ client, drafts, bridge, fixture = false }: { client: PlaybooksClient; drafts: DraftStore; bridge?: DesktopBridge; fixture?: boolean }) {
+  const shell = useResizableWorkspace();
+  const [drawer, setDrawer] = useState<'Projects' | 'Chat' | null>(null), [search, setSearch] = useState('');
+  const drawerOpener = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    if (!shell.narrow && drawer) setDrawer(null);
+    if (shell.narrow && drawer) {
+      drawerOpener.current = document.activeElement;
+      document.getElementById(drawer === 'Projects' ? 'projects-panel' : 'manager-panel')?.querySelector<HTMLElement>('[data-drawer-close]')?.focus();
+    } else if (drawerOpener.current) {
+      if (!document.querySelector('dialog[open]')) restoreFocus(drawerOpener.current);
+      drawerOpener.current = null;
+    }
+  }, [drawer, shell.narrow]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]), [selected, setSelected] = useState<string>();
   const [snapshot, setSnapshot] = useState<ProjectSnapshot>(), [layout, setLayout] = useState<WorkspaceSpec>();
   const [loading, setLoading] = useState(true), [updating, setUpdating] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(''), [rejected, setRejected] = useState(false), [connected, setConnected] = useState<boolean>();
   const [surface, setSurface] = useState('Workspace');
   const [creating, setCreating] = useState(false);
-  const [inspectedTask, setInspectedTask] = useState<string>(), [inspectorId] = useState(() => crypto.randomUUID());
+  const [inspectedTask, setInspectedTask] = useState<string>();
   const titleDraft = useDraft(drafts, 'new-project:title', '', 0), briefDraft = useDraft(drafts, 'new-project:brief', '', 0);
   const pendingCreation = useDraft(drafts, 'new-project:pending', '', 0);
   const title = titleDraft.draft.text, brief = briefDraft.draft.text;
@@ -112,8 +128,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
   const fixtureMode = fixture || snapshot?.connection.mode === 'fixture';
   const disabled = busy || offline || !!error || !snapshot || snapshot.project.status === 'archived';
   const layoutChanged = layout && snapshot && JSON.stringify(layout.panels) !== JSON.stringify(snapshot.project.workspace.panels);
-  const needsTaskInspector = inspectedTask && snapshot?.project.tasks.some(task => task.id === inspectedTask) && !layout?.panels.some(panel => panel.type === 'checklist' && panel.taskIds.includes(inspectedTask));
-  const inboxQuestions = snapshot?.checkIns.filter(record => !layout?.panels.some(panel => panel.type === 'question_card' && panel.checkInId === record.id)) ?? [];
+  const selectedTask = snapshot?.project.tasks.find(task => task.id === inspectedTask);
   async function applyLayout() {
     const record = activeSnapshot.current;
     if (!record) return;
@@ -127,7 +142,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     const record = activeSnapshot.current;
     if (!record?.project.tasks.some(task => task.id === id)) return;
     setSurface('Workspace'); setInspectedTask(id);
-    requestAnimationFrame(() => { if (currentId.current === record.project.id) document.getElementById(`task-${id}`)?.focus(); });
+    setDrawer(null);
   }
   function renderQuestion(record: CheckIn) {
     return <Question compact key={record.id} question={record} disabled={disabled || snapshot?.project.status === 'paused'} answer={async input => { await client.answerCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(record.projectId); }} snooze={async input => { await client.snoozeCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input }); await refresh(record.projectId); }} cancel={async () => { await client.cancelCheckIn(record.id, { operationId: crypto.randomUUID(), expectedRevision: record.revision, input: {} }); await refresh(record.projectId); }} openTask={() => openTask(record.taskId)} />;
@@ -141,7 +156,7 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     } catch { setError('Projects unavailable. Your local drafts are preserved. Retry when connected.'); }
   }
   function navigate(name: string) {
-    setSurface(name); setCreating(false);
+    setSurface(name); setCreating(false); setDrawer(null);
     requestAnimationFrame(() => document.getElementById(name === 'Chat' ? 'manager-panel' : 'workspace')?.focus());
   }
   function openPrivacy() {
@@ -156,17 +171,23 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
     const order = { next_action: 0, milestone_timeline: 1, checklist: 2, evidence_card: 3, document_editor: 4, question_card: 5 };
     return order[a.type] - order[b.type];
   }) : [];
-  return <div className="app-shell" data-surface={surface} data-creating={creating} data-first-project={firstProject}>
+  const paneProps = (name: 'Projects' | 'Chat') => ({ role: shell.narrow && drawer === name ? 'dialog' as const : undefined, 'aria-modal': shell.narrow && drawer === name ? true as const : undefined, inert: shell.narrow && drawer !== name ? true : undefined, 'data-drawer-open': shell.narrow && drawer === name, onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => { if (!shell.narrow || drawer !== name) return; if (event.key === 'Escape') { event.preventDefault(); setDrawer(null); } else trapFocus(event); } });
+  return <div ref={shell.ref} style={shell.style} className="app-shell" data-narrow={shell.narrow} data-resizing={shell.resizing} data-surface={surface} data-creating={creating} data-first-project={firstProject}>
     <a className="skip-link" href="#workspace">Skip to workspace</a>
-    <header className="app-header"><strong><AppIcon name="book" />Living Playbooks</strong><span className="header-location">Projects{snapshot && <> <AppIcon name="arrow" /> <b>{snapshot.project.title}</b></>}</span>{fixtureMode && <details className="fixture-label"><summary>Demo</summary><p>Fixture mode · synthetic data · no live model</p></details>}<div className="header-actions">{snapshot && <button onClick={openPrivacy}><AppIcon name="shield" />Sources & privacy</button>}<button onClick={() => void retry()}><AppIcon name="refresh" />Refresh</button></div>{error && <div className="global-error notice error" role="alert"><p>{error}</p><button onClick={() => void retry()}>Retry</button></div>}</header>
-    <nav className="narrow-nav" aria-label="Main surfaces">{['Projects', 'Workspace', 'Chat'].map(name => <button key={name} aria-pressed={surface === name} disabled={name !== 'Projects' && !selected} onClick={() => navigate(name)}>{name}</button>)}</nav>
-    <aside className="projects-surface" aria-label="Projects">
+    <header className="app-header" inert={shell.narrow && !!drawer ? true : undefined}><span className="header-location">Workspace{snapshot && <> <AppIcon name="arrow" /> <b>{snapshot.project.title}</b></>}</span>{fixtureMode && <details className="fixture-label"><summary>Demo</summary><p>Fixture mode · synthetic data · no live model</p></details>}<div className="header-actions"><button onClick={() => void retry()}><AppIcon name="refresh" />Refresh</button></div>{error && <div className="global-error notice error" role="alert"><p>{error}</p><button onClick={() => void retry()}>Retry</button></div>}</header>
+    <nav className="narrow-nav" aria-label="Main surfaces" inert={drawer ? true : undefined}>{(['Projects', 'Chat'] as const).map(name => <button data-drawer-trigger key={name} aria-controls={name === 'Projects' ? 'projects-panel' : 'manager-panel'} aria-expanded={drawer === name} disabled={name === 'Chat' && !selected} onClick={() => setDrawer(current => current === name ? null : name)}>{name}</button>)}</nav>
+    {shell.narrow && drawer && <div className="drawer-backdrop" onClick={() => setDrawer(null)} aria-hidden="true" />}
+    <aside className="projects-surface" id="projects-panel" tabIndex={-1} aria-label="Projects" {...paneProps('Projects')}>
+      <div className="project-brand"><ManagerMouse /><strong>Living Playbooks</strong><button data-drawer-close className="drawer-close" aria-label="Close projects" onClick={() => setDrawer(null)}><AppIcon name="close" /></button></div>
+      <label className="project-search">Search projects<input type="search" placeholder="Find a project…" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <button className="overview-nav" aria-current={surface === 'Projects' ? 'page' : undefined} onClick={() => navigate('Projects')}><AppIcon name="projects" />All projects</button>
-      <div className="sidebar-heading"><h2>Projects</h2><button aria-label="Start a project" onClick={() => { navigate('Projects'); setCreating(true); requestAnimationFrame(() => document.getElementById('project-title')?.focus()); }}><AppIcon name="plus" /></button></div>
-      <ul className="project-list">{projects.map(project => <li key={project.id}><button aria-current={selected === project.id && surface !== 'Projects' ? 'page' : undefined} onClick={() => { if (selected === project.id) navigate('Workspace'); else void select(project.id); }}><AppIcon name="projects" /><span><strong>{project.title}</strong><small>{project.status}{project.unreadCheckIns > 0 ? ` · ${project.unreadCheckIns} unread question${project.unreadCheckIns > 1 ? 's' : ''}` : ''}</small></span></button></li>)}</ul>
-      <div className="sidebar-footer"><AppIcon name="projects" /><span>{projects.length} project{projects.length === 1 ? '' : 's'}</span></div>
+      <div className="sidebar-heading"><h2>Projects</h2><button aria-label="Start a project" onClick={() => { navigate('Projects'); setCreating(true); requestAnimationFrame(() => document.getElementById('project-title')?.focus()); }}><AppIcon name="plus" /><span>New project</span></button></div>
+      <ul className="project-list">{projects.filter(project => project.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(project => <li key={project.id}><button aria-current={selected === project.id && surface !== 'Projects' ? 'page' : undefined} onClick={() => { setDrawer(null); if (selected === project.id) navigate('Workspace'); else void select(project.id); }}><AppIcon name="projects" /><span><strong>{project.title}</strong><small>{project.status}{project.unreadCheckIns > 0 ? ` · ${project.unreadCheckIns} unread question${project.unreadCheckIns > 1 ? 's' : ''}` : ''}</small></span></button></li>)}</ul>
+      {search && !projects.some(project => project.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())) && <p className="search-empty">No matching projects.</p>}
+      <div className="sidebar-footer">{snapshot && <button onClick={openPrivacy}><AppIcon name="settings" />Settings</button>}<button onClick={shell.reset}>Reset pane widths</button><small>{projects.length} project{projects.length === 1 ? '' : 's'}</small></div>
     </aside>
-    <main className="workspace-surface" id="workspace" tabIndex={-1} onInputCapture={() => { editing.current = true; }} onFocusCapture={event => { if ((event.target as HTMLElement).matches('textarea, input, select')) editing.current = true; }}>
+    {shell.separator('left')}
+    <main className="workspace-surface" id="workspace" tabIndex={-1} inert={shell.narrow && !!drawer ? true : undefined} onInputCapture={() => { editing.current = true; }} onFocusCapture={event => { if ((event.target as HTMLElement).matches('textarea, input, select')) editing.current = true; }}>
       {loading && <div role="status" className="loading"><h1>Loading workspace…</h1><div /><div /></div>}
       {firstProject && <header className="welcome"><ManagerMouse /><h1>Start your first project</h1><p>A name, a goal, and a place to make progress.</p><div className="welcome-features"><span><AppIcon name="steps" />Follow your steps</span><span><AppIcon name="task" />Keep tasks & notes</span></div><small>No projects yet</small></header>}
       <div hidden={surface !== 'Projects' || firstProject || loading}>{projects.length > 0 && <ProjectOverview projects={projects} open={id => { if (selected === id) navigate('Workspace'); else void select(id); }} />}</div>
@@ -181,20 +202,21 @@ export function App({ client, drafts, bridge, fixture = false }: { client: Playb
         {layoutChanged && <div className="notice"><p>Workspace arrangement update available. Your editor stays in place.</p><p>{snapshot.project.workspace.panels.map(panel => panel.heading).join(' · ')}</p><button onClick={() => void applyLayout()}>Apply workspace arrangement</button></div>}
         {snapshot.project.tasks.length === 0 && <p className="empty">No tasks yet. Planning has not produced an accepted task list.</p>}
         </div>
-        <WorkspaceCatalog snapshot={snapshot} panels={orderedPanels} disabled={disabled} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} openTask={openTask}
+        <WorkspaceCatalog snapshot={snapshot} panels={orderedPanels.filter(panel => panel.type !== 'question_card')} disabled={disabled} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} openTask={openTask}
           document={(id, heading) => {
             const canonical = snapshot.documents.find(item => item.id === id), record = canonical ?? heldDocuments.current.find(item => item.id === id);
             return record ? <Fragment key={id}><DocumentEditor compact document={record} heading={heading} client={client} store={drafts} disabled={disabled || !canonical} refresh={() => refresh(snapshot.project.id)} />{!canonical && <p role="status">Document removed from the current workspace. Your local editor is retained until you apply the arrangement; saving is unavailable.</p>}</Fragment> : <p>Document unavailable. Your local copy is preserved.</p>;
           }}
-          question={renderQuestion} inbox={inboxQuestions.length > 0 && <section className="workspace-panel question-inbox" aria-label="Project questions"><h2>Check in</h2>{inboxQuestions.map(renderQuestion)}</section>}
+          question={renderQuestion}
         />
-        {needsTaskInspector && <div className="task-inspector" role="region" aria-label="Selected task" onKeyDown={event => { if (event.key === 'Escape') { setInspectedTask(undefined); document.getElementById('workspace')?.focus(); } }}><div className="detail-heading"><h2>Selected task</h2><button aria-label="Close selected task" onClick={() => { setInspectedTask(undefined); document.getElementById('workspace')?.focus(); }}><AppIcon name="close" /></button></div><WorkspaceCatalog snapshot={snapshot} panels={[{ id: inspectorId, type: 'checklist', heading: 'Task status', taskIds: [inspectedTask!] }]} disabled={disabled} correctTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} document={() => null} question={() => null} openTask={openTask} /></div>}
+        <DetailSurface open={!!selectedTask} title="Task details" closeLabel="Close selected task" onClose={() => setInspectedTask(undefined)} className="task-detail">{selectedTask && <div className="task-detail-content"><h3>{selectedTask.title}</h3><p>{evidenceLabel(selectedTask.evidenceLevel)}{selectedTask.ownerOverride ? ' · Owner correction' : ''}</p><label>Selected task status<select disabled={disabled} value={selectedTask.status} onChange={event => void action({ type: 'update_task', taskId: selectedTask.id, status: event.target.value as typeof selectedTask.status })}>{['todo', 'in_progress', 'blocked', 'done', 'skipped'].map(status => <option key={status} value={status}>{taskLabel(status as typeof selectedTask.status)}</option>)}</select></label><h3>Linked evidence</h3>{selectedTask.evidenceIds.length ? selectedTask.evidenceIds.map(id => <p key={id}>{snapshot.observations.find(item => item.id === id)?.excerpt ?? 'Evidence metadata only.'}</p>) : <p>No evidence linked to this task.</p>}<h3>Check-ins</h3>{snapshot.checkIns.some(item => item.taskId === selectedTask.id) ? snapshot.checkIns.filter(item => item.taskId === selectedTask.id).map(item => <p key={item.id}>{item.question} · {item.answer?.kind === 'recorded' ? 'Task marked done' : item.answer?.kind === 'not_yet' ? 'Not yet' : item.state}</p>) : <p>No check-ins linked to this task.</p>}</div>}</DetailSurface>
         <footer className="workspace-details"><SourceControls key={snapshot.project.id} bridge={bridge} snapshot={snapshot} refresh={() => refresh(snapshot.project.id)} />
         <DetailDisclosure className="project-settings" title="Project settings"><div className="project-controls"><label>Project status<select value={snapshot.project.status} disabled={disabled} onChange={event => void action({ type: 'set_project_status', status: event.target.value as 'active' | 'paused' | 'archived' })}><option value="active">Active</option><option value="paused">Paused</option><option value="archived">Archived</option></select></label><label>Phase<select value={snapshot.project.phase} disabled={disabled} onChange={event => void action({ type: 'set_project_phase', phase: event.target.value as 'planning' | 'building' | 'demo' | 'review' })}>{['planning', 'building', 'demo', 'review'].map(phase => <option key={phase}>{phase}</option>)}</select></label></div></DetailDisclosure>
         <DetailDisclosure className="connection-status" title="Connection details"><p>Cloud {offline ? 'offline · writes unavailable' : snapshot.connection.sync === 'stale' ? 'stale · refresh recommended' : snapshot.connection.sync === 'updating' || updating ? 'updating…' : fixtureMode ? 'connection simulated' : 'snapshot current'}</p><p>Nemotron {snapshot.connection.inference.available ? 'available' : `unavailable · ${snapshot.connection.inference.reason}`}</p><p>Source freshness: {snapshot.sourceBindings.length ? snapshot.sourceBindings.map(source => `${source.state}${source.lastObservedAt && Date.now() - Date.parse(source.lastObservedAt) > 120000 ? ' · observation old' : ''}`).join(', ') : 'No source linked'}</p>{snapshot.project.status === 'paused' && <p>Project paused · reading connected sources and check-in scheduling require service eligibility.</p>}{snapshot.connection.demoTiming && <p>Demo reminder timing</p>}</DetailDisclosure></footer>
       </>}
       </div>
     </main>
-    <aside className="chat-surface" id="manager-panel" tabIndex={-1} aria-label="Manager chat">{snapshot ? <Chat fixture={fixtureMode} openTask={openTask} updateTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} openWorkspace={() => { navigate('Workspace'); requestAnimationFrame(() => document.querySelector<HTMLElement>('.task-list li')?.focus()); }} /> : <div className="empty"><h2>Project manager</h2><p>{loading ? 'Loading selected manager…' : 'Your project’s conversation will appear here.'}</p></div>}</aside>
+    {shell.separator('right')}
+    <aside className="chat-surface" id="manager-panel" tabIndex={-1} aria-label="Manager chat" {...paneProps('Chat')}><button data-drawer-close className="drawer-close" aria-label="Close conversation" onClick={() => setDrawer(null)}><AppIcon name="close" /></button>{snapshot ? <Chat fixture={fixtureMode} checkIns={snapshot.checkIns.map(renderQuestion)} openTask={openTask} updateTask={(taskId, status) => void action({ type: 'update_task', taskId, status })} key={snapshot.project.id} snapshot={snapshot} client={client} store={drafts} disabled={disabled} refresh={() => refresh(snapshot.project.id)} openWorkspace={() => { navigate('Workspace'); requestAnimationFrame(() => document.querySelector<HTMLElement>('.task-list li')?.focus()); }} /> : <div className="empty"><h2>Project manager</h2><p>{loading ? 'Loading selected manager…' : 'Your project’s conversation will appear here.'}</p></div>}</aside>
   </div>;
 }

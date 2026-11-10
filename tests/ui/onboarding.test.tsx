@@ -46,7 +46,7 @@ test('advanced settings stay closed and the privacy shortcut opens the source co
   await screen.findByRole('heading', { name: 'Hackathon demo', level: 1 });
   expect(screen.getByText('Connection details', { selector: 'summary' }).closest('details')).not.toHaveAttribute('open');
   expect(screen.getByText('Project settings', { selector: 'summary' }).closest('details')).not.toHaveAttribute('open');
-  await userEvent.click(screen.getByRole('button', { name: 'Sources & privacy' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Revoke source' })).toBeVisible());
   expect(screen.getByRole('button', { name: 'Pause source' })).toBeVisible();
   expect(screen.getByText(/desktop bridge required/)).toBeVisible();
@@ -78,7 +78,8 @@ test('task progress describes actual records and never turns unknown work into a
   render(<App client={createFixtureClient({ snapshots: [seed] })} drafts={memoryDrafts()} fixture />);
   expect(await screen.findByText('1 of 1 tasks marked done')).toBeVisible();
   expect(screen.getByText('100%')).toBeVisible();
-  expect(screen.getByText(/This task is marked done/)).toBeVisible();
+  expect(screen.getByText('No open tasks.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Open task' })).not.toBeInTheDocument();
   await userEvent.click(await screen.findByText('Demo', { selector: 'summary' }));
   expect(screen.getByText('Fixture mode · synthetic data · no live model')).toBeVisible();
 });

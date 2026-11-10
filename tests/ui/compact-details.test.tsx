@@ -20,7 +20,7 @@ test('default Question preserves the pet controls while compact Question keeps t
   expect(screen.getByRole('button', { name: 'Cancel question' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'More options' })).not.toBeInTheDocument();
   view.rerender(<div className="app-shell"><Question {...props} compact /></div>);
-  expect(screen.getByRole('button', { name: 'Recorded' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Mark task done' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Not yet' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Cancel question' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Not yet' }));
@@ -40,15 +40,15 @@ test('compact Question keeps expired and pending answers disabled and reports a 
   const props = questionProps(), pending = deferred<void>();
   props.answer.mockImplementation(() => pending.promise);
   const view = render(<div className="app-shell"><Question {...props} compact /></div>);
-  await userEvent.click(screen.getByRole('button', { name: 'Recorded' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Mark task done' }));
   expect(screen.getByRole('button', { name: 'Not yet' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Recorded' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Mark task done' })).toBeDisabled();
   await act(async () => pending.resolve());
   props.answer.mockRejectedValue(new Error('Not saved'));
-  await userEvent.click(screen.getByRole('button', { name: 'Recorded' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Mark task done' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Question update failed');
   view.rerender(<div className="app-shell"><Question {...props} question={{ ...props.question, expiresAt: '2020-01-01T00:00:00Z' }} compact /></div>);
-  expect(screen.queryByRole('button', { name: 'Recorded' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Mark task done' })).not.toBeInTheDocument();
   expect(screen.getByText(/expired/i)).toBeVisible();
 });
 

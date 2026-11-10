@@ -125,8 +125,9 @@ test.each([
   render(<App client={client} drafts={memoryDrafts()} fixture />);
   const opener = { question: 'Open linked task', next_action: 'Open task', milestone: 'Record the demo' }[source];
   await userEvent.click(await screen.findByRole('button', { name: opener }));
-  const status = await screen.findByLabelText('Status: Record the demo');
-  await waitFor(() => expect(document.activeElement).toBe(document.getElementById(`task-${seed.project.tasks[0]!.id}`)));
+  const status = await screen.findByLabelText('Selected task status');
+  expect(screen.getByRole('dialog', { name: 'Task details' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Close selected task' })).toHaveFocus();
   await userEvent.selectOptions(status, 'done');
   await waitFor(() => expect(status).toHaveValue('done'));
   expect((await client.getSnapshot(seed.project.id)).project.tasks[0]!.ownerOverride).toBe(true);
