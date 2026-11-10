@@ -21,4 +21,4 @@ const close = async () => { await stopManager(); await stopCheckins(); await app
 process.once('SIGTERM', () => void close());
 process.once('SIGINT', () => void close());
 await app.listen({ host: loopback ? '127.0.0.1' : '0.0.0.0', port: Number(process.env.PORT ?? 4310) });
-console.log(`Living Playbooks cloud started. Nemotron capability: ${model.inference.available ? 'probe passed' : 'BLOCKED'}.`);
+console.log(`NemoPal cloud started. Nemotron capability: ${model.inference.available ? 'probe passed' : 'BLOCKED'}.`);

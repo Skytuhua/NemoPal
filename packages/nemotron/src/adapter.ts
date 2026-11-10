@@ -14,9 +14,25 @@ export class ProviderError extends Error {
     constructor(code: string, public retryAfterSeconds = 60) { super(code); }
 }
 export class InvalidProposalError extends Error {
-    constructor(){super('model_contract');}
+    readonly validationIssues: { code: z.core.$ZodIssue['code']; path: string[] }[];
+    constructor(issues: readonly Pick<z.core.$ZodIssue, 'code' | 'path'>[] = []) {
+        super('model_contract');
+        // Paths can contain provider-chosen keys; retain only static schema property names.
+        this.validationIssues = issues.slice(0, 8).map(issue => ({ code: issue.code,
+            path: issue.path.slice(0, 8).map(part => typeof part === 'string' && schemaProperties.has(part) ? part : '*') }));
+    }
 }
 const schema = z.toJSONSchema(c.ManagerProposalSchema, { unrepresentable: 'any' });
+const schemaProperties = new Set<string>();
+function collectSchemaProperties(value: unknown) {
+    if (!value || typeof value !== 'object') return;
+    if (!Array.isArray(value)) {
+        const properties = (value as Record<string, unknown>).properties;
+        if (properties && typeof properties === 'object') for (const name of Object.keys(properties)) schemaProperties.add(name);
+    }
+    for (const nested of Object.values(value)) collectSchemaProperties(nested);
+}
+collectSchemaProperties(schema);
 const tools = [
     { name: 'read_project_state', description: 'Read assigned project state and source health.', properties: {} },
     { name: 'list_recent_evidence', description: 'List currently permitted evidence metadata.', properties: {} },
@@ -142,7 +158,7 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
             let proposal:unknown;
             try{proposal=JSON.parse(message.content);}catch{throw new InvalidProposalError();}
             const validated=c.ManagerProposalSchema.safeParse(proposal);
-            if(!validated.success)throw new InvalidProposalError();
+            if(!validated.success)throw new InvalidProposalError(validated.error.issues);
             return {type:'proposal',proposal:validated.data,...requestId};
         }
         catch(error) {

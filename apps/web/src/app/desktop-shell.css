@@ -26,7 +26,6 @@
 .workspace-brand { display: flex; gap: 10px; align-items: center; padding: 0 8px 22px; flex: none; }
 .workspace-brand strong { font-size: 18px; letter-spacing: -.025em; }
 .workspace-brand .demo-indicator { margin-left: auto; }
-.app-monogram { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #515151; border-radius: 7px; color: #e5e5e5; background: #222; font-size: 18px; font-weight: 600; }
 .project-search-row { position: relative; display: flex; align-items: center; flex: none; gap: 6px; margin-bottom: 22px; }
 .project-filter { position: relative; display: block; flex: 1; min-width: 0; }
 .project-filter svg { position: absolute; top: 11px; left: 12px; width: 17px; height: 17px; color: #a9a9a9; pointer-events: none; }
@@ -51,14 +50,14 @@
 .new-project label { display: grid; gap: 6px; color: #d0d0d0; font-size: 13px; }
 .new-project :is(input,textarea) { min-width: 0; width: 100%; font-size: 15px; }
 .new-project form p { color: #c5c5c5; font-size: 13px; line-height: 1.6; }
-.sidebar-footer { display: flex; align-items: center; flex: none; gap: 4px; margin-top: 14px; padding: 10px 0 0; border-top: 1px solid #252525; }
+.sidebar-footer { display: flex; align-items: center; justify-content: center; flex: none; gap: 4px; margin-top: 14px; padding: 10px 0 0; border-top: 1px solid #252525; }
 .sidebar-footer .settings-button { flex: none; width: 36px; min-width: 36px; height: 36px; justify-content: center; gap: 0; padding: 0; border-radius: 9px; font-size: 14px; font-weight: 400; color: #bfbfbf; }
 .sidebar-footer .settings-button:hover:not(:disabled) { color: #f5f5f5; background: #242424; }
 .sidebar-footer .settings-button svg { width: 20px; height: 20px; flex: none; }
 .sidebar-footer .layout-reset-button { width: 34px; height: 34px; min-height: 34px; border-radius: 8px; color: #bfbfbf; }
 .sidebar-footer .layout-reset-button:hover { color: #f5f5f5; background: #242424; }
 .sidebar-footer .layout-reset-button svg { width: 18px; height: 18px; }
-.workspace-surface { height: 100%; min-height: 0; overflow: hidden; padding: 0 clamp(18px, 2vw, 30px) 18px; background: #0b0b0b; scrollbar-width: thin; scrollbar-color: #363636 transparent; }
+.workspace-surface { height: 100%; min-height: 0; overflow: hidden; padding: 0 clamp(18px, 2vw, 30px) 18px; background: linear-gradient(#000a, #000a), url('./assets/nemopal-board-background.png') center / cover no-repeat, #0b0b0b; scrollbar-width: thin; scrollbar-color: #363636 transparent; }
 .workspace-content { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
 .project-settings { height: 100%; overflow: auto; min-width: 0; padding-block: 22px; scrollbar-width: thin; scrollbar-color: #444 transparent; }
 .project-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; min-height: 64px; padding-block: 14px; margin-bottom: 14px; border-bottom: 1px solid #292929; }
@@ -108,13 +107,13 @@
 .desktop-shell .error, .desktop-shell [role=alert] { color: #f4a2a2; }
 .desktop-shell .empty { display: grid; gap: 15px; padding-block: 25px; color: #a4a4a4; font-size: 13px; }
 .desktop-shell .empty button { justify-self: start; }
-.desktop-shell .chat-surface { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.manager-heading { flex: none; display: flex; gap: 10px; align-items: center; min-height: 72px; padding: 14px 18px; border-bottom: 1px solid #292929; }
-.manager-avatar { display: block; flex: none; width: 42px; height: 42px; }
+.desktop-shell .chat-surface { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.manager-heading { position: absolute; inset: 0 18px auto; z-index: 1; display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 12px 0 14px; pointer-events: none; text-shadow: 0 1px 4px #000, 0 0 8px #000; }
+.manager-avatar { display: block; flex: none; width: 76px; height: 76px; }
 .manager-mouse { background: url('../../../../assets/pet/pixel-mouse-idle-v1.png') 0 0 / 400% 400% no-repeat; image-rendering: pixelated; }
 .manager-heading h2 { font-size: 16px; font-weight: 600; }
 .manager-heading small { display: block; margin-top: 2px; color: #aaa; font-size: 13px; overflow-wrap: anywhere; }
-.manager-scroll { flex: 1; min-height: 0; overflow: auto; padding: 22px 14px 8px; scrollbar-width: thin; scrollbar-color: #414141 transparent; }
+.manager-scroll { flex: 1; min-height: 0; overflow: auto; padding: 150px 14px 8px; scroll-padding-top: 150px; scrollbar-width: thin; scrollbar-color: #414141 transparent; }
 .messages { display: flex; flex-direction: column; gap: 16px; }
 .messages > .conversation-empty { padding: 16px 6px; color: #aaa; font-size: 15px; line-height: 1.6; }
 .message { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
@@ -150,6 +149,7 @@
 .desktop-shell[data-narrow=true] .manager-pane { right: 0; width: var(--manager-width); border-left: 1px solid #444; }
 .desktop-shell[data-narrow=true] .projects-surface { padding-top: 28px; }
 .desktop-shell[data-narrow=true] .manager-heading { padding-top: 32px; }
+.desktop-shell[data-narrow=true] .manager-scroll { padding-top: 170px; scroll-padding-top: 170px; }
 .workspace-ui .unavailable { max-width: 600px; padding: 48px 28px; margin-inline: auto; display: grid; gap: 20px; }
 .workspace-ui .unavailable h1 { font-size: 25px; font-weight: 600; }
 .workspace-ui .unavailable p { color: #b0b0b0; font-size: 14px; line-height: 1.7; }
@@ -158,7 +158,7 @@
 .workspace-ui .unavailable input, .workspace-ui .unavailable button { border: 1px solid #424242; border-radius: 6px; padding: 10px 12px; background: #1c1c1c; color: #eee; }
 .workspace-surface { container-type: inline-size; }
 @media (max-width: 680px) { .workspace-surface { padding: 0 16px 18px; } }
-@media (max-height: 400px) { .desktop-shell .manager-heading { padding-block: 16px 12px; } .manager-scroll { padding-block: 6px; } .projects-surface { overflow: auto; } .project-list { flex: none; } .workspace-brand { padding-bottom: 10px; } .project-search-row { margin-bottom: 12px; } }
+@media (max-height: 400px) { .desktop-shell .manager-heading, .desktop-shell[data-narrow=true] .manager-heading { padding-block: 8px; } .desktop-shell .manager-avatar { width: 48px; height: 48px; } .desktop-shell .manager-scroll, .desktop-shell[data-narrow=true] .manager-scroll { padding-block: 116px 6px; scroll-padding-top: 116px; } .projects-surface { overflow: auto; } .project-list { flex: none; } .workspace-brand { padding-bottom: 10px; } .project-search-row { margin-bottom: 12px; } }
 
 .project-manager-art { width: 38px; height: 38px; flex: none; display: block; }
 .board-host { position: relative; flex: 1; min-height: 0; min-width: 0; }

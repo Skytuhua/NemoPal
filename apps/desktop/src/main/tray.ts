@@ -6,7 +6,7 @@ export function createCompanionTray(options: { preference(): PetPreference; open
   const bitmap = Buffer.alloc(16 * 16 * 4);
   for (let y = 3; y < 13; y++) for (let x = 3; x < 13; x++) { const i = (y * 16 + x) * 4; bitmap[i] = 210; bitmap[i + 1] = 210; bitmap[i + 2] = 210; bitmap[i + 3] = 255; }
   const tray = new Tray(nativeImage.createFromBitmap(bitmap, { width: 16, height: 16 }));
-  tray.setToolTip('Living Playbooks — closing the workspace keeps this companion running');
+  tray.setToolTip('NemoPal — closing the workspace keeps this companion running');
   let clickThrough = false;
   let withdrawing = false;
   const withdraw = (action: 'pause' | 'revoke') => {
@@ -25,7 +25,7 @@ export function createCompanionTray(options: { preference(): PetPreference; open
       { type: 'separator' },
       { id: 'pause-sources', label: 'Pause all local sources…', enabled: !withdrawing, click: () => withdraw('pause') },
       { id: 'revoke-sources', label: 'Revoke all local source access…', enabled: !withdrawing, click: () => withdraw('revoke') },
-      { type: 'separator' }, { id: 'quit', label: 'Quit Living Playbooks', click: options.quit },
+      { type: 'separator' }, { id: 'quit', label: 'Quit NemoPal', click: options.quit },
     ]);
     tray.setContextMenu(menu); return menu;
   };
