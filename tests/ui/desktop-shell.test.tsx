@@ -59,7 +59,9 @@ test('desktop chrome stays in the sidebar with an icon reset beside project sett
   expect(within(screen.getByRole('complementary', { name: 'Projects' })).getByText('NemoPal').parentElement).toContainElement(demo);
   const editor = screen.getByLabelText('Document: Demo notes');
   const composer = screen.getByLabelText('Message to Nemo');
+  await waitFor(() => expect(composer).toBeEnabled());
   await userEvent.type(composer, 'Retain this draft');
+  expect(composer).toHaveValue('Retain this draft');
   await userEvent.click(reset);
   expect(JSON.parse(localStorage.getItem('lp:desktop-pane-layout:v1')!)).toEqual({ version: 1, projects: 240, manager: 360 });
   expect(screen.getByLabelText('Document: Demo notes')).toBe(editor);

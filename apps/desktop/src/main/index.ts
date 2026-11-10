@@ -17,12 +17,13 @@ import { QuestionPresentation } from './presentation';
 import { createNativeWindows } from './native-windows';
 import { createCompanionTray } from './tray';
 import { CompanionLifetime } from './windows';
+import { desktopOrigin, unavailableDesktopClient } from './desktop-origin';
 type SourceEnrollment = { operationId: string; deviceId: string; cloud: boolean; bindingId?: string; withdrawal?: 'pause' | 'revoke'; completion: Promise<void>; failed: boolean };
 
 app.setName('Living Playbooks');
 app.setPath('userData', join(app.getPath('appData'), 'LivingPlaybooks'));
 if (!app.requestSingleInstanceLock()) app.quit();
-else void start().catch(() => { dialog.showErrorBox('Living Playbooks blocked', 'Native startup failed. Preserve the application journal and its .previous snapshot; no source cursor has been reset. Check the renderer build and local protected storage.'); app.exit(1); });
+else void start().catch(() => { dialog.showErrorBox('NemoPal blocked', 'Native startup failed. Preserve the application journal and its .previous snapshot; no source cursor has been reset. Check the renderer build and local protected storage.'); app.exit(1); });
 
 async function start() {
   await app.whenReady();
@@ -37,7 +38,7 @@ async function start() {
   }, process.env.LP_TEMPORARY_PAIRING === '1');
   let credentialBlocker = '';
   await vault.load().catch(() => { credentialBlocker = 'Protected credential cannot be loaded. Explicit re-pairing required.'; });
-  const origin = process.env.LP_API_ORIGIN ?? null;
+  const origin = desktopOrigin(process.env.LP_API_ORIGIN, app.isPackaged);
   let ownerGeneration = 0;
   let ownerAbort = new AbortController();
   let pairing = false;
@@ -68,8 +69,9 @@ async function start() {
     return fetch(input, { ...init, signal: init?.headers && new Headers(init.headers).get('Accept') === 'text/event-stream' ? init.signal : AbortSignal.any([AbortSignal.timeout(15000), ...(init?.signal ? [init.signal] : [])]) });
   };
   function makeClient() {
+    if (!origin) return unavailableDesktopClient();
     const generation = ownerGeneration, authorization = vault.authorization(), signal = ownerAbort.signal;
-    return createHttpClient({ origin: origin ?? 'http://127.0.0.1:4310', allowInsecureLoopback: !app.isPackaged, getAuthorization: () => authorization,
+    return createHttpClient({ origin, allowInsecureLoopback: !app.isPackaged, getAuthorization: () => authorization,
       fetch: (input, init) => {
         assertOwner(generation);
         if (signal.aborted || !authorization || authorization !== vault.authorization()) return Promise.reject(Error('Pairing authority changed'));
@@ -224,7 +226,7 @@ async function start() {
       case 'capabilities': {
         const capability = await observer.probe();
         const sourceObservation = process.env.LP_SELECTED_SOURCE && process.env.LP_SYNTHETIC_SOURCE_NAME ? capability : { ...capability, available: false, capability: 'unavailable', reason: 'No exact named own synthetic project test source configured. General authorization permits source metadata only; live content observation is blocked.' };
-        return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: ownerReady && Boolean(vault.authorization()), cloudOrigin: origin });
+        return c.DesktopCapabilitiesSchema.parse({ nativePet: { available: true }, sourceObservation, paired: ownerReady && Boolean(origin && vault.authorization()), cloudOrigin: origin });
       }
       case 'pair': {
         if (pairing) throw Error('Pairing already in progress');

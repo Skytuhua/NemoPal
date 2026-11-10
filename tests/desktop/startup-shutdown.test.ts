@@ -86,7 +86,7 @@ it.each(['unexpected load failure', 'ERR_ABORTED synthetic navigation'])('a wind
   try {
     load.reject(Error(`${reason} token=do-not-display C:\\private-source`));
     await vi.waitFor(() => expect(main.app.exit.mock.calls).toEqual([[1]]));
-    expect(main.dialog.showErrorBox).toHaveBeenCalledWith('Living Playbooks blocked', expect.stringContaining('Native startup failed'));
+    expect(main.dialog.showErrorBox).toHaveBeenCalledWith('NemoPal blocked', expect.stringContaining('Native startup failed'));
     expect(main.dialog.showErrorBox).toHaveBeenCalledOnce();
     expect(JSON.stringify(main.dialog.showErrorBox.mock.calls)).not.toMatch(/do-not-display|private-source/);
     expect(main.windows.workspace.show).not.toHaveBeenCalled();

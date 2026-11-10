@@ -8,7 +8,12 @@ import { TaskBoard } from '../../apps/web/src/features/board/TaskBoard';
 import type { BoardColumnView } from '../../apps/web/src/features/board/board-view';
 import { snapshot } from './helpers';
 
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  // dnd-kit removes its document click suppressor 50ms after a mouse drag.
+  // Let that listener retire before the next test sends a click.
+  await new Promise(resolve => setTimeout(resolve, 80));
+});
 function project(count: number): ProjectSnapshot {
   const value = snapshot();
   value.project.tasks = Array.from({ length: count }, (_, index) => ({
@@ -364,9 +369,17 @@ test('dragging from the title uses the card mouse sensor and suppresses opening 
   fireEvent.mouseMove(document, { buttons: 1, clientX: 430, clientY: 140 });
   await waitFor(() => expect(document.querySelector('[data-task-column="owner:later"]')).toContainElement(screen.getByRole('button', { name: 'Open task: Project task 1' })));
   fireEvent.mouseUp(document, { button: 0, clientX: 430, clientY: 140 });
-  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
-  fireEvent.click(screen.getByRole('button', { name: 'Open task: Project task 1' }));
+  const currentTitle = document.querySelector<HTMLButtonElement>('[data-board-task-id] [data-card-control="open"]');
+  expect(currentTitle?.isConnected).toBe(true);
+  fireEvent.click(currentTitle!);
   expect(calls.openTask).not.toHaveBeenCalled();
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  // A later ordinary click must still open the current card.
+  await new Promise(resolve => setTimeout(resolve, 80));
+  const settledTitle = document.querySelector<HTMLButtonElement>('[data-board-task-id] [data-card-control="open"]');
+  expect(settledTitle?.isConnected).toBe(true);
+  fireEvent.click(settledTitle!);
+  expect(calls.openTask).toHaveBeenCalledExactlyOnceWith(value.project.tasks[0]!.id);
 });
 
 test('the actual mouse column handle changes column order and keeps task membership', async () => {
