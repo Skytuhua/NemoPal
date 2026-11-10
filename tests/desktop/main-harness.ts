@@ -53,7 +53,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   let chatWindow: ReturnType<typeof windowPort> | undefined;
   const windows = { workspace, pet, get petChat() { return chatWindow; }, targets: { workspace: workspace.webContents.mainFrame.url, pet: pet.webContents.mainFrame.url, petChat: 'http://127.0.0.1:4321/?surface=pet-chat' },
     showChat: vi.fn(async (current: () => boolean) => { if (current()) { chatWindow ??= windowPort(3, windows.targets.petChat); chatWindow.show(); chatWindow.focus(); } }), hideChat: vi.fn(() => chatWindow?.hide()), resizeChat: vi.fn(), destroyChat: vi.fn(() => { chatWindow?.destroy(); chatWindow = undefined; }), sendChat: vi.fn((state: PetChatState) => { chatEvents.push(structuredClone(state)); if (state.flushRequestId && chatWindow) { const window = chatWindow; queueMicrotask(() => { void handlers.get('lp:petChat')?.({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, 'petChatInvoke', { type: 'flushed', contextId: state.contextId, flushId: state.flushRequestId, succeeded: options.chatFlushReplies?.shift() ?? true }).catch(() => {}); }); } }),
-    load: vi.fn(async () => { await options.windowLoad; }), destroy: vi.fn(() => { workspace.destroy(); pet.destroy(); chatWindow?.destroy(); }) };
+    dragPet: vi.fn(), cancelPetDrag: vi.fn(), load: vi.fn(async () => { await options.windowLoad; }), destroy: vi.fn(() => { workspace.destroy(); pet.destroy(); chatWindow?.destroy(); }) };
   const app = Object.assign(new EventEmitter(), { setName: vi.fn(), setPath: vi.fn(), getPath: () => directory, requestSingleInstanceLock: () => true, quit: vi.fn(), exit: vi.fn(), whenReady: async () => {}, isPackaged: false });
   // getPath must honor the profile set by the actual entry point, not a test-only main hook.
   const paths: Record<string, string> = { appData: directory };
@@ -76,6 +76,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
   await vi.waitFor(() => { expect(dialog.showErrorBox).not.toHaveBeenCalled(); expect(windows.load).toHaveBeenCalled(); if (!options.windowLoad) expect((vi.isMockFunction(client.subscribe) && client.subscribe.mock.calls.length > 0) || desktopEvents.some(e => e.type === 'connection' && !e.connected)).toBe(true); });
   const invoke = (operation: string, input?: unknown) => handlers.get('lp:workspace')!({ sender: workspace.webContents, senderFrame: workspace.webContents.mainFrame }, operation, input);
   const petInvoke = (input: unknown) => handlers.get('lp:pet')!({ sender: pet.webContents, senderFrame: pet.webContents.mainFrame }, 'petInvoke', input);
+  const petDrag = (phase: unknown) => handlers.get('lp:pet')!({ sender: pet.webContents, senderFrame: pet.webContents.mainFrame }, 'petDrag', phase);
   const chatInvoke = (operation: string, input?: unknown) => { const window = windows.petChat; if (!window) throw Error('No popup'); return handlers.get('lp:petChat')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, operation, input); };
   const trayItem = (id: string) => { const item = trayItems.find(item => item.id === id); expect(item, `Native tray item ${id} must be reachable`).toBeDefined(); return item!; };
   const clickTray = (id: string) => { Reflect.apply(trayItem(id).click!, undefined, []); };
@@ -83,7 +84,7 @@ export async function startSyntheticMain(options: { seed?(store: JournalStore): 
     vi.doUnmock('electron'); vi.doUnmock('../../apps/desktop/src/main/native-windows'); vi.doUnmock('@living-playbooks/api-client'); vi.doUnmock('@living-playbooks/codex-observer');
     vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(directory, { recursive: true, force: true });
   };
-  return { path, app, client, clientConfigurations, protectedStorage, observer, powerMonitor, desktopEvents, petEvents, chatEvents, invoke, petInvoke, chatInvoke, dialog, windows, trayItem, clickTray, dispose, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
+  return { path, app, client, clientConfigurations, protectedStorage, observer, powerMonitor, desktopEvents, petEvents, chatEvents, invoke, petInvoke, petDrag, chatInvoke, dialog, windows, trayItem, clickTray, dispose, transport: ((...args) => { if (!transport) throw Error('Native transport unavailable'); return transport(...args); }) as typeof fetch, tick: () => { const callback = tick.mock.calls[0]?.[0]; if (typeof callback === 'function') callback(); }, async close(quitBlocked = false) {
     try { clickTray('quit'); await vi.waitFor(() => { if (quitBlocked) expect(dialog.showErrorBox).toHaveBeenCalledWith('Quit blocked', expect.any(String)); else expect(app.exit).toHaveBeenCalledWith(0); }); }
     finally { await dispose(); }
   } };

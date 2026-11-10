@@ -13,7 +13,7 @@ export class NativeBoundary {
     const schemas: Record<string, z.ZodType> = sender.role === 'workspace' ? {
       capabilities: z.undefined(), pair: PairingInputSchema, selectSource: IdSchema, confirmSource: ConfirmSourceInputSchema,
       pauseSource: IdSchema, revokeSource: IdSchema, invoke: AllowedClientCommandSchema, setPetPreference: PetPreferenceSchema,
-    } : sender.role === 'pet' ? { petInvoke: PetCommandSchema } : sender.role === 'petChat' ? { petChatRead: z.undefined(), petChatInvoke: PetChatCommandSchema } : {};
+    } : sender.role === 'pet' ? { petInvoke: PetCommandSchema, petDrag: z.enum(['start', 'move', 'end']) } : sender.role === 'petChat' ? { petChatRead: z.undefined(), petChatInvoke: PetChatCommandSchema } : {};
     const schema = schemas[operation];
     if (!schema) throw Error('Native operation denied');
     const parsed = schema.parse(input);

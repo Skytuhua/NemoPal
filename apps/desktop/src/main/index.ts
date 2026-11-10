@@ -203,7 +203,8 @@ async function start() {
   }
   const quit = () => { const attempt = lifetime.quit(); quitAttempt = attempt; void attempt.catch(() => { dialog.showErrorBox('Quit blocked', 'Local draft, source stop or journal flush failed. Keep the application open and preserve your work before exiting.'); }); };
   // Tray toggles may arrive from a menu built before pairing.
-  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => windows.pet.setIgnoreMouseEvents(value, { forward: true }), withdrawSources, quit, error: action => {
+  let petClickThrough = false;
+  const tray = createCompanionTray({ preference: () => store.preference(), open, setPreference: input => preference({ ...input, pinnedProjectId: pinnedProject ?? null }), clickThrough: value => { petClickThrough = value; if (value) windows.cancelPetDrag(); windows.pet.setIgnoreMouseEvents(value, { forward: true }); }, withdrawSources, quit, error: action => {
     if (action) reportWithdrawalFailure();
     else sendDesktop({ type: 'connection', connected, reason: 'Native preference could not be saved.' });
   } });
@@ -332,6 +333,7 @@ async function start() {
       case 'invoke': return execute(c.AllowedClientCommandSchema.parse(raw));
       case 'setPetPreference': return preference(c.PetPreferenceSchema.parse(raw));
       case 'petInvoke': { const input = c.PetCommandSchema.parse(raw); if (input.type === 'setPreference') return preference(input.preference); if (input.type === 'openChat') { if (input.contextId !== chat.launchId) throw Error('Pet context changed'); return chat.open(); } return presentation.command(input); }
+      case 'petDrag': if (!petClickThrough) windows.dragPet(raw as 'start' | 'move' | 'end'); return;
       case 'petChatRead': return chat.read();
       case 'petChatInvoke': return chat.command(c.PetChatCommandSchema.parse(raw));
       default: throw Error('Native operation denied');

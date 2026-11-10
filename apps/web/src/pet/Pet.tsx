@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { PetCommandSchema, SafePetEventSchema, type PetBridge, type PetCommand, type PetState, type SafePetEvent } from '@living-playbooks/contracts';
 import './pet-mouse.css';
 import './pet-speech.css';
@@ -6,6 +6,35 @@ import './pet-speech.css';
 export function Pet({ bridge }: { bridge?: PetBridge }) {
   const [event, setEvent] = useState<SafePetEvent>(), [error, setError] = useState('');
   const mouse = useRef<HTMLButtonElement>(null), current = useRef<SafePetEvent | undefined>(undefined);
+  const gesture = useRef<{ id: number; x: number; y: number; dragged: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const drag = (phase: 'start' | 'move' | 'end') => { void bridge?.drag?.(phase).catch(() => {}); };
+  const cancelGesture = () => {
+    if (!gesture.current) return;
+    gesture.current = null; suppressClick.current = true; drag('end');
+  };
+  useEffect(() => () => cancelGesture(), [bridge]);
+  useEffect(() => { if (event?.preference.hidden) cancelGesture(); }, [event?.preference.hidden]);
+  function down(e: PointerEvent<HTMLButtonElement>) {
+    if (!bridge?.drag || !e.isPrimary || e.button !== 0 || gesture.current) return;
+    suppressClick.current = false;
+    gesture.current = { id: e.pointerId, x: e.screenX, y: e.screenY, dragged: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag('start');
+  }
+  function move(e: PointerEvent<HTMLButtonElement>) {
+    const active = gesture.current;
+    if (!active || active.id !== e.pointerId) return;
+    if (!active.dragged && Math.hypot(e.screenX - active.x, e.screenY - active.y) >= 5) active.dragged = true;
+    if (active.dragged) { suppressClick.current = true; drag('move'); }
+  }
+  function up(e: PointerEvent<HTMLButtonElement>) {
+    if (!gesture.current || gesture.current.id !== e.pointerId) return;
+    move(e); gesture.current = null; drag('end');
+  }
+  function cancelPointer(e: PointerEvent<HTMLButtonElement>) {
+    if (gesture.current?.id === e.pointerId) cancelGesture();
+  }
   useEffect(() => bridge?.onEvent(raw => {
     const parsed = SafePetEventSchema.safeParse(raw);
     if (!parsed.success) { setError('Pet state unavailable: invalid desktop event.'); return; }
@@ -31,7 +60,7 @@ export function Pet({ bridge }: { bridge?: PetBridge }) {
   const passive = !preference.focus && !event.chatOpen && (thinking || !!speech);
   return <main className="pet-surface pet-speech" data-reduced-motion={preference.reducedMotion}>
     <div className="pet-mouse-controls">
-      <button ref={mouse} className="pet-speech-toggle" aria-label="Open conversation" title="Open conversation" onClick={() => event.chatContextId ? void invoke({ type: 'openChat', contextId: event.chatContextId }) : setError('Conversation unavailable. Waiting for desktop context.')}>
+      <button ref={mouse} className="pet-speech-toggle" aria-label="Open conversation" title="Open conversation" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer} onBlur={cancelGesture} onClick={e => { if (e.detail !== 0 && suppressClick.current) { suppressClick.current = false; return; } if (event.chatContextId) void invoke({ type: 'openChat', contextId: event.chatContextId }); else setError('Conversation unavailable. Waiting for desktop context.'); }}>
         <span className={`pet-art pet-mouse state-${state}`} role="img" aria-label={`${event.managerName || 'Project pet'} · ${state.replaceAll('_', ' ')}`} data-pet-state={state} />
       </button>
       <div className="pet-utilities" role="group" aria-label="Pet actions">

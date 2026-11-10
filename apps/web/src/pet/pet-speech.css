@@ -1,7 +1,8 @@
 /* Fixed sprite host; the focusable editor lives in its own native window. */
 .pet-surface.pet-speech { --pet-paper:#fffdf5; --pet-ink:#302d24; --pet-line:#8b826d; position:relative; box-sizing:border-box; width:240px; height:280px; padding:4px; font-size:14px; line-height:1.5; }
 .pet-surface.pet-speech .pet-mouse-controls { position:absolute; right:4px; bottom:4px; width:180px; height:128px; }
-.pet-surface.pet-speech button.pet-speech-toggle { position:absolute; left:0; top:0; width:128px; height:128px; padding:0; border:0; background:transparent; }
+.pet-surface.pet-speech button.pet-speech-toggle { position:absolute; left:0; top:0; width:128px; height:128px; padding:0; border:0; background:transparent; touch-action:none; cursor:grab; }
+.pet-surface.pet-speech button.pet-speech-toggle:active { cursor:grabbing; }
 .pet-surface.pet-speech button.pet-speech-toggle:hover { background:transparent; }
 .pet-surface.pet-speech .pet-utilities { position:absolute; right:0; top:16px; display:grid; gap:8px; }
 .pet-surface.pet-speech .pet-utilities button { display:grid; place-items:center; width:44px; height:44px; min-height:44px; padding:0; border:1px solid var(--pet-line); border-radius:50%; background:var(--pet-paper); color:var(--pet-ink); }
