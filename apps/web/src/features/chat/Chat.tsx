@@ -4,6 +4,7 @@ import type { CheckIn, PlaybooksClient, ProjectSnapshot } from '@living-playbook
 import type { DraftStore } from '../documents/drafts';
 import { useDraft } from '../documents/useDraft';
 import './composer.css';
+import './manager-mouse.css';
 export function Chat({ snapshot, client, store, disabled, refresh, renderCheckIn }: { snapshot: ProjectSnapshot; client: PlaybooksClient; store: DraftStore; disabled: boolean; refresh(): Promise<void>; renderCheckIn?(question: CheckIn): ReactNode }) {
   const { project } = snapshot, local = useDraft(store, `${project.id}:chat`, '', 0);
   const [busy, setBusy] = useState(false), [status, setStatus] = useState('');

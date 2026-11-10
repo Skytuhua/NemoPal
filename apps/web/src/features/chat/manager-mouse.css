@@ -1,0 +1,7 @@
+@import '../../pet/pet-mouse.css';
+
+@media (prefers-reduced-motion: no-preference) {
+  .manager-avatar.manager-mouse {
+    animation: pet-mouse-idle 4.8s steps(1, end) infinite;
+  }
+}
