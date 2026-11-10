@@ -7,6 +7,7 @@ import { Store } from '../domain/store';
 import { DomainError, reject } from '../domain/errors';
 import { readEvents } from './events';
 import { CheckInCommands } from '../checkins/commands';
+import { ProactiveReviews } from '../checkins/proactive';
 import { Messaging } from '../domain/messaging';
 import { registerSendblue } from './sendblue';
 import type { SendblueConfig } from '../integrations/sendblue/config';
@@ -19,6 +20,7 @@ export function buildServer(pool: Pool, options: {
     const app = Fastify({ logger: false, bodyLimit: c.LIMITS.ingestionBytes + 8192, requestTimeout: 15000 });
     const store = new Store(pool, options.now, options.sendblue);
     const checkins = new CheckInCommands(store);
+    const proactive = new ProactiveReviews(store);
     if (options.inference)
         store.inference = options.inference;
     const principals = new WeakMap<FastifyRequest, Principal>();
@@ -76,6 +78,8 @@ export function buildServer(pool: Pool, options: {
     app.get('/v1/projects', r => store.list(principal(r)));
     app.post('/v1/projects', r => store.createProject(principal(r), path(r), c.commandEnvelopeSchema(c.CreateProjectInputSchema).parse(r.body)));
     app.get('/v1/projects/:id/snapshot', r => store.snapshot(principal(r), id(r)));
+    app.get('/v1/projects/:id/proactivity', r => proactive.read(principal(r), id(r)));
+    app.put('/v1/projects/:id/proactivity', r => proactive.configure(principal(r), path(r), id(r), c.commandEnvelopeSchema(c.ProactivityInputSchema).parse(r.body)));
     app.post('/v1/projects/:id/codex/claim', r => { c.EmptyInputSchema.parse(r.body); return claimCodexRequest(pool, principal(r), id(r), store.now()); });
     app.post('/v1/projects/:id/codex/:requestId/result', async r => { await finishCodexRequest(pool, principal(r), id(r), params(r).requestId!, c.CodexResultSchema.parse(r.body), store.now()); return { recorded: true }; });
     app.post('/v1/projects/:id/actions', r => store.action(principal(r), path(r), id(r), c.revisionedCommandSchema(c.OwnerActionSchema).parse(r.body)));

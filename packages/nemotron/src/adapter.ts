@@ -43,7 +43,7 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
     private calls = 0;
     private tokens = 0;
     private endpoint: string;
-    constructor(private settings: NemotronSettings, private fetcher: typeof fetch = fetch, private reserve?: (tokens: number) => Promise<void>) {
+    constructor(private settings: NemotronSettings, private fetcher: typeof fetch = fetch, private reserve?: (tokens: number, retainedCalls?: number) => Promise<void>) {
         let base: URL;
         try {
             base = new URL(settings.baseUrl);
@@ -55,11 +55,11 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
             throw new Error('model_configuration');
         this.endpoint = `${base.href.replace(/\/$/, '')}/chat/completions`;
     }
-    withAuthority(assertCurrent: () => Promise<unknown>): c.NemotronAdapter {
+    withAuthority(assertCurrent: () => Promise<unknown>, retainedCalls = 0): c.NemotronAdapter {
         // Keep one account budget; the guard belongs to this job, not the shared adapter.
-        return { probe: signal => this.probe(signal), next: (input, signal) => this.turn(input, signal, assertCurrent) };
+        return { probe: signal => this.probe(signal), next: (input, signal) => this.turn(input, signal, assertCurrent, retainedCalls) };
     }
-    private async turn(input: c.ModelTurnInput, signal: AbortSignal, assertCurrent?: () => Promise<unknown>): Promise<c.ModelTurnResult> {
+    private async turn(input: c.ModelTurnInput, signal: AbortSignal, assertCurrent?: () => Promise<unknown>, retainedCalls = 0): Promise<c.ModelTurnResult> {
         c.ModelTurnInputSchema.parse(input);
         signal.throwIfAborted();
         if (c.utf8Bytes(JSON.stringify(input.messages)) > c.LIMITS.contextBytes)
@@ -69,7 +69,7 @@ export class HttpNemotronAdapter implements c.NemotronAdapter {
         const tokenReservation = c.utf8Bytes(JSON.stringify(body)) + 4096;
         if (this.calls >= this.settings.callBudget || this.tokens + tokenReservation > this.settings.tokenBudget)
             throw new Error('account_budget');
-        await this.reserve?.(tokenReservation);
+        await this.reserve?.(tokenReservation, retainedCalls);
         this.calls++;
         this.tokens += tokenReservation;
         await assertCurrent?.();

@@ -18,7 +18,7 @@ export async function runJob(queue: JobQueue, adapter: c.NemotronAdapter, job: c
     }, 1000);
     try {
         const context = await queue.context(job);
-        const scoped = adapter instanceof HttpNemotronAdapter ? adapter.withAuthority(() => queue.context(job)) : adapter;
+        const scoped = adapter instanceof HttpNemotronAdapter ? adapter.withAuthority(() => queue.context(job), job.kind === 'scheduled_review' ? 1 : 0) : adapter;
         const runner = new BoundedRunner(scoped, { beforeCall: async () => { await queue.context(job); await queue.countCall(job); }, beforeTool: () => queue.context(job), toolCount: () => queue.countTool(job), toolReceipt: receipt => queue.receipt(job, receipt),beforeRepair:()=>queue.claimRepair(job) });
         const proposal = await runner.run(job, context, signal);
         await queue.commit(job, proposal);
@@ -56,7 +56,7 @@ export function startManagerDispatcher(queue: JobQueue, adapter: c.NemotronAdapt
         active = running;
         void running.catch(() => {}).finally(() => { if (active === running) active = null; });
     };
-    const timer = setInterval(tick, 15000);
+    const timer = setInterval(tick, 2000);
     tick();
     return async () => { clearInterval(timer); controller.abort(); await active; };
 }

@@ -14,7 +14,9 @@ test('existing runner supplies a bounded canonical conversation for a follow-up 
     projectEpoch: snapshot.project.epoch, grantVersions: [], state: 'running', leaseGeneration: 1, tries: 1, runAfter: last.createdAt,
     leaseExpiresAt: new Date(Date.now() + 60000).toISOString(), inputMessageId: last.id, modelCalls: 0, toolCalls: 0, errorClass: null });
   let supplied: any;
+  let instruction = '';
   const adapter: c.NemotronAdapter = { probe: async () => { throw Error('offline_fixture_no_probe'); }, next: async input => {
+    instruction = input.messages[0]!.content;
     supplied = JSON.parse(input.messages[1]!.content);
     return { type: 'proposal', proposal: { schemaVersion: 1, jobId: job.id, baseProjectRevision: job.baseProjectRevision, projectEpoch: job.projectEpoch,
       grantVersions: [], taskChanges: [], decisionSuggestions: [], workspace: snapshot.project.workspace, reply: { text: 'Synthetic reply.', observationIds: [] } } };
@@ -26,4 +28,5 @@ test('existing runner supplies a bounded canonical conversation for a follow-up 
   expect(JSON.stringify(supplied.conversation)).not.toContain('Canonical turn 0.');
   expect(Buffer.byteLength(JSON.stringify(supplied.conversation))).toBeLessThanOrEqual(8192);
   expect(supplied.latestOwnerInput[0].id).toBe(last.id);
+  expect(instruction).toMatch(/reply\.text.*latestOwnerInput/i);
 });

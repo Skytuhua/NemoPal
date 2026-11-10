@@ -5,7 +5,7 @@ import { reject } from '../../domain/errors';
 import { phoneNumber, type SendblueConfig } from './config';
 
 const statuses = ['RECEIVED', 'REGISTERED', 'PENDING', 'QUEUED', 'ACCEPTED', 'SENT', 'DELIVERED', 'ERROR', 'DECLINED'] as const;
-const replyReference = z.object({ message_handle: z.string().min(1).max(256), part: z.string().max(256).optional() }).strict();
+const replyReference = z.object({ message_handle: z.string().min(1).max(256), part: z.string().max(256).optional(), part_index: z.number().int().min(0).max(50).optional() }).strict();
 const schema = z.object({ accountEmail: z.string().min(1).max(254), message_handle: z.string().min(1).max(256),
   from_number: z.string().regex(phoneNumber), to_number: z.string().regex(phoneNumber),
   sendblue_number: z.string().nullable().optional(), number: z.string().optional(),

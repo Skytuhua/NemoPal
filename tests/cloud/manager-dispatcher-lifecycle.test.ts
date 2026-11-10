@@ -3,6 +3,44 @@ import type { NemotronAdapter, ManagerJob } from '@living-playbooks/contracts';
 import { startManagerDispatcher } from '../../apps/cloud/src/jobs/worker';
 import type { JobQueue } from '../../apps/cloud/src/jobs/queue';
 
+it('starts newly queued work on the next short polling interval', async () => {
+  vi.useFakeTimers();
+  try {
+    const job = { id: 'fixture-job' } as ManagerJob;
+    const claim = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(job).mockResolvedValue(null);
+    const context = vi.fn(async () => { throw new Error('model_error'); });
+    const fail = vi.fn(async () => {});
+    const stop = startManagerDispatcher({ claim, context, fail } as unknown as JobQueue, {} as NemotronAdapter);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claim).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(context).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(claim).toHaveBeenCalledTimes(2);
+    expect(context).toHaveBeenCalledWith(job);
+    await stop();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not overlap claims when a claim takes longer than the polling interval', async () => {
+  vi.useFakeTimers();
+  try {
+    let finishClaim!: (job: ManagerJob | null) => void;
+    const claim = vi.fn(() => new Promise<ManagerJob | null>(resolve => { finishClaim = resolve; }));
+    const stop = startManagerDispatcher({ claim } as unknown as JobQueue, {} as NemotronAdapter);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(claim).toHaveBeenCalledTimes(1);
+    finishClaim(null);
+    await stop();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(claim).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it('waits for an in-flight claim and does not start a job after shutdown', async () => {
   let release!: (value: ManagerJob | null) => void;
   const claim = vi.fn(() => new Promise<ManagerJob | null>(resolve => { release = resolve; }));

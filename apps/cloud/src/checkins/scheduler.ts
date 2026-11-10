@@ -3,9 +3,10 @@ import type { Pool, PoolClient } from 'pg';
 import * as c from '@living-playbooks/contracts';
 import type { Principal } from '../auth/credentials';
 import { transaction } from '../db/transaction';
-import { appendEvent, lockProject, purgeExpiredEvidence } from '../domain/store';
+import { appendEvent, lockProject, purgeExpiredEvidence, Store } from '../domain/store';
 import { openStates } from './policy';
 import { reconcileCheckIns } from './reconcile';
+import { ProactiveReviews } from './proactive';
 export async function scheduleSuggestion(db: PoolClient, project: c.Project, proposal: c.ManagerProposal, authority: Principal, now: Date, dependencies: string[] = []) {
     const suggestion = proposal.questionSuggestion;
     if (!suggestion)
@@ -28,8 +29,11 @@ export async function scheduleSuggestion(db: PoolClient, project: c.Project, pro
     await db.query('INSERT INTO checkins(id,project_id,data,dependencies,authority) VALUES($1,$2,$3,$4,$5)', [q.id, project.id, q, JSON.stringify(refs), authority]);
 }
 export class CheckInScheduler {
-    constructor(public pool: Pool, public now: () => Date = () => new Date()) { }
+    constructor(public pool: Pool, public now: () => Date = () => new Date(), public inferenceAvailable = false) { }
     async tick() {
+        const store = new Store(this.pool, this.now);
+        store.inference = this.inferenceAvailable ? { available: true } : { available: false, reason: 'Model unavailable.' };
+        await new ProactiveReviews(store).tick();
         const expired = (await this.pool.query("SELECT DISTINCT p.id,p.owner_id FROM observations o JOIN projects p ON p.id=o.project_id WHERE NOT p.deleted AND o.data ? 'excerpt' AND o.received_at<=$1 LIMIT 100", [new Date(this.now().getTime() - 7 * 86400000)])).rows;
         for (const row of expired)
             await transaction(this.pool, async (db) => { await db.query('SELECT id FROM owners WHERE id=$1 FOR UPDATE', [row.owner_id]); const project = await lockProject(db, row.id, row.owner_id); await purgeExpiredEvidence(db, project, this.now()); });

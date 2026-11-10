@@ -16,7 +16,7 @@ const defaults = {
   buildServer,
   createQueue: (pool: Pool, config: SendblueConfig) => new JobQueue(pool, undefined, config),
   startManager: startManagerDispatcher,
-  startCheckins: (pool: Pool) => startCheckInDispatcher(new CheckInScheduler(pool)),
+  startCheckins: (pool: Pool, inferenceAvailable: boolean) => startCheckInDispatcher(new CheckInScheduler(pool, undefined, inferenceAvailable)),
   createDelivery: (pool: Pool, config: SendblueConfig) => new SendblueDelivery(pool, config),
   createPoll: (pool: Pool, config: SendblueConfig) => new SendbluePoll(pool, config, new Messaging(new Store(pool, undefined, config))),
   reportError: () => console.error('Sendblue delivery unavailable.'),
@@ -64,7 +64,7 @@ export async function startCloudApplication(options: {
     if (options.signal?.aborted) throw new CloudStartupCancelled();
     app = deps.buildServer(pool, { inference: model.inference, sendblue: phoneConfig });
     stops.push(deps.startManager(deps.createQueue(pool, phoneConfig), model.adapter));
-    stops.push(deps.startCheckins(pool));
+    stops.push(deps.startCheckins(pool, model.inference.available));
     const delivery = phoneConfig.enabled ? deps.createDelivery(pool, phoneConfig) : undefined;
     const polling = phoneConfig.enabled && options.env.NEMOPAL_SENDBLUE_POLL_ENABLED === 'true';
     const poll = polling ? deps.createPoll(pool, phoneConfig) : undefined;

@@ -273,7 +273,7 @@ export class Store {
             for (const link of links) await disableLink(db, link.id);
             await db.query('UPDATE sendblue_outbox SET text=NULL WHERE project_id=$1', [id]);
             await db.query("UPDATE jobs SET state='cancelled',generation=generation+1,lease_expires_at=NULL,data=jsonb_build_object('id',id,'projectId',project_id,'state','cancelled') WHERE project_id=$1", [id]);
-            for (const table of ['codex_requests', 'generated_dependencies', 'checkins', 'messages', 'documents', 'observations', 'source_bindings'])
+            for (const table of ['proactive_schedules', 'codex_requests', 'generated_dependencies', 'checkins', 'messages', 'documents', 'observations', 'source_bindings'])
                 await db.query(`DELETE FROM ${table} WHERE project_id=$1`, [id]);
             await db.query('UPDATE command_receipts SET response=NULL WHERE project_id=$1', [id]);
             await db.query('UPDATE projects SET data=NULL,deleted=true,epoch=$2,revision=$3 WHERE id=$1', [id, x.epoch, x.revision]);
@@ -334,7 +334,10 @@ export async function snapshotData(db: PoolClient, project: c.Project, now: Date
             delete o.excerpt;
     const seq = Number((await db.query('SELECT coalesce(max(seq),0) AS seq FROM events WHERE owner_id=$1', [project.ownerId])).rows[0].seq);
     const codexRequests = (await db.query("SELECT id,project_id AS \"projectId\",task_id AS \"taskId\",text,state,output FROM codex_requests WHERE project_id=$1 ORDER BY CASE WHEN state IN ('pending','claimed') THEN 0 ELSE 1 END,created_at DESC LIMIT 100", [id])).rows;
-    return c.ProjectSnapshotSchema.parse({ project, brief: project.goal, documents: await load('documents', 40), messages: (await load('messages', 200)).reverse(), sourceBindings, observations, checkIns: await load('checkins', 40), codexRequests, eventSequence: seq, connection: { mode: 'live', inference: { available: false, reason: 'Live Nemotron capability gate has not passed.' }, sync: 'current', demoTiming: process.env.LP_DEMO_TIMING === 'true' } });
+    const messages = (await load('messages', 200)).reverse() as c.ChatMessage[];
+    // Replacement jobs keep the original input message; expose only their safe canonical state.
+    const replyStates = new Map((await db.query("SELECT DISTINCT ON (data->>'inputMessageId') data->>'inputMessageId' AS message_id,state FROM jobs WHERE project_id=$1 AND data->>'inputMessageId'=ANY($2::text[]) ORDER BY data->>'inputMessageId',run_after DESC,(state='superseded'),id DESC", [id, messages.filter(message => message.role === 'owner').map(message => message.id)])).rows.map(row => [row.message_id, row.state]));
+    return c.ProjectSnapshotSchema.parse({ project, brief: project.goal, documents: await load('documents', 40), messages: messages.map(message => message.role === 'owner' && replyStates.has(message.id) ? { ...message, replyState: replyStates.get(message.id) } : message), sourceBindings, observations, checkIns: await load('checkins', 40), codexRequests, eventSequence: seq, connection: { mode: 'live', inference: { available: false, reason: 'Live Nemotron capability gate has not passed.' }, sync: 'current', demoTiming: process.env.LP_DEMO_TIMING === 'true' } });
 }
 export async function withdrawEvidence(db: PoolClient, project: c.Project, bindingId: string, now: Date) {
     const ids = new Set<string>((await db.query('SELECT id FROM observations WHERE binding_id=$1', [bindingId])).rows.map(r => r.id));

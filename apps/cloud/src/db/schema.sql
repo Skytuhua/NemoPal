@@ -40,6 +40,16 @@ CREATE TABLE IF NOT EXISTS jobs (
  state text NOT NULL, stale_count integer NOT NULL DEFAULT 0, tool_receipts jsonb NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON jobs(state,run_after);
+CREATE TABLE IF NOT EXISTS proactive_schedules (
+ project_id uuid PRIMARY KEY REFERENCES projects(id), owner_id uuid NOT NULL REFERENCES owners(id),
+ enabled boolean NOT NULL DEFAULT false, interval_minutes integer NOT NULL CHECK(interval_minutes BETWEEN 30 AND 1440),
+ next_run_at timestamptz NOT NULL, last_fingerprint text, authority jsonb NOT NULL
+);
+CREATE TABLE IF NOT EXISTS proactive_review_runs (
+ job_id uuid PRIMARY KEY REFERENCES jobs(id), owner_id uuid NOT NULL REFERENCES owners(id),
+ admitted_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS proactive_review_owner ON proactive_review_runs(owner_id,admitted_at);
 CREATE TABLE IF NOT EXISTS codex_requests (
  id uuid PRIMARY KEY, project_id uuid NOT NULL REFERENCES projects(id), job_id uuid NOT NULL UNIQUE REFERENCES jobs(id),
  task_id uuid NOT NULL, project_epoch bigint NOT NULL, text text NOT NULL,

@@ -442,10 +442,12 @@ class MemoryQueries {
     if (q.startsWith('UPDATE jobs SET data=')) { Object.assign(this.jobs.find(r => r.id === args[0]), { data: structuredClone(args[1]), state: args[2], run_after: args[3], lease_expires_at: args[4], generation: args[5] }); return rows(); }
     if (q.startsWith("SELECT id FROM jobs WHERE project_id=")) return rows(this.jobs.filter(r => r.project_id === args[0] && ['queued','running'].includes(r.state) && r.data.kind === 'reflection' && (!args[1] || r.data.inputMessageId === args[1])).slice(0, 1));
     if (q.startsWith('SELECT data FROM source_bindings')) return rows();
+    if (q.startsWith('SELECT id,project_id AS "projectId",task_id AS "taskId",text,state,output FROM codex_requests')) return rows();
     if (q.startsWith('SELECT') && q.includes('FROM checkins')) return rows();
     if (q.startsWith('SELECT coalesce(max(seq)')) return rows([{ seq: this.seq }]);
     if (q.startsWith('SELECT data FROM messages WHERE id=')) return rows(this.messages.filter(r => r.id === args[0] && r.project_id === args[1]).map(r => ({ data: r.data })));
     if (q.startsWith('SELECT data FROM messages')) return rows(this.messages.slice().reverse().slice(0, args[1]).map(r => ({ data: r.data })));
+    if (q.startsWith('SELECT DISTINCT ON')) return rows(this.jobs.filter(r => r.project_id === args[0] && args[1].includes(r.data.inputMessageId)).sort((a, b) => new Date(b.run_after).getTime() - new Date(a.run_after).getTime()).map(r => ({ message_id: r.data.inputMessageId, state: r.state })).filter((r, i, all) => all.findIndex(other => other.message_id === r.message_id) === i));
     if (q.startsWith('SELECT data FROM documents') || q.startsWith('SELECT data FROM observations')) return rows();
     if (q.startsWith('SELECT payload_hash FROM sendblue_receipts')) return rows(this.receipts.filter(r => r.account === args[0] && r.handle === args[1] && r.outbound === args[2] && r.status === args[3]));
     if (q.startsWith('SELECT * FROM sendblue_links WHERE id=')) return rows(this.links.filter(r => r.id === args[0]));

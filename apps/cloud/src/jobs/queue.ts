@@ -5,6 +5,7 @@ import { validateProposal, type ToolReceipt } from '@living-playbooks/nemotron';
 import { transaction } from '../db/transaction';
 import { lockProject, saveProject, appendEvent, queueJob, snapshotData } from '../domain/store';
 import { scheduleSuggestion } from '../checkins/scheduler';
+import { proactiveFingerprint, scheduledReviewEnabled } from '../checkins/proactive';
 import { isPhone, reauthorizeJob, type JobAuthority } from '../integrations/sendblue/authority';
 import { sendblueConfig, type SendblueConfig } from '../integrations/sendblue/config';
 import { enqueueManagerReply } from '../integrations/sendblue/outbox';
@@ -38,9 +39,16 @@ export class JobQueue {
                 try { await reauthorizeJob(db, authority, this.now, project.id, 'manager', this.phoneConfig); valid = true; }
                 catch (error) { if (!(error instanceof DomainError)) throw error; }
             } else valid = Boolean((await db.query('SELECT 1 FROM credentials WHERE id=$1 AND revoked_at IS NULL AND expires_at>$2', [authority.credentialId, this.now()])).rowCount);
-            if (!valid || project.status !== 'active' || job.tries >= 2 || job.modelCalls >= 4) {
+            let budgetAvailable = true;
+            if (job.kind === 'scheduled_review') {
+                valid = valid && !isPhone(authority) && await scheduledReviewEnabled(db, project.id, authority);
+                budgetAvailable = Boolean((await db.query('SELECT 1 FROM model_usage WHERE calls+$1<call_limit AND reserved_tokens<token_limit', [c.LIMITS.modelCalls - job.modelCalls])).rowCount);
+                if (valid && budgetAvailable)
+                    await db.query('UPDATE proactive_schedules SET last_fingerprint=$2 WHERE project_id=$1', [project.id, await proactiveFingerprint(db, project, this.now())]);
+            }
+            if (!valid || !budgetAvailable || project.status !== 'active' || job.tries >= 2 || job.modelCalls >= 4) {
                 job.state = 'failed';
-                job.errorClass = !valid ? 'authority_unavailable' : project.status !== 'active' ? 'project_paused' : 'retry_exhausted';
+                job.errorClass = !valid ? 'authority_unavailable' : !budgetAvailable ? 'account_budget' : project.status !== 'active' ? 'project_paused' : 'retry_exhausted';
                 job.leaseExpiresAt = null;
                 job.leaseGeneration++;
                 await persistJob(db, job);
@@ -109,7 +117,9 @@ export class JobQueue {
             const row = (await db.query('SELECT * FROM jobs WHERE id=$1 FOR UPDATE', [job.id])).rows[0];
             if (!row || row.state !== 'running' || row.generation !== job.leaseGeneration || !row.lease_expires_at || new Date(row.lease_expires_at) <= this.now())
                 throw new Error('lease_lost');
-            const result = await work(db, c.ManagerJobSchema.parse(row.data), project, authority, row.stale_count);
+            const current = c.ManagerJobSchema.parse(row.data);
+            if (current.kind === 'scheduled_review' && (isPhone(authority) || !await scheduledReviewEnabled(db, project.id, authority))) throw new Error('lease_lost');
+            const result = await work(db, current, project, authority, row.stale_count);
             if (isPhone(authority)) await reauthorizeJob(db, authority, this.now, project.id, 'manager', this.phoneConfig);
             return result;
         });
@@ -146,13 +156,15 @@ export class JobQueue {
                 current.leaseExpiresAt = null;
                 await persistJob(db, current);
                 if (staleCount < 1 && project.status === 'active')
-                    await queueJob(db, project, 'reflection', this.now(), current.inputMessageId, staleCount + 1, authority);
+                    await queueJob(db, project, current.kind === 'scheduled_review' ? 'scheduled_review' : 'reflection', this.now(), current.inputMessageId, staleCount + 1, authority);
                 await appendEvent(db, project, 'job_updated', job.id);
                 return 'superseded';
             }
             const proposal = validateProposal(raw, current, { snapshot, grantVersions });
-            const codexRequestId = proposal.codexTask ? randomUUID() : null;
-            if (proposal.codexTask)
+            const reviewedFingerprint = current.kind === 'scheduled_review' ? await proactiveFingerprint(db, project, this.now()) : null;
+            const codingBusy = current.kind === 'scheduled_review' && Boolean((await db.query("SELECT 1 FROM codex_requests WHERE project_id=$1 AND project_epoch=$2 AND state IN ('pending','claimed','unknown') LIMIT 1", [project.id, project.epoch])).rowCount);
+            const codexRequestId = proposal.codexTask && !codingBusy ? randomUUID() : null;
+            if (proposal.codexTask && codexRequestId)
                 await db.query('INSERT INTO codex_requests(id,project_id,job_id,task_id,project_epoch,text) VALUES($1,$2,$3,$4,$5,$6)', [codexRequestId, project.id, job.id, proposal.codexTask.taskId, project.epoch, proposal.codexTask.text]);
             const dependencies = snapshot.observations.map(o => o.id);
             const remember = async (resourceId: string, kind: string) => {
@@ -192,6 +204,9 @@ export class JobQueue {
             if (proposal.questionSuggestion && !isPhone(authority))
                 await scheduleSuggestion(db, project, proposal, authority, this.now(), dependencies);
             await saveProject(db, project, this.now());
+            if (current.kind === 'scheduled_review')
+                // Absorb our own edits only when no fresh input arrived during inference.
+                await db.query('UPDATE proactive_schedules SET last_fingerprint=$2 WHERE project_id=$1 AND last_fingerprint=$3', [project.id, await proactiveFingerprint(db, project, this.now()), reviewedFingerprint]);
             current.state = 'completed';
             current.leaseExpiresAt = null;
             await persistJob(db, current);
@@ -215,7 +230,7 @@ export class JobQueue {
             await persistJob(db, current);
             await appendEvent(db, project, 'job_updated', job.id);
             if (code === 'proposal_stale' && staleCount < 1 && project.status === 'active')
-                await queueJob(db, project, 'reflection', this.now(), current.inputMessageId, staleCount + 1, authority);
+                await queueJob(db, project, current.kind === 'scheduled_review' ? 'scheduled_review' : 'reflection', this.now(), current.inputMessageId, staleCount + 1, authority);
         });
     }
 }

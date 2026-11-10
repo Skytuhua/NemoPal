@@ -53,6 +53,29 @@ test('the existing single repair receives safe issue paths and returns the uncha
   expect(rejectedCalls).toBe(2);
 });
 
+test.each([undefined, null])('reply evidence array type error receives targeted repair without discarding valid evidence (%s)', async invalidValue => {
+  const evidenceId = context.snapshot.observations[0]!.id;
+  const correct = { ...proposal, reply: { text: 'The source reports progress.', observationIds: [evidenceId] } };
+  const malformed = { ...correct, reply: { ...correct.reply, observationIds: invalidValue } };
+  const bodies: { messages: { role: string; content: string }[] }[] = [];
+  const adapter = new HttpNemotronAdapter(settings, async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return response(bodies.length === 1 ? malformed : correct);
+  });
+  const result = await new BoundedRunner(adapter).run(job, context, new AbortController().signal);
+  expect(result.reply.observationIds).toEqual([evidenceId]);
+  expect(bodies).toHaveLength(2);
+  const initial = bodies[0]!.messages.find(message => message.content.includes('latestOwnerInput'))!.content;
+  expect(initial).toMatch(/reply\.observationIds.{0,100}array/i);
+  expect(initial).toMatch(/empty.{0,40}no evidence/i);
+  expect(initial).toMatch(/never invent/i);
+  const repair = bodies[1]!.messages.at(-1)!.content;
+  expect(repair).toMatch(/reply\.observationIds.{0,100}array/i);
+  expect(repair).toMatch(/empty.{0,40}no evidence/i);
+  expect(repair).toMatch(/never invent/i);
+  expect(repair).not.toContain(evidenceId);
+});
+
 test('malformed raw JSON stays rejected without copying its text into diagnostics', async () => {
   const adapter = new HttpNemotronAdapter(settings, async () => Response.json({ model: settings.model,
     choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '```json private-provider-value ```' } }] }));
@@ -88,6 +111,8 @@ test('production prompts provide valid distinct task IDs and reuse them through 
   expect(inputs).toHaveLength(2);
   expect(inputs[0]!.messages[0]!.content).toContain('existing task IDs');
   expect(inputs[0]!.messages[0]!.content).toContain('newTaskIds');
+  expect(inputs[0]!.messages[0]!.content).toMatch(/only.{0,30}fields.{0,30}schema/i);
+  expect(inputs[0]!.messages[0]!.content).toMatch(/no extra.{0,30}top.level.{0,30}nested/i);
 });
 
 test('a full project receives no preallocated new task IDs', async () => {
@@ -102,4 +127,55 @@ test('a full project receives no preallocated new task IDs', async () => {
     },
   };
   await expect(new BoundedRunner(adapter).run(job, full, new AbortController().signal)).resolves.toEqual(proposal);
+});
+
+test('an existing task ID in a create proposal receives targeted repair while validation stays strict', async () => {
+  const existing = context.snapshot.project.tasks[0]!;
+  const collision: c.ManagerProposal = { ...proposal, taskChanges: [{ type: 'create', task: {
+    id: existing.id, title: 'Synthetic task', status: 'todo', requirementOrigin: 'brief', evidenceLevel: 'none', evidenceIds: [],
+  } }] };
+  const inputs: c.ModelTurnInput[] = [];
+  const adapter: c.NemotronAdapter = { probe: async () => { throw Error('No provider access'); }, next: async input => {
+    inputs.push(structuredClone(input));
+    return { type: 'proposal', proposal: inputs.length === 1 ? collision : proposal };
+  } };
+  await expect(new BoundedRunner(adapter).run(job, context, new AbortController().signal)).resolves.toEqual(proposal);
+  expect(inputs).toHaveLength(2);
+  const instruction = inputs[1]!.messages.at(-1)!.content;
+  expect(instruction).toMatch(/already exists/i);
+  expect(instruction).toContain('newTaskIds');
+  expect(instruction).not.toContain(existing.id);
+
+  let calls = 0;
+  const rejects: c.NemotronAdapter = { probe: adapter.probe, next: async () => { calls++; return { type: 'proposal', proposal: collision }; } };
+  await expect(new BoundedRunner(rejects).run(job, context, new AbortController().signal)).rejects.toThrow('proposal_task_identity');
+  expect(calls).toBe(2);
+});
+
+test('owner-message prompt distinguishes questions from requests to change tasks', async () => {
+  const owner = c.ChatMessageSchema.parse({ id: randomUUID(), projectId: job.projectId, role: 'owner', text: 'Summarize the project.', createdAt: job.runAfter, observationIds: [] });
+  const snapshot = { ...context.snapshot, messages: [...context.snapshot.messages, owner] };
+  const ownerJob = { ...job, kind: 'owner_message' as const, inputMessageId: owner.id };
+  let instruction = '';
+  const adapter: c.NemotronAdapter = { probe: async () => { throw Error('No provider access'); }, next: async input => {
+    instruction = input.messages[0]!.content;
+    return { type: 'proposal', proposal };
+  } };
+  await new BoundedRunner(adapter).run(ownerJob, { ...context, snapshot }, new AbortController().signal);
+  expect(instruction).toMatch(/information.{0,80}taskChanges/i);
+  expect(instruction).toMatch(/asks.{0,80}change/i);
+});
+
+test('an explicit owner task request may still create a valid task', async () => {
+  const owner = c.ChatMessageSchema.parse({ id: randomUUID(), projectId: job.projectId, role: 'owner', text: 'Add a task to review the demo.', createdAt: job.runAfter, observationIds: [] });
+  const snapshot = { ...context.snapshot, messages: [...context.snapshot.messages, owner] };
+  const ownerJob = { ...job, kind: 'owner_message' as const, inputMessageId: owner.id };
+  const adapter: c.NemotronAdapter = { probe: async () => { throw Error('No provider access'); }, next: async input => {
+    const newTaskId = JSON.parse(input.messages[1]!.content).newTaskIds[0];
+    return { type: 'proposal', proposal: { ...proposal, taskChanges: [{ type: 'create', task: { id: newTaskId,
+      title: 'Review the demo', status: 'todo', requirementOrigin: 'brief', evidenceLevel: 'none', evidenceIds: [] } }] } };
+  } };
+  const result = await new BoundedRunner(adapter).run(ownerJob, { ...context, snapshot }, new AbortController().signal);
+  expect(result.taskChanges).toHaveLength(1);
+  expect(result.taskChanges[0]).toMatchObject({ type: 'create', task: { title: 'Review the demo' } });
 });

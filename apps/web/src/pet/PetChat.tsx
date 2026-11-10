@@ -82,6 +82,7 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     return () => { if (retryDraft.current === retry) retryDraft.current = undefined; };
   }, [draftStore, session, local.ready, retryDraft]);
   const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [error, setErrorState] = useState(''), [pending, setPending] = useState<PendingPetMessage>();
+  const [accepted, setAccepted] = useState<{ operationId: string; jobId?: string }>();
   const errorIdentity = useRef<{ source: 'pending' | 'other' } | undefined>(undefined);
   function setError(message: string, source: 'pending' | 'other' = 'other') {
     errorIdentity.current = message ? { source } : undefined;
@@ -117,24 +118,25 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     if (active && local.ready && ready && focusContext.current !== state.contextId) { focusContext.current = state.contextId; (conversation ? composer.current : closeButton.current)?.focus(); }
   }, [active, local.ready, ready, state.contextId, conversation]);
 
-  async function acknowledge(operation: PendingPetMessage) {
+  async function acknowledge(operation: PendingPetMessage, jobId?: string) {
     const draft = local.current.current;
     if (draft.text === operation.sent.text && draft.baseRevision === operation.sent.baseRevision) await local.saved(draft, draft.baseRevision, '');
     await session.complete(operation);
-    if (lifetime.current) { setPending(session.pending); setStatus('Request accepted. A reply is not available yet.'); }
+    if (lifetime.current) { setPending(session.pending); setAccepted({ operationId: operation.command.operationId, jobId }); setStatus(''); }
   }
   useEffect(() => {
     if (!ready || !local.ready || !pending || !active || sending.current) return;
-    if (conversation?.messages.some(message => message.role === 'owner' && message.operationId === pending.command.operationId)) {
+    const message = conversation?.messages.find(message => message.role === 'owner' && message.operationId === pending.command.operationId);
+    if (message) {
       sending.current = true;
-      void operations.track(() => acknowledge(pending)).catch(() => setError('Draft could not be persisted. Copy your work before leaving.')).finally(() => { sending.current = false; });
+      void operations.track(() => acknowledge(pending, message.jobId)).catch(() => setError('Draft could not be persisted. Copy your work before leaving.')).finally(() => { sending.current = false; });
     }
   }, [ready, local.ready, pending, active, conversation?.messages]);
   function send(retry = false) { return operations.track(() => performSend(retry)); }
   async function performSend(retry = false) {
     const context = current();
     if (sending.current || !active || !context?.conversation || !context.visible || context.flushRequestId || context.contextId !== state.contextId || context.conversation.draftScope !== conversation?.draftScope || !context.conversation.connected || !context.conversation.inference.available) return;
-    sending.current = true; setBusy(true); setError(''); setStatus('');
+    sending.current = true; setBusy(true); setError(''); setStatus(''); setAccepted(undefined);
     let operation: PendingPetMessage | undefined;
     try {
       if (retry) { operation = session.pending; await session.persistPending(); }
@@ -145,7 +147,7 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
       const receipt = AcceptedJobSchema.parse(await bridge.invoke({ type: 'send', contextId: context.contextId, command: operation.command }));
       if (!lifetime.current || current()?.contextId !== context.contextId || !current()?.visible) return;
       if (receipt.receipt.operationId !== operation.command.operationId) throw Error('Message receipt changed');
-      await acknowledge(operation);
+      await acknowledge(operation, receipt.jobId);
       await refresh();
     } catch {
       if (lifetime.current) {
@@ -163,6 +165,13 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     finally { sending.current = false; if (lifetime.current) setBusy(false); }
   }
   const canSend = !!conversation?.connected && conversation.inference.available && ready && local.ready && !busy && !pending && !error && !local.error && !bridgeError && !!local.draft.text.trim() && utf8Bytes(local.draft.text) <= 16384;
+  const answeredJobs = new Set(conversation?.messages.filter(message => message.role === 'manager').map(message => message.jobId));
+  const acceptedMessage = accepted && conversation?.messages.find(message => message.role === 'owner' && message.operationId === accepted.operationId);
+  const acceptedJobId = acceptedMessage?.jobId ?? accepted?.jobId;
+  const hasReplyStatus = !!acceptedMessage?.replyState || !!acceptedJobId && answeredJobs.has(acceptedJobId);
+  const acknowledgment = accepted && !hasReplyStatus ? 'Request accepted. A reply is not available yet.' : '';
+  useEffect(() => { if (accepted && hasReplyStatus) setAccepted(undefined); }, [accepted, hasReplyStatus]);
+  const replyStatuses = { queued: `Waiting for ${conversation?.managerName} to reply…`, running: `${conversation?.managerName} is preparing a reply…`, completed: '', failed: `${conversation?.managerName} could not reply. Your message is saved.`, cancelled: 'Reply cancelled. Your message is saved.', superseded: 'Request replaced by a newer update. Your message is saved.' };
   const question = conversation?.checkIn;
   async function updateQuestion(type: 'answer' | 'snooze', input: CheckInAnswer | SnoozeInput) {
     if (!question) return;
@@ -190,7 +199,10 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
     <div className="pet-chat-thread" tabIndex={0} aria-label="Conversation transcript">
       {!conversation ? <p role="status">{state.loading ? 'Opening conversation…' : 'Conversation unavailable. Pair this device and select a project in the workspace.'}</p> : <>
         {conversation.demoTiming && <p className="pet-chat-caption">Demo reminder timing</p>}
-        <div role="log" aria-label="Project conversation">{conversation.messages.length ? conversation.messages.map(message => <article className="pet-chat-message" key={message.id}><span className="pet-chat-byline">{message.role === 'owner' ? 'You' : conversation.managerName}</span><p>{message.text}</p></article>) : <p>No messages yet.</p>}</div>
+        <div role="log" aria-label="Project conversation">{conversation.messages.length ? conversation.messages.map(message => {
+          const replyStatus = message.role === 'owner' && message.replyState && !answeredJobs.has(message.jobId) ? replyStatuses[message.replyState] : '';
+          return <article className="pet-chat-message" key={message.id}><span className="pet-chat-byline">{message.role === 'owner' ? 'You' : conversation.managerName}</span><p>{message.text}</p>{replyStatus && <small role="status">{replyStatus}</small>}</article>;
+        }) : <p>No messages yet.</p>}</div>
         {question && <section className="pet-chat-checkin" aria-label="Current question"><Question conversation key={`${question.id}:${question.presentationId}`} question={question} disabled={!active || !conversation.connected || !!bridgeError} answer={input => updateQuestion('answer', input)} snooze={input => updateQuestion('snooze', input)} /></section>}
       </>}
     </div>
@@ -198,7 +210,7 @@ function Conversation({ bridge, store, operations, retryDraft, state, current, r
       <label htmlFor={composerId}>Message</label><div className="pet-chat-input-row"><Textarea ref={composer} id={composerId} rows={2} value={local.draft.text} disabled={!active || !local.ready || !ready} onChange={event => { const context = current(); if (active && context?.contextId === state.contextId && context.visible && !context.flushRequestId && context.conversation?.draftScope === conversation.draftScope) local.change({ text: event.target.value, baseRevision: local.current.current.baseRevision + 1 }); }} placeholder="Write a message…" /><Button type="submit" disabled={!active || !canSend}>{busy ? 'Sending…' : 'Send'}</Button></div>
       {(!conversation.connected || !conversation.inference.available) && <p className="pet-chat-caption" role="status">{!conversation.connected ? 'Connection unavailable. Draft kept locally.' : 'Replies unavailable. Draft kept locally.'}</p>}
       {utf8Bytes(local.draft.text) > 16384 && <p role="alert">Message is too long to send. Shorten it; your draft is kept.</p>}
-      {status && <p role="status">{status}</p>}
+      {(status || acknowledgment) && <p role="status">{status || acknowledgment}</p>}
       {pending && <div className="pet-chat-recovery"><Button type="button" variant="outline" disabled={busy} onClick={() => void refresh().catch(() => setStatus('Status unavailable. The original request is still kept.'))}>Refresh status</Button><Button type="button" variant="outline" disabled={busy || !conversation.connected || !conversation.inference.available || pending.command.expectedRevision !== conversation.projectRevision} onClick={() => void send(true)}>Retry same request</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setResolving(true)}>Resolve unconfirmed request</Button></div>}
       {pending && resolving && <div><p role="status">This message may already have been sent. Check the transcript before sending it again. Resolving keeps your draft and does not resend it.</p><Button type="button" variant="outline" disabled={busy} onClick={() => void resolvePending()}>Keep draft and resolve</Button><Button type="button" variant="ghost" onClick={() => setResolving(false)}>Cancel</Button></div>}
     </form>}
