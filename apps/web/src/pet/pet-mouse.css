@@ -14,7 +14,9 @@
   animation: none;
 }
 
-.pet-surface .pet-mouse.state-idle {
+.pet-surface .pet-mouse.state-idle,
+.pet-surface .pet-mouse.state-offline,
+.pet-surface .pet-mouse.state-waiting_for_you {
   animation: pet-mouse-idle 4.8s steps(1, end) infinite;
 }
 

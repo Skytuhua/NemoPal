@@ -4,7 +4,7 @@ import type { DraftStore, LocalDraft } from './drafts';
 export function useDraft(store: DraftStore, key: string, text: string, revision: number) {
   const [draft, setDraft] = useState<LocalDraft>({ text, baseRevision: revision });
   const current = useRef(draft);
-  const lifetime = useMemo(() => ({ active: false }), [key, store]);
+  const lifetime = useMemo(() => ({ active: false, sequence: 0 }), [key, store]);
   const [ready, setReady] = useState(false), [dirty, setDirty] = useState(false), [error, setError] = useState('');
   useEffect(() => {
     let active = true;
@@ -22,10 +22,20 @@ export function useDraft(store: DraftStore, key: string, text: string, revision:
       current.current = next; setDraft(next);
     }
   }, [text, revision, dirty]);
+  async function persist(next: LocalDraft) {
+    const sequence = ++lifetime.sequence;
+    try {
+      await store.write(key, next);
+      if (lifetime.active && lifetime.sequence === sequence && current.current === next) setError('');
+    } catch (error) {
+      if (lifetime.active && lifetime.sequence === sequence) setError('Draft could not be persisted. Copy your work before leaving.');
+      throw error;
+    }
+  }
   function change(next: LocalDraft) {
     if (!lifetime.active) return;
     current.current = next; setDraft(next); setDirty(true);
-    void store.write(key, next).catch(() => { if (lifetime.active) setError('Draft could not be persisted. Copy your work before leaving.'); });
+    void persist(next).catch(() => {});
   }
   async function saved(sent: LocalDraft, newRevision: number, savedText: string) {
     if (!lifetime.active) return;
@@ -41,5 +51,5 @@ export function useDraft(store: DraftStore, key: string, text: string, revision:
     }
     change({ ...current.current, baseRevision: newRevision });
   }
-  return { draft, current, ready, dirty, error, change, saved };
+  return { draft, current, ready, dirty, error, change, saved, retry: () => persist(current.current) };
 }
