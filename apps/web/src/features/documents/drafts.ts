@@ -38,22 +38,30 @@ export function createDraftStore(): DraftStore {
   function queue(key: string, operation: () => Promise<unknown>): Promise<void> {
     const version = (versions.get(key) ?? 0) + 1;
     versions.set(key, version);
-    const task = tail.then(operation).then(() => { if (versions.get(key) === version) failures.delete(key); });
-    tail = task.catch(error => { if (versions.get(key) === version) failures.set(key, { error, operation, version }); });
+    const task = tail.then(operation).then(() => { failures.delete(key); });
+    tail = task.catch(error => { failures.set(key, { error, operation, version }); });
     return task;
+  }
+  async function drain() {
+    let observed: Promise<void>;
+    do { observed = tail; await observed; } while (observed !== tail);
+  }
+  async function flush() {
+    let observed: Promise<void>;
+    do { observed = tail; await observed; } while (observed !== tail);
+    if (failures.size) throw failures.values().next().value!.error;
   }
   return {
     async read(key) { await tail; return transaction<LocalDraft | undefined>('readonly', store => store.get(key)); },
     write: (key, value) => { const snapshot = { ...value }; return queue(key, () => transaction('readwrite', store => store.put(snapshot, key))); },
     remove: key => queue(key, () => transaction('readwrite', store => store.delete(key))),
-    async flush() { await tail; if (failures.size) throw failures.values().next().value!.error; },
+    flush,
     async retryFailed() {
-      await tail;
+      await drain();
       const retries = [...failures].filter(([key, failure]) => versions.get(key) === failure.version)
         .map(([key, failure]) => queue(key, failure.operation));
       await Promise.allSettled(retries);
-      await tail;
-      if (failures.size) throw failures.values().next().value!.error;
+      await flush();
     },
   };
 }
