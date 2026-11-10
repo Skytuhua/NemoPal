@@ -1,12 +1,13 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
 import { App } from '../../apps/web/src/app/App';
 import { deferred, memoryDrafts, snapshot } from './helpers';
 
-afterEach(cleanup);
+beforeEach(() => { vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-08T11:00:00.000Z')); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 function withoutQuestionCard(offset = 0) {
   const seed = snapshot(offset);
@@ -17,21 +18,21 @@ function withoutQuestionCard(offset = 0) {
 test.each(['Not yet', 'Recorded'] as const)('a canonical question without a canvas card or pet can be answered %s and survives reload', async label => {
   const seed = withoutQuestionCard(), client = createFixtureClient({ snapshots: [seed] }), drafts = memoryDrafts();
   const view = render(<App client={client} drafts={drafts} fixture />);
-  await screen.findByRole('region', { name: 'Project questions' });
-  expect(screen.getByText('Have you recorded the demo?')).toBeVisible();
-  await userEvent.click(screen.getByRole('button', { name: label }));
-  await screen.findByText(`Answer saved: ${label}`);
+  await screen.findByRole('region', { name: 'Manager question' });
+  expect(await screen.findByText('Have you recorded the demo?')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: label === 'Recorded' ? 'Mark task done' : label }));
+  await screen.findByText(label === 'Recorded' ? 'You marked this task done.' : 'You answered: Not yet.');
   expect((await client.getSnapshot(seed.project.id)).checkIns[0]!.answer?.kind).toBe(label === 'Recorded' ? 'recorded' : 'not_yet');
   view.unmount(); render(<App client={client} drafts={drafts} fixture />);
-  expect(await screen.findByText(`Answer saved: ${label}`)).toBeVisible();
+  expect(await screen.findByText(label === 'Recorded' ? 'You marked this task done.' : 'You answered: Not yet.')).toBeVisible();
 });
 
 test('a question already displayed in a canvas card has no duplicate inbox form', async () => {
   render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture />);
-  await screen.findByText('Have you recorded the demo?');
+  expect(await screen.findByText('Have you recorded the demo?')).toBeVisible();
   expect(screen.getAllByText('Have you recorded the demo?')).toHaveLength(1);
-  expect(screen.getAllByRole('button', { name: 'Recorded' })).toHaveLength(1);
-  expect(screen.queryByRole('region', { name: 'Project questions' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Mark task done' })).toHaveLength(1);
+  expect(screen.getAllByRole('region', { name: 'Manager question' })).toHaveLength(1);
 });
 
 test('a delayed inbox answer for A cannot replace B after project selection', async () => {

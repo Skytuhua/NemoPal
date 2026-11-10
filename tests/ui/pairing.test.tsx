@@ -267,7 +267,7 @@ test.each([{ development: false, fixture: true }, { development: true, fixture: 
 
 test('intentional development fixtures remain visibly labeled', async () => {
   await start(undefined, { development: true, fixture: true });
-  expect(await screen.findByText(/Fixture mode.*synthetic data.*no live model/)).toBeVisible();
+  expect(await screen.findByLabelText('Demo · synthetic data · no live model')).toHaveTextContent('Demo');
   expect(screen.queryByLabelText('Pairing code')).not.toBeInTheDocument();
 });
 

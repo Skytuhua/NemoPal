@@ -32,8 +32,8 @@ PNG is opaque: its exact size and SHA-256 must match the reviewed asset before
 it can bypass text decoding. Other PNGs or altered bytes are rejected.
 Exit 0 is a bounded output audit
 pass; exit 1 is blocked.
-No root script or packaging command was added. This top-level Node test is **not
-selected by the existing Vitest projects**; run its explicit command above.
+This top-level Node test is **not selected by the existing Vitest projects**;
+run its explicit command above.
 CI runs that command separately and audits the completed build. The positive
 sprite fixture reads its pinned public Git blob; retain full Git history when
 running this fixture, as configured in CI, rather than duplicating the binary.
@@ -206,6 +206,20 @@ and click-through affect presentation. They do not withdraw source access.
    withdrawal or a deletion/recall of previously processed data. Re-pairing
    requires a fresh grant. Remove unneeded launch environment values from the
    terminal after shutdown; keep private configuration out of the repository.
+
+## Experimental Windows candidate
+
+On Windows, after `pnpm build`, `pnpm package:win:experimental` prepares a
+local unsigned candidate in a fresh `.tmp/nemopal-windows-candidate-*` directory.
+It uses the pinned `@electron/packager` and a cached Electron 45.2.3 Windows x64
+ZIP whose SHA-256 must match the pinned value. It does not download the runtime.
+The app payload contains only audited renderer, desktop main and preload outputs;
+source maps, cloud code, environment files and the existing desktop profile are
+not copied. The command compares the packaged app payload to the audited stage.
+It reports the executable path, but does not launch the app or establish native
+acceptance, signing, production readiness or a working cloud connection. Packaged
+mode requires a configured HTTPS `LP_API_ORIGIN` and device pairing as above.
+The candidate is an experimental local build, not an installer or release.
 
 ## Deferred distribution
 

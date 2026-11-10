@@ -9,17 +9,21 @@ afterEach(cleanup);
 test('stale source alone leaves cloud distinct; offline and paused states preserve the working surface', async () => {
   const seed = snapshot(); seed.sourceBindings[0]!.state = 'stale'; seed.connection.sync = 'offline'; seed.project.status = 'paused';
   render(<App client={createFixtureClient({ snapshots: [seed] })} drafts={memoryDrafts()} fixture />);
-  expect(await screen.findByText(/Cloud offline/)).toBeVisible();
+  await screen.findByRole('heading', { name: 'Hackathon demo' });
+  await userEvent.click(screen.getByRole('button', { name: 'Project settings' }));
+  expect(screen.getByText('Cloud offline · writes unavailable')).toBeVisible();
   expect(screen.getByText(/Source freshness: stale/)).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Back to workspace' }));
   expect(screen.getByText(/Project paused/)).toBeVisible();
-  expect(screen.getByLabelText('Status: Record the demo')).toBeDisabled();
+  expect(screen.getByLabelText(/^Status: Record the demo/)).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Project settings' }));
   await waitFor(() => expect(screen.getByLabelText('Document: Demo notes')).toBeEnabled());
 });
 test('read failure displays recoverable error without implicit fixture success', async () => {
   const client = createFixtureClient(); client.getSnapshot = async () => { throw new Error('offline'); };
   render(<App client={client} drafts={memoryDrafts()} fixture={false} />);
   expect(await screen.findByRole('alert')).toHaveTextContent('Project unavailable');
-  expect(screen.queryByLabelText('Status: Record the demo')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Status: Record the demo/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Fixture mode/)).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(screen.getByRole('alert')).toBeVisible();

@@ -1,5 +1,6 @@
 import { createFixtureClient, type PlaybooksClient } from '@living-playbooks/api-client';
 import { AllowedClientCommandSchema, EmptyInputSchema, SafeDesktopEventSchema, revisionedCommandSchema, type AllowedClientCommand, type DesktopBridge, type DesktopCommandResult } from '@living-playbooks/contracts';
+import { shellDemo } from './shell-demo';
 
 function desktopClient(bridge: DesktopBridge): PlaybooksClient {
   async function invoke<C extends AllowedClientCommand>(input: C): Promise<DesktopCommandResult<C>> {
@@ -40,6 +41,6 @@ function desktopClient(bridge: DesktopBridge): PlaybooksClient {
 }
 export function runtime(bridge: DesktopBridge | undefined, development: boolean, fixtureEnabled: boolean): { client?: PlaybooksClient; fixture: boolean } {
   if (bridge) return { client: desktopClient(bridge), fixture: false };
-  if (development && fixtureEnabled) return { client: createFixtureClient(), fixture: true };
+  if (development && fixtureEnabled) return { client: createFixtureClient({ snapshots: [shellDemo()] }), fixture: true };
   return { fixture: false };
 }

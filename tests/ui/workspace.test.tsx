@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test } from 'vitest';
 import { createFixtureClient } from '@living-playbooks/api-client';
@@ -11,11 +11,20 @@ test('owner accepts the proposed plan and corrects task status without chat', as
   render(<App client={client} drafts={memoryDrafts()} fixture />);
   await userEvent.click(await screen.findByRole('button', { name: 'Accept plan' }));
   await screen.findByText('Plan accepted');
-  await userEvent.selectOptions(screen.getByLabelText('Status: Record the demo'), 'done');
-  await waitFor(() => expect(screen.getByLabelText('Status: Record the demo')).toHaveValue('done'));
-  expect(await screen.findByText(/Owner reported/)).toBeVisible();
-  expect((await client.getSnapshot(snapshot().project.id)).project.tasks[0]?.ownerOverride).toBe(true);
-  expect(screen.getByText(/synthetic data · no live model/)).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: /^Status: Record the demo/ }));
+  await userEvent.click(screen.getByRole('menuitemradio', { name: 'Done' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Status: Record the demo/ })).toHaveAccessibleName(/Done$/));
+  await userEvent.click(screen.getByRole('button', { name: 'Open task: Record the demo' }));
+  const details = screen.getByRole('dialog', { name: 'Record the demo' });
+  await userEvent.click(within(details).getByText('Supporting updates', { selector: 'summary' }));
+  expect(within(details).getByText('Owner reported')).toBeVisible();
+  expect(within(details).getByText('Owner correction')).toBeVisible();
+  const corrected = (await client.getSnapshot(snapshot().project.id)).project.tasks[0];
+  expect(corrected?.ownerOverride).toBe(true);
+  expect(corrected?.evidenceLevel).toBe('user_reported');
+  await userEvent.click(within(details).getByRole('button', { name: 'Close task details' }));
+  expect(screen.getByLabelText('Demo · synthetic data · no live model')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Project settings' }));
   expect(screen.getByText(/Nemotron unavailable/)).toBeVisible();
 });
 test('a new project has unknown progress and unavailable inference rather than green readiness', async () => {
@@ -30,7 +39,7 @@ test('a new project has unknown progress and unavailable inference rather than g
 });
 test('snapshot fixture provenance is visible even when a desktop adapter supplies it', async () => {
   render(<App client={createFixtureClient()} drafts={memoryDrafts()} fixture={false} />);
-  expect(await screen.findByText('Fixture mode · synthetic data · no live model')).toBeVisible();
+  expect(await screen.findByLabelText('Demo · synthetic data · no live model')).toHaveTextContent('Demo');
 });
 test('new project brief drafts survive remount before creation', async () => {
   const client = createFixtureClient({ snapshots: [] }), store = memoryDrafts();

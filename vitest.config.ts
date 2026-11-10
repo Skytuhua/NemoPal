@@ -12,7 +12,7 @@ export default defineConfig({
     testTimeout: 15000,
     projects: [
       { extends: true, test: { name: 'unit', include: ['tests/{contracts,cloud,desktop}/**/*.test.ts'] } },
-      { extends: true, test: { name: 'ui', include: ['tests/ui/**/*.test.{ts,tsx}'], environment: 'jsdom' } },
+      { extends: true, test: { name: 'ui', include: ['tests/ui/**/*.test.{ts,tsx}'], environment: 'jsdom', setupFiles: ['tests/ui/setup.ts'] } },
     ],
   },
 });
