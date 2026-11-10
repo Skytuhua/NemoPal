@@ -168,3 +168,55 @@ it.each(['model', 'listen'] as const)('drains resources after a signal during %s
     expect(s.delivery.tick).not.toHaveBeenCalled();
   }
 });
+
+
+it.each(['model', 'listen'] as const)('reports cleanup failure after a signal during %s startup', async phase => {
+  const s = setup();
+  const signals = new EventEmitter();
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  if (phase === 'model') s.dependencies.configureModel.mockImplementationOnce(async () => { await held; return { inference: { available: false }, adapter: {} }; });
+  else s.app.listen.mockImplementationOnce(async () => { await held; });
+  vi.mocked(s.pool.end).mockRejectedValueOnce(new Error('private cleanup detail'));
+  const shutdownError = vi.fn(), startupError = vi.fn();
+  const launch = runCloudProcess({ signals,
+    start: signal => startCloudApplication({ pool: s.pool, env: s.env, listen: { host: 'fixture', port: 1 }, dependencies: s.dependencies as unknown as CloudDependencies, signal }),
+    onStarted: vi.fn(), onShutdownError: shutdownError, onStartupError: startupError,
+  });
+  await vi.waitFor(() => expect(phase === 'model' ? s.dependencies.configureModel : s.app.listen).toHaveBeenCalledOnce());
+  signals.emit('SIGTERM'); release(); await launch;
+  expect(shutdownError).toHaveBeenCalledOnce();
+  expect(startupError).not.toHaveBeenCalled();
+});
+
+it('reports an independent startup failure after shutdown was requested', async () => {
+  const s = setup();
+  const signals = new EventEmitter();
+  let fail!: (error: Error) => void;
+  s.dependencies.configureModel.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  const shutdownError = vi.fn(), startupError = vi.fn();
+  const launch = runCloudProcess({ signals,
+    start: signal => startCloudApplication({ pool: s.pool, env: s.env, listen: { host: 'fixture', port: 1 }, dependencies: s.dependencies as unknown as CloudDependencies, signal }),
+    onStarted: vi.fn(), onShutdownError: shutdownError, onStartupError: startupError,
+  });
+  await vi.waitFor(() => expect(s.dependencies.configureModel).toHaveBeenCalledOnce());
+  signals.emit('SIGTERM'); fail(new Error('private startup detail')); await launch;
+  expect(startupError).toHaveBeenCalledOnce();
+  expect(shutdownError).not.toHaveBeenCalled();
+  expect(s.pool.end).toHaveBeenCalledOnce();
+});
+
+it('closes the started application if its startup reporter throws', async () => {
+  const s = setup();
+  const signals = new EventEmitter();
+  const launch = runCloudProcess({ signals,
+    start: signal => startCloudApplication({ pool: s.pool, env: s.env, listen: { host: 'fixture', port: 1 }, dependencies: s.dependencies as unknown as CloudDependencies, signal }),
+    onStarted: () => { throw new Error('fixture reporter failure'); }, onShutdownError: vi.fn(), onStartupError: vi.fn(),
+  });
+  await expect(launch).rejects.toThrow('fixture reporter failure');
+  expect(s.app.close).toHaveBeenCalledOnce();
+  expect(s.stopManager).toHaveBeenCalledOnce();
+  expect(s.pool.end).toHaveBeenCalledOnce();
+  expect(signals.listenerCount('SIGTERM')).toBe(0);
+  expect(signals.listenerCount('SIGINT')).toBe(0);
+});
